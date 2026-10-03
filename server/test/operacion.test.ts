@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { setup, login, api, CRED, type Env } from './helpers.js';
+import { setup, login, api, CRED, simularWhatsApp, type Env } from './helpers.js';
 import { drain } from '../src/worker/jobs.js';
 import { receiveChannelMessages } from '../src/modules/channelInbound.js';
 import { digitoVerificacionNit } from '../src/adapters/fiscal.js';
@@ -17,10 +17,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { await E.app.close(); await E.db.close(); });
 
-const wa = async (from: string, texto: string, nombre = 'Cliente') => {
-  await receiveChannelMessages(E.db, [{ phoneNumberId: 'sim-elparche', from, nombre, id: `op.${uuidv7()}`, texto }], 'WHATSAPP', 'op');
-  await drain(E.db);
-};
+const wa = (from: string, texto: string, nombre = 'Cliente') => simularWhatsApp(E.db, from, texto, nombre, 'op');
 
 describe('Hilo completo por WhatsApp', () => {
   it('conversación → venta confirmada → factura validada → entregada por WhatsApp, todo auditado', async () => {
