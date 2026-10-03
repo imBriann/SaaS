@@ -1,0 +1,33 @@
+{
+  "name": "@plataforma/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Servidor de la Plataforma SaaS Inteligente Multi-Tenant (PRO-SW-001/002/003)",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "seed": "tsx src/seed/run.ts",
+    "reset": "tsx src/seed/run.ts --reset",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
+    "@electric-sql/pglite": "^0.5.8",
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/multipart": "^10.1.1",
+    "@fastify/static": "^10.1.4",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.12.5",
+    "pg": "^8.23.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "plataforma-saas-inteligente",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sistema operativo conversacional y fiscal para micronegocios colombianos (PRO-SW-001/002/003)",
+  "scripts": {
+    "instalar": "npm install --prefix server && npm install --prefix web",
+    "dev": "node scripts/dev.mjs",
+    "test": "npm test --prefix server",
+    "typecheck": "npm run typecheck --prefix server && npx --prefix web tsc --noEmit -p web",
+    "build": "npm run build --prefix web",
+    "start": "npm start --prefix server",
+    "reset": "npm run reset --prefix server"
+  }
+}

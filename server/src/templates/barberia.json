@@ -1,0 +1,125 @@
+{
+  "sector": "barberia",
+  "version": "1.0.0",
+  "nombre": "Barbería",
+  "descripcion": "Barberías y peluquerías masculinas con atención por turnos.",
+  "modulos": ["clientes", "catalogo", "ventas", "agenda", "inventario", "facturacion", "conversaciones", "ia", "comisiones"],
+  "rol_administrador": "administrador",
+  "roles": [
+    {
+      "clave": "administrador",
+      "nombre": "Administrador",
+      "permisos": [
+        "tenant:configure", "user:manage", "customer:read", "customer:write", "catalog:read", "catalog:write",
+        "inventory:read", "inventory:write", "order:read", "order:create", "order:void", "appointment:read",
+        "appointment:create", "appointment:cancel", "conversation:read", "conversation:reply", "case:create",
+        "case:manage", "case:supervise", "invoice:read", "invoice:issue", "invoice:void", "ai:read", "ai:configure",
+        "ai:assist", "audit:read", "subscription:manage", "usage:read", "payment:link"
+      ]
+    },
+    {
+      "clave": "supervisor",
+      "nombre": "Supervisor",
+      "permisos": [
+        "customer:read", "customer:write", "catalog:read", "inventory:read", "order:read", "order:create",
+        "appointment:read", "appointment:create", "appointment:cancel", "conversation:read", "conversation:reply",
+        "case:create", "case:manage", "case:supervise", "invoice:read", "ai:read", "ai:assist", "usage:read"
+      ],
+      "es_asesor": true
+    },
+    {
+      "clave": "recepcion",
+      "nombre": "Recepción",
+      "permisos": [
+        "customer:read", "customer:write", "catalog:read", "inventory:read", "order:read", "order:create",
+        "appointment:read", "appointment:create", "appointment:cancel", "conversation:read", "conversation:reply",
+        "case:create", "case:manage", "invoice:read", "invoice:issue", "ai:assist", "payment:link"
+      ],
+      "es_asesor": true
+    },
+    {
+      "clave": "barbero",
+      "nombre": "Barbero",
+      "permisos": ["customer:read", "catalog:read", "order:read", "order:create", "appointment:read", "appointment:create"]
+    },
+    {
+      "clave": "agente_atencion",
+      "nombre": "Agente de atención (IA)",
+      "es_agente": true,
+      "permisos": [
+        "catalog:read", "appointment:read", "appointment:create", "appointment:cancel", "inventory:read",
+        "order:create", "case:create", "invoice:read", "payment:link"
+      ]
+    },
+    {
+      "clave": "agente_asistente",
+      "nombre": "Asistente del negocio (IA)",
+      "es_agente": true,
+      "permisos": ["customer:read", "catalog:read", "inventory:read", "order:read", "appointment:read", "invoice:read", "usage:read", "ai:assist"]
+    },
+    {
+      "clave": "agente_copiloto",
+      "nombre": "Copiloto del asesor (IA)",
+      "es_agente": true,
+      "permisos": ["customer:read", "catalog:read", "appointment:read", "order:read", "invoice:read", "ai:assist"]
+    }
+  ],
+  "etiqueta_recurso": "Barbero",
+  "recursos_ejemplo": [
+    { "nombre": "Barbero 1", "horario": { "lun": ["09:00", "19:00"], "mar": ["09:00", "19:00"], "mie": ["09:00", "19:00"], "jue": ["09:00", "19:00"], "vie": ["09:00", "20:00"], "sab": ["08:00", "18:00"] } }
+  ],
+  "catalogo_ejemplo": [
+    { "tipo": "SERVICIO", "nombre": "Corte clásico", "categoria": "Cortes", "precio": 25000, "duracion_min": 30 },
+    { "tipo": "SERVICIO", "nombre": "Corte + barba", "categoria": "Combos", "precio": 38000, "duracion_min": 45 },
+    { "tipo": "SERVICIO", "nombre": "Arreglo de barba", "categoria": "Barba", "precio": 18000, "duracion_min": 20 },
+    { "tipo": "SERVICIO", "nombre": "Cejas", "categoria": "Detalles", "precio": 8000, "duracion_min": 10 },
+    { "tipo": "SERVICIO", "nombre": "Combo completo", "categoria": "Combos", "precio": 50000, "duracion_min": 60 },
+    { "tipo": "PRODUCTO", "nombre": "Cera para peinar", "categoria": "Productos", "precio": 32000, "iva_pct": 19, "controla_stock": true, "stock": 12, "stock_minimo": 4 },
+    { "tipo": "PRODUCTO", "nombre": "Aceite para barba", "categoria": "Productos", "precio": 45000, "iva_pct": 19, "controla_stock": true, "stock": 6, "stock_minimo": 3 }
+  ],
+  "plantillas_mensaje": [
+    { "clave": "confirmacion_cita", "categoria": "UTILIDAD", "cuerpo": "¡Listo, {{cliente}}! Tu cita de {{servicio}} quedó para el {{fecha}} a las {{hora}} con {{recurso}}. Si necesitas cambiarla, escríbenos por aquí." },
+    { "clave": "recordatorio_24h", "categoria": "UTILIDAD", "cuerpo": "Hola {{cliente}}, te recordamos tu cita de {{servicio}} mañana a las {{hora}} con {{recurso}}. ¿Nos confirmas tu asistencia?" },
+    { "clave": "reprogramacion", "categoria": "UTILIDAD", "cuerpo": "Hola {{cliente}}, tu cita fue reprogramada para el {{fecha}} a las {{hora}}." },
+    { "clave": "agradecimiento", "categoria": "UTILIDAD", "cuerpo": "Gracias por visitarnos, {{cliente}}. ¡Te esperamos pronto!" },
+    { "clave": "factura_enviada", "categoria": "UTILIDAD", "cuerpo": "Hola {{cliente}}, aquí está tu factura electrónica {{numero}} por {{total}}. Consúltala en {{enlace}}" }
+  ],
+  "agentes": [
+    {
+      "configuracion": "atencion",
+      "rol": "agente_atencion",
+      "herramientas": ["consultar_catalogo", "consultar_precio", "consultar_disponibilidad", "crear_cita", "mis_citas", "cancelar_cita", "consultar_inventario", "registrar_venta", "generar_enlace_pago", "estado_factura", "escalar_a_humano"],
+      "prompt_base": "Tono cercano y breve, como se habla en una barbería de barrio en Colombia. No negocies precios ni ofrezcas descuentos. Escala a una persona los reclamos, las solicitudes de reembolso y cualquier cosa que no puedas resolver con tus herramientas."
+    },
+    {
+      "configuracion": "asistente",
+      "rol": "agente_asistente",
+      "herramientas": ["resumen_ventas", "citas_del_dia", "stock_bajo_minimo", "buscar_cliente", "consultar_catalogo", "consumo_del_plan", "ayuda_plataforma"],
+      "prompt_base": "Eres el asistente del dueño de la barbería dentro del panel. Responde con cifras concretas obtenidas de tus herramientas y explica de dónde salen. Si una pregunta no se puede responder con tus herramientas, dilo."
+    },
+    {
+      "configuracion": "copiloto",
+      "rol": "agente_copiloto",
+      "herramientas": ["consultar_catalogo", "consultar_disponibilidad", "buscar_cliente", "historial_cliente"],
+      "prompt_base": "Asistes al asesor humano. Resume, busca información y sugiere respuestas. Nunca le hablas al cliente directamente."
+    }
+  ],
+  "politica_riesgo": {
+    "crear_cita": "confirmable",
+    "cancelar_cita": "confirmable",
+    "registrar_venta": "confirmable"
+  },
+  "widgets_panel": ["citas_hoy", "ocupacion_por_recurso", "ingresos_semana", "clientes_nuevos"],
+  "reglas_automatizacion": [
+    { "evento": "cita_creada", "accion": "enviar_plantilla", "parametros": { "plantilla": "confirmacion_cita" }, "condicion": { "origen": "PANEL" } },
+    { "evento": "cita_creada", "accion": "programar_recordatorio", "parametros": { "plantilla": "recordatorio_24h", "horas_antes": 24 } },
+    { "evento": "venta_registrada", "accion": "emitir_factura", "parametros": {} },
+    { "evento": "stock_bajo_minimo", "accion": "notificar_admin", "parametros": { "asunto": "Producto por debajo del mínimo" } },
+    { "evento": "documento_rechazado", "accion": "notificar_admin", "parametros": { "asunto": "La DIAN rechazó una factura" } }
+  ],
+  "sla_minutos": { "BAJA": 240, "MEDIA": 60, "ALTA": 20, "URGENTE": 10 },
+  "escalamiento": {
+    "palabras_clave": ["reclamo", "queja", "reembolso", "devolucion", "devolución", "hablar con una persona", "asesor", "humano", "demanda", "estafa"],
+    "prioridad_por_defecto": "MEDIA"
+  }
+}

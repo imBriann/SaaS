@@ -1,0 +1,105 @@
+{
+  "sector": "gimnasio",
+  "version": "1.0.0",
+  "nombre": "Gimnasio",
+  "descripcion": "Gimnasios y centros de entrenamiento con membresías y clases grupales.",
+  "modulos": ["clientes", "catalogo", "ventas", "agenda", "inventario", "facturacion", "conversaciones", "ia", "membresias"],
+  "rol_administrador": "administrador",
+  "roles": [
+    {
+      "clave": "administrador",
+      "nombre": "Administrador",
+      "permisos": [
+        "tenant:configure", "user:manage", "customer:read", "customer:write", "catalog:read", "catalog:write",
+        "inventory:read", "inventory:write", "order:read", "order:create", "order:void", "appointment:read",
+        "appointment:create", "appointment:cancel", "conversation:read", "conversation:reply", "case:create",
+        "case:manage", "case:supervise", "invoice:read", "invoice:issue", "invoice:void", "ai:read", "ai:configure",
+        "ai:assist", "audit:read", "subscription:manage", "usage:read", "payment:link"
+      ]
+    },
+    {
+      "clave": "recepcion",
+      "nombre": "Recepción",
+      "permisos": [
+        "customer:read", "customer:write", "catalog:read", "inventory:read", "order:read", "order:create",
+        "appointment:read", "appointment:create", "appointment:cancel", "conversation:read", "conversation:reply",
+        "case:create", "case:manage", "invoice:read", "invoice:issue", "ai:assist", "payment:link"
+      ],
+      "es_asesor": true
+    },
+    {
+      "clave": "entrenador",
+      "nombre": "Entrenador",
+      "permisos": ["customer:read", "catalog:read", "appointment:read", "appointment:create"]
+    },
+    {
+      "clave": "agente_atencion",
+      "nombre": "Agente de atención (IA)",
+      "es_agente": true,
+      "permisos": ["catalog:read", "appointment:read", "appointment:create", "appointment:cancel", "order:create", "case:create", "invoice:read", "payment:link"]
+    },
+    {
+      "clave": "agente_asistente",
+      "nombre": "Asistente del negocio (IA)",
+      "es_agente": true,
+      "permisos": ["customer:read", "catalog:read", "inventory:read", "order:read", "appointment:read", "invoice:read", "usage:read", "ai:assist"]
+    },
+    {
+      "clave": "agente_copiloto",
+      "nombre": "Copiloto del asesor (IA)",
+      "es_agente": true,
+      "permisos": ["customer:read", "catalog:read", "appointment:read", "order:read", "invoice:read", "ai:assist"]
+    }
+  ],
+  "etiqueta_recurso": "Entrenador",
+  "recursos_ejemplo": [
+    { "nombre": "Salón principal", "horario": { "lun": ["05:30", "21:00"], "mar": ["05:30", "21:00"], "mie": ["05:30", "21:00"], "jue": ["05:30", "21:00"], "vie": ["05:30", "21:00"], "sab": ["07:00", "14:00"] } }
+  ],
+  "catalogo_ejemplo": [
+    { "tipo": "SERVICIO", "nombre": "Mensualidad", "categoria": "Membresías", "precio": 90000 },
+    { "tipo": "SERVICIO", "nombre": "Trimestre", "categoria": "Membresías", "precio": 240000 },
+    { "tipo": "SERVICIO", "nombre": "Pase de un día", "categoria": "Membresías", "precio": 12000 },
+    { "tipo": "SERVICIO", "nombre": "Clase de spinning", "categoria": "Clases", "precio": 15000, "duracion_min": 45 },
+    { "tipo": "SERVICIO", "nombre": "Entrenamiento personalizado", "categoria": "Clases", "precio": 45000, "duracion_min": 60 },
+    { "tipo": "PRODUCTO", "nombre": "Proteína 2 lb", "categoria": "Suplementos", "precio": 120000, "iva_pct": 19, "controla_stock": true, "stock": 10, "stock_minimo": 3 }
+  ],
+  "plantillas_mensaje": [
+    { "clave": "confirmacion_cita", "categoria": "UTILIDAD", "cuerpo": "¡Listo, {{cliente}}! Tu {{servicio}} quedó para el {{fecha}} a las {{hora}} en {{recurso}}." },
+    { "clave": "recordatorio_24h", "categoria": "UTILIDAD", "cuerpo": "Hola {{cliente}}, mañana a las {{hora}} tienes {{servicio}}. ¡Te esperamos!" },
+    { "clave": "vencimiento_membresia", "categoria": "UTILIDAD", "cuerpo": "Hola {{cliente}}, tu membresía vence pronto. Escríbenos para renovarla." },
+    { "clave": "factura_enviada", "categoria": "UTILIDAD", "cuerpo": "Hola {{cliente}}, aquí está tu factura electrónica {{numero}} por {{total}}. Consúltala en {{enlace}}" }
+  ],
+  "agentes": [
+    {
+      "configuracion": "atencion",
+      "rol": "agente_atencion",
+      "herramientas": ["consultar_catalogo", "consultar_precio", "consultar_disponibilidad", "crear_cita", "mis_citas", "cancelar_cita", "registrar_venta", "generar_enlace_pago", "estado_factura", "escalar_a_humano"],
+      "prompt_base": "Tono motivador y breve. No prometas resultados físicos ni des consejos médicos o nutricionales. Escala a una persona reclamos, congelamientos de membresía y reembolsos."
+    },
+    {
+      "configuracion": "asistente",
+      "rol": "agente_asistente",
+      "herramientas": ["resumen_ventas", "citas_del_dia", "stock_bajo_minimo", "buscar_cliente", "consultar_catalogo", "consumo_del_plan", "ayuda_plataforma"],
+      "prompt_base": "Eres el asistente del dueño del gimnasio dentro del panel. Responde con cifras concretas y explica de dónde salen."
+    },
+    {
+      "configuracion": "copiloto",
+      "rol": "agente_copiloto",
+      "herramientas": ["consultar_catalogo", "consultar_disponibilidad", "buscar_cliente", "historial_cliente"],
+      "prompt_base": "Asistes al asesor humano. Nunca le hablas al cliente directamente."
+    }
+  ],
+  "politica_riesgo": { "crear_cita": "confirmable", "cancelar_cita": "confirmable", "registrar_venta": "confirmable" },
+  "widgets_panel": ["citas_hoy", "ocupacion_por_recurso", "ingresos_semana", "clientes_nuevos"],
+  "reglas_automatizacion": [
+    { "evento": "cita_creada", "accion": "enviar_plantilla", "parametros": { "plantilla": "confirmacion_cita" }, "condicion": { "origen": "PANEL" } },
+    { "evento": "cita_creada", "accion": "programar_recordatorio", "parametros": { "plantilla": "recordatorio_24h", "horas_antes": 24 } },
+    { "evento": "venta_registrada", "accion": "emitir_factura", "parametros": {} },
+    { "evento": "documento_rechazado", "accion": "notificar_admin", "parametros": { "asunto": "La DIAN rechazó una factura" } }
+  ],
+  "sla_minutos": { "BAJA": 240, "MEDIA": 60, "ALTA": 30, "URGENTE": 10 },
+  "escalamiento": {
+    "palabras_clave": ["reclamo", "queja", "reembolso", "congelar", "congelamiento", "lesion", "lesión", "asesor", "humano", "hablar con una persona"],
+    "prioridad_por_defecto": "MEDIA"
+  }
+}
