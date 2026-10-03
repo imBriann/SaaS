@@ -172,7 +172,7 @@ export async function evaluateAndExecute(
       await tx.query(`UPDATE pending_action SET estado='EXPIRADA' WHERE conversation_id=$1 AND estado='PENDIENTE'`, [conversationId]);
       await tx.query(
         `INSERT INTO pending_action (id, tenant_id, conversation_id, agent_id, herramienta, argumentos, resumen, estado, expira_en)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'PENDIENTE', now() + interval '15 minutes')`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'PENDIENTE', now() + interval '5 minutes')`,
         [pendingId, ctx.tenantId, conversationId, agent.id, t.nombre, JSON.stringify(parsed.data), resumen],
       );
     }
