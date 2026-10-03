@@ -1,5 +1,10 @@
 # Plataforma SaaS Inteligente Multi-Tenant
 
+[![CI](https://github.com/imBriann/SaaS/actions/workflows/ci.yml/badge.svg)](https://github.com/imBriann/SaaS/actions/workflows/ci.yml)
+
+> Proyecto integrador de Brian David Acevedo Gómez — Ingeniería de Sistemas, Universidad de Pamplona.
+> Tablero Kanban del MVP: <https://github.com/users/imBriann/projects/3> · Flujo de trabajo: GitHub Flow (ramas cortas + Pull Request a `main` protegida, con el pipeline build/lint/test en verde).
+
 Sistema operativo conversacional y fiscal para micronegocios colombianos: el cliente entra por WhatsApp, la operación queda registrada, la factura sale válida ante la DIAN y llega por WhatsApp y correo, y la IA actúa sobre el negocio con permisos verificados y auditados.
 
 Implementa las **Capas 0 y 1** de PRO-SW-001 Rev 0.2 (más el segundo sector de la Capa 2), la arquitectura de PRO-SW-002 Rev 0.1 y las 20 pantallas de PRO-SW-003 Rev 0.2.
