@@ -3,6 +3,9 @@ import { Database } from '../src/db/index.js';
 import { buildApp } from '../src/http/app.js';
 import { seedDemo } from '../src/seed/demo.js';
 import { setLlm } from '../src/ai/llm/index.js';
+import { receiveChannelMessages } from '../src/modules/channelInbound.js';
+import { drain } from '../src/worker/jobs.js';
+import { uuidv7 } from '../src/lib/util.js';
 
 export interface Env {
   db: Database;
@@ -45,3 +48,9 @@ export const CRED = {
   andres: ['andres@elparche.test', 'demo-equipo-2026'] as const,
   gym: ['admin@fuerzanorte.test', 'demo-fuerza-2026'] as const,
 };
+
+/** Simula un mensaje entrante de WhatsApp para el negocio de demostración y procesa la cola hasta vaciarla. */
+export async function simularWhatsApp(db: Database, from: string, texto: string, nombre = 'Cliente', prefijo = 't') {
+  await receiveChannelMessages(db, [{ phoneNumberId: 'sim-elparche', from, nombre, id: `${prefijo}.${uuidv7()}`, texto }], 'WHATSAPP', prefijo);
+  await drain(db);
+}

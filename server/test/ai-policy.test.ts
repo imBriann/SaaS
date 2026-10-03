@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { setup, login, api, CRED, type Env } from './helpers.js';
+import { setup, login, api, CRED, simularWhatsApp, type Env } from './helpers.js';
 import { evaluateAndExecute, visibleTools, type AgentProfile } from '../src/ai/gateway.js';
 import { loadAgent, handleCustomerMessage } from '../src/ai/runtime.js';
 import { setLlm } from '../src/ai/llm/index.js';
@@ -137,10 +137,7 @@ describe('Confirmación determinista y recibo', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-07T14:00:00Z')); // miércoles: «mañana» siempre es día hábil
     const from = '573019990001';
-    const wa = async (texto: string) => {
-      await receiveChannelMessages(E.db, [{ phoneNumberId: 'sim-elparche', from, nombre: 'Prueba', id: `t.${uuidv7()}`, texto }], 'WHATSAPP', 't');
-      await drain(E.db);
-    };
+    const wa = (texto: string) => simularWhatsApp(E.db, from, texto, 'Prueba');
     await wa('hola'); await wa('si');
     await wa('quiero una cita de corte clásico mañana a las 10');
     const antes = await E.db.withTenant(E.A, async (tx) => (await tx.query(`SELECT count(*)::int n FROM appointment a JOIN customer c ON c.id=a.customer_id WHERE c.telefono='+${from}'`)).rows[0].n);
@@ -155,10 +152,7 @@ describe('Confirmación determinista y recibo', () => {
 
   it('responder NO descarta la acción y lo registra', async () => {
     const from = '573019990002';
-    const wa = async (texto: string) => {
-      await receiveChannelMessages(E.db, [{ phoneNumberId: 'sim-elparche', from, nombre: 'Prueba2', id: `t.${uuidv7()}`, texto }], 'WHATSAPP', 't');
-      await drain(E.db);
-    };
+    const wa = (texto: string) => simularWhatsApp(E.db, from, texto, 'Prueba2');
     await wa('hola'); await wa('si');
     await wa('quiero comprar una cera para peinar');
     await wa('no');
