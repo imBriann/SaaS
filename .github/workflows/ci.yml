@@ -28,9 +28,9 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: server/package-lock.json
-      - name: Build (instalación reproducible)
+      - name: Instalar dependencias (npm ci, reproducible desde el lockfile)
         run: npm ci
-      - name: Lint (verificación de tipos)
+      - name: Verificar tipos (tsc --noEmit)
         run: npm run typecheck
-      - name: Test (suite completa)
+      - name: Ejecutar pruebas (Vitest, suite completa)
         run: npm test

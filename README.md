@@ -43,7 +43,7 @@ Recorrido sugerido: **Simulador WhatsApp** (menú «Piloto») → escribe como c
 npm test
 ```
 
-69 pruebas contra PostgreSQL (PGlite en memoria), organizadas según el marco de investigación (PRO-SW-001 §25):
+83 pruebas en 6 archivos (medición del 3 de octubre de 2026 en la rama main, ejecución #2 de GitHub Actions) contra PostgreSQL (PGlite en memoria), organizadas según el marco de investigación de la propuesta del proyecto (§25). `test/importer.unit.test.ts` cubre los caminos básicos de `parsePrecio`:
 
 | Archivo | Qué demuestra | Variable de §25.4 |
 |---|---|---|
