@@ -27,10 +27,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: server/package-lock.json
-      - name: Instalar dependencias (npm ci, reproducible desde el lockfile)
+          cache-dependency-path: |
+            server/package-lock.json
+            web/package-lock.json
+      - name: Instalar dependencias del servidor (npm ci, reproducible desde el lockfile)
         run: npm ci
-      - name: Verificar tipos (tsc --noEmit)
+      - name: Verificar tipos del servidor (tsc --noEmit; no es un lint completo)
         run: npm run typecheck
+      - name: Compilar el cliente web (npm ci + tsc --noEmit + vite build)
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
       - name: Ejecutar pruebas (Vitest, suite completa)
         run: npm test
