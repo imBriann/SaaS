@@ -3,7 +3,7 @@
 [![CI](https://github.com/imBriann/SaaS/actions/workflows/ci.yml/badge.svg)](https://github.com/imBriann/SaaS/actions/workflows/ci.yml)
 
 > Proyecto integrador de Brian David Acevedo Gómez — Ingeniería de Sistemas, Universidad de Pamplona.
-> Tablero Kanban del MVP: <https://github.com/users/imBriann/projects/3> · Flujo de trabajo: GitHub Flow (ramas cortas + Pull Request a `main` protegida, con el pipeline build/lint/test en verde).
+> Tablero Kanban del MVP: <https://github.com/users/imBriann/projects/3> · Flujo de trabajo: GitHub Flow (ramas cortas + Pull Request a `main` protegida, con el check `build-lint-test` en verde: instala dependencias, verifica tipos del servidor, compila el cliente web y ejecuta las pruebas; ESLint aún no forma parte del pipeline).
 
 Sistema operativo conversacional y fiscal para micronegocios colombianos: el cliente entra por WhatsApp, la operación queda registrada, la factura sale válida ante la DIAN y llega por WhatsApp y correo, y la IA actúa sobre el negocio con permisos verificados y auditados.
 
@@ -43,7 +43,7 @@ Recorrido sugerido: **Simulador WhatsApp** (menú «Piloto») → escribe como c
 npm test
 ```
 
-69 pruebas contra PostgreSQL (PGlite en memoria), organizadas según el marco de investigación (PRO-SW-001 §25):
+83 pruebas en 6 archivos (medición del 3 de octubre de 2026 en la rama main, ejecución #2 de GitHub Actions) contra PostgreSQL (PGlite en memoria), organizadas según el marco de investigación de la propuesta del proyecto (§25). `test/importer.unit.test.ts` cubre los caminos básicos de `parsePrecio`:
 
 | Archivo | Qué demuestra | Variable de §25.4 |
 |---|---|---|
