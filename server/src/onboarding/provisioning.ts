@@ -179,9 +179,18 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
     },
     async (e) => { etapas.push({ etapa: e, en: new Date().toISOString() }); },
   );
+  // Instantánea de la configuración efectiva en este momento. El token público del borrador solo
+  // puede ver esto: nunca los datos operativos actuales del tenant (esos exigen sesión y permisos).
+  const tenant = (await tx.query(`SELECT nombre, slug, tema, logo_data_url FROM tenant WHERE id=$1`, [r.tenantId])).rows[0];
+  const modulos = (await tx.query(`SELECT modulo FROM tenant_module WHERE tenant_id=$1 AND activo ORDER BY modulo`, [r.tenantId])).rows.map((x: any) => x.modulo);
+  const productos = (await tx.query(`SELECT nombre, tipo, precio FROM product WHERE tenant_id=$1 AND eliminado_en IS NULL ORDER BY creado_en, nombre`, [r.tenantId])).rows;
+  const cierre = {
+    nombre: tenant.nombre, slug: tenant.slug, tema: tenant.tema, logo_data_url: tenant.logo_data_url, modulos,
+    catalogo: { origen: d.catalogo?.length ? 'propio' : 'ejemplo', total: productos.length, muestra: productos.slice(0, 4).map((x: any) => ({ ...x, precio: Number(x.precio) })) },
+  };
   await tx.query(
-    `UPDATE onboarding_draft SET estado='APROVISIONADO', tenant_id=$2, password_token=$3, etapas=$4, actualizado_en=now() WHERE token=$1`,
-    [draftToken, r.tenantId, r.passwordToken, JSON.stringify(etapas)],
+    `UPDATE onboarding_draft SET estado='APROVISIONADO', tenant_id=$2, password_token=$3, etapas=$4, cierre=$5, actualizado_en=now() WHERE token=$1`,
+    [draftToken, r.tenantId, r.passwordToken, JSON.stringify(etapas), JSON.stringify(cierre)],
   );
   await tx.query(`UPDATE payment SET tenant_id=$2 WHERE draft_token=$1`, [draftToken, r.tenantId]);
   await auditPlatform(tx, r.tenantId, { tipo: 'SISTEMA', id: null, nombre: 'Aprovisionamiento' }, 'WEBHOOK', correlacion, {

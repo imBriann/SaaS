@@ -220,10 +220,16 @@ export async function startCheckout(db: Database, tk: string) {
 export async function draftStatus(db: Database, tk: string) {
   const d = await loadDraft(db, tk);
   const pago = await db.withPlatform(async (tx) => (await tx.query(`SELECT estado, referencia, monto FROM payment WHERE draft_token=$1 ORDER BY creado_en DESC LIMIT 1`, [tk])).rows[0]);
-  const t = d.tenant_id ? await db.withPlatform(async (tx) => (await tx.query(`SELECT slug, nombre FROM tenant WHERE id=$1`, [d.tenant_id])).rows[0]) : null;
+  // El token público del borrador NO consulta el tenant vivo: solo la instantánea fijada al aprovisionar.
+  // Los datos actuales (catálogo, módulos, tema) exigen sesión, pertenencia y permisos en /api/t/*.
+  const c = d.cierre;
+  // Altas anteriores a la instantánea: solo el subdominio y el nombre, necesarios para entrar.
+  const t = c ? { slug: c.slug, nombre: c.nombre }
+    : d.tenant_id ? await db.withPlatform(async (tx) => (await tx.query(`SELECT slug, nombre FROM tenant WHERE id=$1`, [d.tenant_id])).rows[0]) : null;
+  const panel = c ? { tema: c.tema, logo_data_url: c.logo_data_url, modulos: c.modulos, catalogo: c.catalogo } : null;
   return {
     estado: d.estado, etapas: d.etapas, pago: pago ? { ...pago, monto: Number(pago.monto) } : null,
-    tenant: t, email: d.negocio?.email ?? null,
+    tenant: t, panel, email: d.negocio?.email ?? null,
     // El portador del token de borrador es quien pagó: puede fijar la contraseña una vez.
     requiere_contrasena: !!d.password_token,
   };

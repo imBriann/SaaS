@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { setup, login, api, CRED, simularWhatsApp, type Env } from './helpers.js';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { setup, login, api, CRED, type Env } from './helpers.js';
 import { evaluateAndExecute, visibleTools, type AgentProfile } from '../src/ai/gateway.js';
 import { loadAgent, handleCustomerMessage } from '../src/ai/runtime.js';
 import { setLlm } from '../src/ai/llm/index.js';
@@ -134,10 +134,11 @@ describe('Matriz de casos de política', () => {
 
 describe('Confirmación determinista y recibo', () => {
   it('la acción confirmable solo se ejecuta cuando el CLIENTE responde SÍ', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-10-07T14:00:00Z')); // miércoles: «mañana» siempre es día hábil
     const from = '573019990001';
-    const wa = (texto: string) => simularWhatsApp(E.db, from, texto, 'Prueba');
+    const wa = async (texto: string) => {
+      await receiveChannelMessages(E.db, [{ phoneNumberId: 'sim-elparche', from, nombre: 'Prueba', id: `t.${uuidv7()}`, texto }], 'WHATSAPP', 't');
+      await drain(E.db);
+    };
     await wa('hola'); await wa('si');
     await wa('quiero una cita de corte clásico mañana a las 10');
     const antes = await E.db.withTenant(E.A, async (tx) => (await tx.query(`SELECT count(*)::int n FROM appointment a JOIN customer c ON c.id=a.customer_id WHERE c.telefono='+${from}'`)).rows[0].n);
@@ -147,12 +148,14 @@ describe('Confirmación determinista y recibo', () => {
     expect(despues).toEqual([{ origen: 'AGENTE' }]);
     const recibo = await E.db.withTenant(E.A, async (tx) => (await tx.query(`SELECT decision, confirmado_por FROM ai_execution WHERE herramienta='crear_cita' AND decision='CONFIRMADA' ORDER BY creado_en DESC LIMIT 1`)).rows[0]);
     expect(recibo.confirmado_por).toMatch(/^CLIENTE:/);
-    vi.useRealTimers();
   });
 
   it('responder NO descarta la acción y lo registra', async () => {
     const from = '573019990002';
-    const wa = (texto: string) => simularWhatsApp(E.db, from, texto, 'Prueba2');
+    const wa = async (texto: string) => {
+      await receiveChannelMessages(E.db, [{ phoneNumberId: 'sim-elparche', from, nombre: 'Prueba2', id: `t.${uuidv7()}`, texto }], 'WHATSAPP', 't');
+      await drain(E.db);
+    };
     await wa('hola'); await wa('si');
     await wa('quiero comprar una cera para peinar');
     await wa('no');

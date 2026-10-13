@@ -1,7 +1,6 @@
 import { cop } from '../api';
 export function Quote({ quote, loading = false }: { quote: any; loading?: boolean }) {
   return <aside className="quote-card" aria-busy={loading}>
-    <span className="eyebrow">TU PLATAFORMA, A TU MEDIDA</span>
     <h3>Así queda tu selección</h3>
     {!quote ? <p className="sec">Elige tus funciones para calcular la estimación.</p> : <>
       <div className="quote-total" aria-live="polite">{loading ? 'Calculando…' : cop(quote.total)}<small> COP / mes</small></div>

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, cop, fecha, hace, hora } from '../../api';
-import { Cabecera, useSesion } from '../../components/Layout';
-import { Cargando, Confirmar, ErrorCarga, Estado, Recibo, Tarjeta, useAccion, useApi, Vacio } from '../../components/ui';
+import { Escritura, Cabecera, useSesion } from '../../components/Layout';
+import { Cargando, Confirmar, ErrorCarga, Estado, Mensaje, Recibo, Tarjeta, useAccion, useApi, Vacio, type TipoMensaje } from '../../components/ui';
 import { Icon } from '../../components/icons';
 
 /** SCR-014 · Bandeja y radicados. */
@@ -12,53 +12,67 @@ export function Conversaciones() {
   const [filtro, setFiltro] = useState('todas');
   const { data, error, recargar } = useApi<any>(() => api.get(`/api/t/conversaciones?filtro=${filtro}`), [filtro], { cada: 5000 });
   const filtros: [string, string][] = [['todas', 'Todas'], ['escaladas', 'Con una persona'], ['ia', 'Atendiendo la IA'], ['mias', 'Asignadas a mí'], ['cerradas', 'Cerradas']];
+  const vacio = <Vacio titulo="No hay conversaciones en esta vista">{filtro === 'todas' ? 'Cuando un cliente escriba por WhatsApp, su conversación aparecerá aquí.' : 'Prueba con otro filtro.'}</Vacio>;
   return (
     <>
-      <Cabecera titulo="Conversaciones" sub="Un solo hilo por cliente: IA, equipo y sistema" />
+      {!id && <Cabecera titulo="Conversaciones" sub="Un solo hilo por cliente: IA, equipo y sistema" />}
       <div className="contenido">
         {error && <ErrorCarga error={error} reintentar={recargar} />}
-        <div className="grid" style={{ gridTemplateColumns: id ? '300px minmax(0, 1fr)' : '1fr', alignItems: 'start' }}>
-          <section className="tarjeta">
-            {id ? (
-              <div style={{ padding: '20px 20px 8px' }}>
-                <select className="input" value={filtro} onChange={(e) => setFiltro(e.target.value)} aria-label="Filtrar conversaciones">
-                  {filtros.map(([k, v]) => <option key={k} value={k}>{v}{data?.contadores?.[k] !== undefined ? ` (${data.contadores[k]})` : ''}</option>)}
-                </select>
+        {!id ? (
+          <section className="tarjeta" hidden={!!error}>
+            <div className="filtros">
+              <div className="tabs" role="group" aria-label="Filtrar conversaciones">
+                {filtros.map(([k, v]) => <button key={k} className={filtro === k ? 'on' : ''} aria-pressed={filtro === k} onClick={() => setFiltro(k)}>{v}{data?.contadores?.[k] !== undefined && <span className="tenue"> {data.contadores[k]}</span>}</button>)}
               </div>
-            ) : (
-              <div className="tabs" style={{ margin: '20px 20px 8px' }}>
-                {filtros.map(([k, v]) => <button key={k} className={filtro === k ? 'on' : ''} onClick={() => setFiltro(k)}>{v}{data?.contadores?.[k] !== undefined && <span className="tenue"> {data.contadores[k]}</span>}</button>)}
-              </div>
-            )}
-            {!data ? <Cargando /> : data.conversaciones.length === 0 ? <Vacio titulo="No hay conversaciones en esta vista" /> : (
-              <div className="tabla-wrap" style={{ maxHeight: 'calc(100vh - 300px)' }}>
+            </div>
+            {!data ? <Cargando /> : data.conversaciones.length === 0 ? vacio : (
+              <div className="tabla-wrap">
                 <table className="tabla">
-                  <thead><tr><th>Cliente</th>{!id && <><th>Último mensaje</th><th>Estado</th></>}{!id && <><th>Resuelta por</th><th>Acciones de IA</th><th>Radicado</th><th>SLA</th></>}</tr></thead>
+                  <thead><tr><th>Cliente</th><th>Último mensaje</th><th>Estado</th><th>Al frente</th><th>Acciones de IA</th><th>Radicado</th><th>SLA</th></tr></thead>
                   <tbody>{data.conversaciones.map((c: any) => (
-                    <tr key={c.id} className={`clic ${c.id === id ? 'sel' : ''}`} onClick={() => nav(`/conversaciones/${c.id}`)}>
-                      {id ? (
-                        <td>
-                          <div className="fila entre" style={{ gap: 8 }}><b style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.cliente}</b><span className="tenue" style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>{hace(c.actualizado_en)}</span></div>
-                          <div className="tenue" style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 230, margin: '2px 0 6px' }}>{c.ultimo}</div>
-                          <Estado v={c.estado} />
-                        </td>
-                      ) : <td><b>{c.cliente}</b><br /><span className="tenue">{hace(c.actualizado_en)}</span></td>}
-                      {!id && <td className="sec" style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.ultimo}</td>}
-                      {!id && <td><Estado v={c.estado} /></td>}
-                      {!id && <>
-                        <td>{c.resuelta_por ? <Estado v={c.resuelta_por} /> : c.control === 'AI' ? <Estado v="AGENTE" texto="IA al frente" /> : <Estado v="PERSONA" texto={c.asignado ?? 'En cola'} />}</td>
-                        <td><span className="estado ok"><Icon n="ok" className="" />{c.ia_ejecutadas}</span> {c.ia_bloqueadas > 0 && <span className="estado err"><Icon n="candado" className="" />{c.ia_bloqueadas}</span>}</td>
-                        <td className="mono">{c.radicado ?? '—'}</td>
-                        <td><Sla c={c} /></td>
-                      </>}
+                    <tr key={c.id} className="clic" onClick={() => nav(`/conversaciones/${c.id}`)}>
+                      <td style={{ whiteSpace: 'nowrap' }}><Link to={`/conversaciones/${c.id}`} style={{ color: 'inherit', fontWeight: 600 }} onClick={(e) => e.stopPropagation()}>{c.cliente}</Link><br /><span className="tenue peq-txt">{hace(c.actualizado_en)}</span></td>
+                      <td className="sec cortar" style={{ maxWidth: 320 }}>{c.ultimo}</td>
+                      <td><Estado v={c.estado} /></td>
+                      <td>{c.resuelta_por ? <Estado v={c.resuelta_por} /> : c.control === 'AI' ? <Estado v="AGENTE" texto="IA al frente" /> : <Estado v="PERSONA" texto={c.asignado ?? 'En cola'} />}</td>
+                      <td><span className="fila" style={{ gap: 4 }}><span className="estado ok" title="Ejecutadas"><Icon n="ok" className="" />{c.ia_ejecutadas}<span className="sr"> ejecutadas</span></span>{c.ia_bloqueadas > 0 && <span className="estado err" title="Bloqueadas"><Icon n="candado" className="" />{c.ia_bloqueadas}<span className="sr"> bloqueadas</span></span>}</span></td>
+                      <td>{c.radicado ? <span className="id">{c.radicado}</span> : <span className="tenue">—</span>}</td>
+                      <td><Sla c={c} /></td>
                     </tr>
                   ))}</tbody>
                 </table>
               </div>
             )}
           </section>
-          {id && <Detalle id={id} onCambio={recargar} />}
-        </div>
+        ) : (
+          <div className="bandeja-detalle con-detalle" hidden={!!error}>
+            <section className="tarjeta bandeja-lista" aria-label="Bandeja">
+              <div className="filtros">
+                <select className="input" value={filtro} onChange={(e) => setFiltro(e.target.value)} aria-label="Filtrar conversaciones">
+                  {filtros.map(([k, v]) => <option key={k} value={k}>{v}{data?.contadores?.[k] !== undefined ? ` (${data.contadores[k]})` : ''}</option>)}
+                </select>
+              </div>
+              {!data ? <Cargando /> : data.conversaciones.length === 0 ? vacio : (
+                <div className="tabla-wrap">
+                  <table className="tabla">
+                    <tbody>{data.conversaciones.map((c: any) => (
+                      <tr key={c.id} className={`clic ${c.id === id ? 'sel' : ''}`} onClick={() => nav(`/conversaciones/${c.id}`)} aria-current={c.id === id ? 'true' : undefined}>
+                        <td>
+                          <div className="conv-item">
+                            <div className="linea1"><Link to={`/conversaciones/${c.id}`} className="cortar" style={{ color: 'inherit', fontWeight: 600 }} onClick={(e) => e.stopPropagation()}>{c.cliente}</Link><span className="tenue peq-txt" style={{ whiteSpace: 'nowrap' }}>{hace(c.actualizado_en)}</span></div>
+                            <div className="ultimo cortar">{c.ultimo}</div>
+                            <div className="estados"><Estado v={c.estado} />{c.radicado && <span className="id tenue">{c.radicado}</span>}</div>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+            <Detalle id={id} onCambio={recargar} />
+          </div>
+        )}
       </div>
     </>
   );
@@ -68,7 +82,12 @@ function Sla({ c }: { c: any }) {
   if (!c.sla_vence_en || c.estado_caso === 'CERRADO') return <span className="tenue">—</span>;
   if (c.primera_respuesta_en) return <Estado v="EXITO" texto="Respondido" />;
   const min = Math.round((new Date(c.sla_vence_en).getTime() - Date.now()) / 60000);
-  return min < 0 ? <Estado v="RECHAZADO" texto={`Vencido ${-min} min`} /> : <Estado v="PENDIENTE" texto={`${min} min`} />;
+  return min < 0 ? <Estado v="RECHAZADO" texto={`Vencido hace ${-min} min`} /> : <Estado v="PENDIENTE" texto={`Vence en ${min} min`} />;
+}
+
+function tipoDe(m: any): TipoMensaje {
+  if (m.tipo === 'NOTA_INTERNA') return 'nota';
+  return m.remitente === 'CUSTOMER' ? 'cliente' : m.remitente === 'AI' ? 'ia' : m.remitente === 'HUMAN' ? 'humano' : 'sistema';
 }
 
 /** SCR-015 · Detalle: el asesor entra al mismo hilo; la IA pasa a asistirlo (P5). */
@@ -89,91 +108,116 @@ function Detalle({ id, onCambio }: { id: string; onCambio: () => void }) {
     ...data.ejecuciones.map((e: any) => ({ t: 'e', at: e.creado_en, e })),
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   const caso = data.caso;
+  const nombre = data.cliente.split(' ')[0];
   const enviar = async () => {
+    if (!texto.trim()) return;
     const r = await run(() => api.post(`/api/t/conversaciones/${id}/${nota ? 'nota' : 'responder'}`, { texto }), nota ? 'Nota interna guardada' : 'Mensaje enviado');
     if (r) { setTexto(''); recargar(); onCambio(); }
   };
   const sugerir = async () => { const r = await run(() => api.post(`/api/t/conversaciones/${id}/sugerencia`)); if (r?.sugerencia) setTexto(r.sugerencia); };
 
   return (
-    <div className="grid detalle-conv" style={{ alignItems: 'start' }}>
-      <section className="tarjeta" style={{ display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 230px)', minHeight: 520 }}>
-        <div className="cab" style={{ flexWrap: 'wrap', flex: 'none', paddingBottom: 16, borderBottom: '1px solid var(--linea)' }}>
-          <div style={{ minWidth: 0 }}><div className="titulo-tarjeta">{data.cliente}</div><div className="tenue" style={{ fontSize: 13.5 }}><span className="mono">{data.telefono}</span> · {data.canal === 'WHATSAPP' ? 'WhatsApp' : 'Web'} · {data.control === 'AI' ? 'la IA está al frente' : 'una persona está al frente'}</div></div>
-          <div className="fila envolver" style={{ marginLeft: 'auto', gap: 6 }}>
-            {caso && caso.estado !== 'CERRADO' && !caso.asignado_a && puede('case:manage') && <button className="btn peq" onClick={() => run(() => api.post(`/api/t/casos/${caso.id}/tomar`), 'Caso asignado a ti').then(recargar)}>Tomar caso</button>}
-            {data.control === 'AI' && data.estado !== 'CERRADA' && puede('case:create') && <button className="btn peq" onClick={() => run(() => api.post(`/api/t/conversaciones/${id}/escalar`, { motivo: 'Intervención manual desde el panel', prioridad: 'MEDIA' }), 'Conversación escalada').then(() => { recargar(); onCambio(); })}>Intervenir</button>}
-            {data.control === 'HUMANO' && puede('case:manage') && <button className="btn peq" onClick={() => run(() => api.post(`/api/t/conversaciones/${id}/devolver-ia`), 'La IA vuelve a atender').then(() => { recargar(); onCambio(); })}>Devolver a la IA</button>}
-            {data.estado !== 'CERRADA' && puede('case:manage') && <button className="btn peq" onClick={() => setCerrar(true)}>Cerrar</button>}
+    <div className="detalle-conv">
+      <section className="tarjeta panel-hilo" aria-label={`Conversación con ${data.cliente}`}>
+        <div className="cab">
+          <Link to="/conversaciones" className="btn sutil peq icono solo-movil" aria-label="Volver a la bandeja"><Icon n="atras" className="" size={18} /></Link>
+          <div className="conv-cab-txt">
+            <h1 className="titulo-tarjeta" style={{ fontSize: 17 }}>{data.cliente}</h1>
+            <span className="tenue"><span className="mono">{data.telefono}</span> · {data.canal === 'WHATSAPP' ? 'WhatsApp' : 'Web'}</span>
+          </div>
+          <span className="fila envolver" style={{ marginLeft: 'auto', gap: 6 }}>
+            {data.control === 'AI' ? <Estado v="AGENTE" texto="La IA está al frente" /> : <Estado v="PERSONA" texto="Una persona está al frente" />}
+          </span>
+          <div className="fila envolver" style={{ gap: 6, flexBasis: '100%' }}>
+            {caso && caso.estado !== 'CERRADO' && !caso.asignado_a && <Escritura permiso="case:manage" modulo="conversaciones"><button className="btn peq primario" disabled={ocupado} onClick={() => run(() => api.post(`/api/t/casos/${caso.id}/tomar`), 'Caso asignado a ti').then(recargar)}><Icon n="persona" className="" size={14} />Tomar caso</button></Escritura>}
+            {data.control === 'AI' && data.estado !== 'CERRADA' && <Escritura permiso="case:create" modulo="conversaciones"><button className="btn peq" disabled={ocupado} onClick={() => run(() => api.post(`/api/t/conversaciones/${id}/escalar`, { motivo: 'Intervención manual desde el panel', prioridad: 'MEDIA' }), 'Conversación escalada').then(() => { recargar(); onCambio(); })}><Icon n="persona" className="" size={14} />Intervenir</button></Escritura>}
+            {data.control === 'HUMANO' && <Escritura permiso="case:manage" modulo="conversaciones"><button className="btn peq" disabled={ocupado} onClick={() => run(() => api.post(`/api/t/conversaciones/${id}/devolver-ia`), 'La IA vuelve a atender').then(() => { recargar(); onCambio(); })}><Icon n="ia" className="" size={14} />Devolver a la IA</button></Escritura>}
+            {data.estado !== 'CERRADA' && <Escritura permiso="case:manage" modulo="conversaciones"><button className="btn peq sutil" onClick={() => setCerrar(true)}>Cerrar conversación</button></Escritura>}
           </div>
         </div>
-        <div className="cuerpo hilo" style={{ overflowY: 'auto', flex: 1 }}>
-          {eventos.map((ev: any) => {
-            if (ev.t === 'e') return <Recibo key={ev.e.id} e={ev.e} />;
-            const m = ev.m;
-            if (m.remitente === 'SYSTEM' && m.tipo === 'NOTA_INTERNA') return <div key={m.id} className="burbuja sistema"><Icon n="info" className="" size={12} /> {m.contenido}</div>;
-            const cls = m.tipo === 'NOTA_INTERNA' ? 'nota' : m.remitente === 'CUSTOMER' ? 'cliente' : m.remitente === 'AI' ? 'ia' : m.remitente === 'HUMAN' ? 'humano' : 'sistema';
-            const quien = m.tipo === 'NOTA_INTERNA' ? `Nota interna · ${m.autor}` : m.remitente === 'CUSTOMER' ? data.cliente : m.remitente === 'AI' ? 'Agente IA' : m.remitente === 'HUMAN' ? m.autor : m.tipo === 'PLANTILLA' ? `Plantilla · ${m.metadatos?.plantilla}` : 'Sistema';
-            return (
-              <div key={m.id} className={`burbuja ${cls}`}>
-                <div className="quien">{quien}</div>{m.contenido}
-                <div className="hora">{fecha(m.creado_en)} {hora(m.creado_en)}{m.estado_entrega !== 'N/A' && ` · ${m.estado_entrega.toLowerCase()}`}</div>
-              </div>
-            );
-          })}
-          {caso && <div className="escalado-aviso"><Icon n="persona" className="" size={13} /> {caso.radicado} · {caso.motivo} · prioridad {caso.prioridad.toLowerCase()} {caso.asignado ? `· asignado a ${caso.asignado}` : '· en cola'}</div>}
-          {data.pendientes.map((p: any) => <div key={p.id} className="recibo pendiente"><span className="ic"><Icon n="reloj" className="" size={13} /></span><span>Esperando que el cliente confirme: <b>{p.resumen}</b></span><Estado v="PENDIENTE_CONFIRMACION" /></div>)}
-          <div ref={fin} />
+        <div className="hilo-scroll">
+          <div className="hilo" aria-live="polite" aria-relevant="additions">
+            {eventos.map((ev: any) => {
+              if (ev.t === 'e') return <Recibo key={ev.e.id} e={ev.e} />;
+              const m = ev.m;
+              if (m.remitente === 'SYSTEM' && m.tipo === 'NOTA_INTERNA') return <div key={m.id} className="evento-sistema"><Icon n="info" className="" size={13} /> {m.contenido} · {hora(m.creado_en)}</div>;
+              const tipo = tipoDe(m);
+              const quien = tipo === 'nota' ? m.autor : tipo === 'cliente' ? data.cliente : tipo === 'humano' ? m.autor : undefined;
+              const rol = m.tipo === 'PLANTILLA' ? `Plantilla · ${m.metadatos?.plantilla}` : undefined;
+              return (
+                <Mensaje key={m.id} tipo={tipo} quien={quien} rol={rol} hora={`${fecha(m.creado_en)} ${hora(m.creado_en)}`}
+                  meta={m.estado_entrega !== 'N/A' ? m.estado_entrega.toLowerCase() : tipo === 'nota' ? 'Solo la ve el equipo' : undefined}>
+                  {m.contenido}
+                </Mensaje>
+              );
+            })}
+            {caso && <div className="escalado-aviso"><Icon n="persona" className="" size={14} /><span><span className="id">{caso.radicado}</span> · {caso.motivo} · prioridad {caso.prioridad.toLowerCase()} {caso.asignado ? `· asignado a ${caso.asignado}` : '· en cola'}</span></div>}
+            {data.pendientes.map((p: any) => <div key={p.id} className="recibo pendiente"><span className="ic"><Icon n="reloj" className="" size={14} /></span><span className="que">Esperando que el cliente confirme: <b>{p.resumen}</b></span><Estado v="PENDIENTE_CONFIRMACION" /></div>)}
+            <div ref={fin} />
+          </div>
         </div>
-        {puede('conversation:reply') && data.estado !== 'CERRADA' && (
-          <div className="cuerpo col" style={{ borderTop: '1px solid var(--linea)', gap: 8 }}>
-            {!data.ventana_abierta && data.canal === 'WHATSAPP' && !nota && <span className="estado warn" style={{ alignSelf: 'flex-start' }}><Icon n="reloj" className="" />Pasaron más de 24 h desde el último mensaje del cliente: WhatsApp solo permite plantillas aprobadas.</span>}
-            <textarea className="input" style={{ minHeight: 64 }} value={texto} onChange={(e) => setTexto(e.target.value)} placeholder={nota ? 'Nota visible solo para el equipo' : `Responder a ${data.cliente.split(' ')[0]} desde el panel`} aria-label="Mensaje" />
-            <div className="fila entre">
-              <label className="fila tenue"><input type="checkbox" checked={nota} onChange={(e) => setNota(e.target.checked)} /> Nota interna</label>
-              <div className="fila">
-                {puede('ai:assist') && <button className="btn" disabled={ocupado} onClick={sugerir}><Icon n="ia" className="" size={13} /> Sugerir respuesta</button>}
-                <button className="btn primario" disabled={ocupado || !texto.trim()} onClick={enviar}><Icon n="enviar" className="" size={13} /> {nota ? 'Guardar nota' : 'Enviar'}</button>
+        {data.estado === 'CERRADA' ? (
+          <div className="composer"><span className="tenue peq-txt fila"><Icon n="ok" className="" size={14} />Conversación cerrada. Si el cliente vuelve a escribir, la IA retoma este mismo hilo.</span></div>
+        ) : puede('conversation:reply') && !s.solo_lectura ? (
+          <div className={`composer ${nota ? 'nota' : ''}`}>
+            <div className="fila entre envolver" style={{ gap: 8 }}>
+              <div className="tabs" role="group" aria-label="Tipo de mensaje">
+                <button type="button" className={!nota ? 'on' : ''} aria-pressed={!nota} onClick={() => setNota(false)}>Responder a {nombre}</button>
+                <button type="button" className={nota ? 'on' : ''} aria-pressed={nota} onClick={() => setNota(true)}><Icon n="nota" className="" size={13} /> Nota interna</button>
               </div>
+              {puede('ai:assist') && !nota && <button className="btn peq sutil" disabled={ocupado} onClick={sugerir}><Icon n="ia" className="" size={14} /> Sugerir respuesta</button>}
             </div>
-            <span className="tenue">Respondes siempre desde aquí, nunca desde tu teléfono: así la conversación completa y el SLA quedan registrados.</span>
+            {!data.ventana_abierta && data.canal === 'WHATSAPP' && !nota && <div className="aviso peq-txt"><Icon n="reloj" className="" size={14} />Pasaron más de 24 h desde el último mensaje del cliente: WhatsApp solo permite plantillas aprobadas.</div>}
+            <textarea className="input" value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (!ocupado) enviar(); } }}
+              placeholder={nota ? 'Nota visible solo para el equipo' : `Escribe a ${nombre}. La respuesta sale por ${data.canal === 'WHATSAPP' ? 'WhatsApp' : 'el canal web'} desde este hilo.`} aria-label={nota ? 'Nota interna' : `Respuesta a ${data.cliente}`} />
+            <div className="fila entre envolver" style={{ gap: 8 }}>
+              <span className="tenue peq-txt ayuda-composer" style={{ maxWidth: '60ch' }}>{nota ? 'La nota queda en el hilo, marcada como interna. El cliente no la recibe.' : 'Responde siempre desde aquí, no desde tu teléfono: así el hilo y el SLA quedan registrados.'}</span>
+              <button className="btn primario" style={{ marginLeft: 'auto' }} disabled={ocupado || !texto.trim()} onClick={enviar}><Icon n={nota ? 'nota' : 'enviar'} className="" size={14} /> {nota ? 'Guardar nota' : 'Enviar'}</button>
+            </div>
           </div>
+        ) : (
+          <div className="composer"><span className="tenue peq-txt fila"><Icon n="candado" className="" size={14} />{s.solo_lectura ? 'Suscripción suspendida (solo lectura): no se pueden enviar respuestas ni guardar notas internas. Puedes leer el hilo completo.' : 'Tu rol puede leer esta conversación, pero no responder.'}</span></div>
         )}
       </section>
+
       <div className="col" style={{ gap: 16 }}>
         {caso && (
-          <Tarjeta titulo={<span className="mono">{caso.radicado}</span>} acciones={<Estado v={caso.estado} />} nivel={caso.estado === 'EN_COLA' ? 3 : 2}>
-            <div className="col" style={{ gap: 6 }}>
-              <span><b>Motivo:</b> {caso.motivo}</span>
-              <span><b>Prioridad:</b> {caso.prioridad.toLowerCase()} · <b>SLA:</b> {hora(caso.sla_vence_en)}</span>
-              <span><b>Asignado:</b> {caso.asignado ?? 'nadie (en cola)'}</span>
-              {caso.resumen_ia && <div className="burbuja ia" style={{ maxWidth: '100%', alignSelf: 'stretch' }}><div className="quien">Resumen del copiloto</div>{caso.resumen_ia}</div>}
-              {caso.motivo_cierre && <span className="tenue">Cerrado: {caso.motivo_cierre}</span>}
+          <Tarjeta titulo={<span className="id">{caso.radicado}</span>} acciones={<Estado v={caso.estado} />} nivel={caso.estado === 'EN_COLA' ? 3 : 2}>
+            <div className="col" style={{ gap: 12 }}>
+              <dl className="datos-def">
+                <dt>Motivo</dt><dd>{caso.motivo}</dd>
+                <dt>Prioridad</dt><dd>{caso.prioridad.toLowerCase()}</dd>
+                <dt>SLA</dt><dd>vence a las {hora(caso.sla_vence_en)}</dd>
+                <dt>Asignado</dt><dd>{caso.asignado ?? 'Nadie (en cola)'}</dd>
+                {caso.motivo_cierre && <><dt>Cierre</dt><dd>{caso.motivo_cierre}</dd></>}
+              </dl>
+              {caso.resumen_ia && <div className="resumen-copiloto"><span className="rol"><Icon n="ia" className="" size={12} />Resumen del copiloto · propuesta, no decisión</span>{caso.resumen_ia}</div>}
             </div>
           </Tarjeta>
         )}
-        <Tarjeta titulo="Cliente">
-          <div className="col" style={{ gap: 4 }}>
-            <b>{data.cliente}</b>
-            <span className="tenue">{data.email ?? 'sin correo'} · {data.numero_documento ? `${data.tipo_documento} ${data.numero_documento}` : 'consumidor final'}</span>
+        <Tarjeta titulo="Cliente" acciones={<Link to={`/clientes?id=${data.customer_id}`} className="btn sutil peq">Ver ficha</Link>}>
+          <div className="col" style={{ gap: 8 }}>
+            <dl className="datos-def">
+              <dt>Nombre</dt><dd>{data.cliente}</dd>
+              <dt>Correo</dt><dd>{data.email ?? <span className="tenue">Sin correo</span>}</dd>
+              <dt>Documento</dt><dd>{data.numero_documento ? <span className="mono">{data.tipo_documento} {data.numero_documento}</span> : 'Consumidor final'}</dd>
+            </dl>
             <span>{data.consentimiento_en ? <Estado v="EXITO" texto="Autorizó tratamiento de datos" /> : <Estado v="PENDIENTE" texto="Sin autorización de datos" />}</span>
-            <Link to={`/clientes?id=${data.customer_id}`} className="btn sutil peq" style={{ alignSelf: 'flex-start' }}>Ver ficha</Link>
           </div>
         </Tarjeta>
         {data.ventas.length > 0 && (
           <Tarjeta titulo="Compras recientes">
-            {data.ventas.map((v: any) => <Link key={v.id} to={`/ventas/${v.id}`} className="fila entre" style={{ color: 'inherit', padding: '3px 0' }}><span className="mono">#{v.numero}</span><span>{cop(v.total)}</span><Estado v={v.estado_fiscal} /></Link>)}
+            <div className="lista">{data.ventas.map((v: any) => <Link key={v.id} to={`/ventas/${v.id}`} className="lista-fila"><span className="mono">#{v.numero}</span><span className="num">{cop(v.total)}</span><Estado v={v.estado_fiscal} /></Link>)}</div>
           </Tarjeta>
         )}
         {data.citas.length > 0 && (
           <Tarjeta titulo="Citas">
-            {data.citas.map((c: any) => <div key={c.id} className="fila entre" style={{ padding: '3px 0' }}><span>{fecha(c.inicio)} {hora(c.inicio)}</span><span className="tenue">{c.servicio}</span><Estado v={c.estado} /></div>)}
+            <div className="lista">{data.citas.map((c: any) => <div key={c.id} className="lista-fila"><span className="peq-txt" style={{ whiteSpace: 'nowrap' }}>{fecha(c.inicio)} {hora(c.inicio)}</span><span className="tenue cortar">{c.servicio}</span><Estado v={c.estado} /></div>)}</div>
           </Tarjeta>
         )}
-        {s.solo_lectura && <div className="bloqueado">Cuenta en solo lectura.</div>}
       </div>
-      {cerrar && <Confirmar titulo="Cerrar conversación" riesgo="confirmable" pedirMotivo efecto={<>Se cerrará {caso ? `el radicado ${caso.radicado} y ` : ''}la conversación. Si el cliente vuelve a escribir, la IA retoma el mismo hilo.</>}
-        textoBoton="Cerrar" onCerrar={() => setCerrar(false)} onConfirmar={async (motivo) => { setCerrar(false); await run(() => api.post(`/api/t/conversaciones/${id}/cerrar`, { motivo }), 'Conversación cerrada'); recargar(); onCambio(); }} />}
+      {cerrar && <Confirmar titulo="Cerrar conversación" riesgo="confirmable" pedirMotivo efecto={<>Se cerrará {caso ? <>el radicado <span className="id">{caso.radicado}</span> y </> : ''}la conversación. Si el cliente vuelve a escribir, la IA retoma el mismo hilo.</>}
+        textoBoton="Cerrar conversación" onCerrar={() => setCerrar(false)} onConfirmar={async (motivo) => { setCerrar(false); await run(() => api.post(`/api/t/conversaciones/${id}/cerrar`, { motivo }), 'Conversación cerrada'); recargar(); onCambio(); }} />}
     </div>
   );
 }

@@ -175,3 +175,73 @@ describe('Unidades del importador y del tema', () => {
     expect(deriveTheme([], 'Sin Logo').origen).toBe('monograma');
   });
 });
+
+describe('Cierre del alta: el estado sale del servidor, no de la navegación', () => {
+  it('sin pago → pendiente → rechazado → reintento → panel con módulos efectivos y catálogo de ejemplo', async () => {
+    const { faseCierre, pasosCumplidos } = await import('../../web/src/pages/public/cierre.js');
+    const estado = async (tk: string) => (await E.app.inject({ method: 'GET', url: `/api/onboarding/borradores/${tk}/estado` })).json();
+    const d = (await post('/api/onboarding/borradores', { descripcion: 'Tengo un gimnasio en Cúcuta con dos entrenadores y clases de spinning todos los días.' })).json();
+    const tk = d.token;
+    await E.app.inject({ method: 'PATCH', url: `/api/onboarding/borradores/${tk}`, payload: { negocio: { nombre: 'Gimnasio Cierre', email: 'dueno@cierre.test', slug: 'cierre' } } });
+
+    // Borrador sin pago iniciado: no es «esperando confirmación».
+    let st = await estado(tk);
+    expect(st.pago).toBeNull();
+    expect(st.panel).toBeNull();
+    expect(faseCierre(tk, st, null)).toBe('sin_pago');
+    expect(pasosCumplidos('sin_pago', d)).toBeLessThan(4);
+
+    const p1 = (await post(`/api/onboarding/borradores/${tk}/pago`, {})).json();
+    st = await estado(tk);
+    expect(faseCierre(tk, st, null)).toBe('pendiente');
+
+    await post('/api/pasarela/simular', { ref: p1.referencia, resultado: 'rechazado' });
+    st = await estado(tk);
+    expect(st.estado).toBe('BORRADOR');
+    expect(faseCierre(tk, st, null)).toBe('rechazado');
+    expect(await E.db.withPlatform(async (tx) => (await tx.query(`SELECT count(*)::int n FROM tenant WHERE slug='cierre'`)).rows[0].n)).toBe(0);
+
+    // Reintento desde el cierre: una referencia nueva, de nuevo pendiente.
+    const p2 = (await post(`/api/onboarding/borradores/${tk}/pago`, {})).json();
+    expect(p2.referencia).not.toBe(p1.referencia);
+    expect(faseCierre(tk, await estado(tk), null)).toBe('pendiente');
+
+    await post('/api/pasarela/simular', { ref: p2.referencia, resultado: 'aprobado', entregas: 2 });
+    st = await estado(tk);
+    expect(faseCierre(tk, st, null)).toBe('listo');
+    const cot = (await E.app.inject({ method: 'GET', url: `/api/onboarding/borradores/${tk}` })).json().cotizacion;
+    expect(st.panel.modulos).toEqual([...cot.modulos].sort());
+    expect(st.panel.catalogo.origen).toBe('ejemplo');
+    expect(st.panel.catalogo.total).toBe(6);
+    expect(st.panel.catalogo.muestra).toHaveLength(4);
+    expect(st.panel.logo_data_url).toBeNull();
+    expect(st.panel.tema.origen).toBe('monograma');
+    expect(await E.db.withPlatform(async (tx) => (await tx.query(`SELECT count(*)::int n FROM tenant WHERE slug='cierre'`)).rows[0].n)).toBe(1);
+
+    // El token público del borrador sigue sirviendo para entrar, pero no expone cambios posteriores del tenant.
+    const antes = await estado(tk);
+    expect((await post(`/api/onboarding/borradores/${tk}/contrasena`, { password: 'clave-cierre-2026' })).statusCode).toBe(200);
+    const login = await post('/api/auth/login', { email: 'dueno@cierre.test', password: 'clave-cierre-2026' });
+    const T = api(E.app, `sid=${login.cookies.find((c) => c.name === 'sid')!.value}`, 'cierre');
+    const prod = (await T.get('/productos')).body.find((p: any) => p.nombre === antes.panel.catalogo.muestra[0].nombre);
+    expect((await T.patch(`/productos/${prod.id}`, { nombre: 'Producto renombrado en secreto', precio: 999 })).status).toBe(200);
+    const apagar = antes.panel.modulos.find((m: string) => !['clientes', 'catalogo'].includes(m));
+    expect((await T.patch(`/configuracion/modulos/${apagar}`, { activo: false })).status).toBe(200);
+    const despues = await estado(tk);
+    expect(despues.panel).toEqual(antes.panel);
+    expect(JSON.stringify(despues)).not.toContain('Producto renombrado en secreto');
+    expect(despues.panel.modulos).toContain(apagar);
+    // Los datos actuales sí están disponibles, pero solo con sesión y pertenencia.
+    expect((await T.get('/productos')).body.some((p: any) => p.nombre === 'Producto renombrado en secreto')).toBe(true);
+    expect((await E.app.inject({ method: 'GET', url: '/api/t/productos', headers: { 'x-tenant-slug': 'cierre' } })).statusCode).toBe(401);
+  });
+
+  it('un error de consulta no se confunde con un pago pendiente; un borrador perdido pide empezar', async () => {
+    const { faseCierre, debeConsultar } = await import('../../web/src/pages/public/cierre.js');
+    expect(faseCierre('x'.repeat(30), null, { status: 500 })).toBe('error');
+    expect(debeConsultar('error')).toBe(false);
+    expect(faseCierre('x'.repeat(30), null, { status: 404 })).toBe('sin_borrador');
+    expect(faseCierre(null, null, null)).toBe('sin_borrador');
+    expect(faseCierre('x'.repeat(30), null, null)).toBe('cargando');
+  });
+});

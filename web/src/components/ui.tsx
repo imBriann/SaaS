@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from './icons';
 import { ApiError, fechaHora, num } from '../api';
@@ -36,11 +36,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={show}>
       {children}
-      {t && <div className={`toast ${t.err ? 'err' : ''}`} role="status">{t.m}</div>}
+      {t && <Aviso t={t} />}
     </ToastCtx.Provider>
   );
 }
 export const useToast = () => useContext(ToastCtx);
+
+/** El aviso entra en la capa superior (popover) para verse también sobre un diálogo modal abierto. */
+function Aviso({ t }: { t: { m: string; err?: boolean } }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { try { (ref.current as any)?.showPopover?.(); } catch { /* sin Popover API: queda como capa fija */ } }, [t]);
+  return <div ref={ref} popover="manual" className={`toast ${t.err ? 'err' : ''}`} role={t.err ? 'alert' : 'status'}><Icon n={t.err ? 'alerta' : 'ok'} className="" size={16} />{t.m}</div>;
+}
 
 /** Ejecuta una acción mostrando el resultado; el error sale en lenguaje llano. */
 export function useAccion() {
@@ -102,18 +109,39 @@ export function Tarjeta({ titulo, acciones, children, nivel = 2, className = '',
   );
 }
 
+/** Dato clave. Va dentro de una franja `.kpis`, no como tarjeta suelta. */
 export function Cifra({ etiqueta, valor, detalle }: { etiqueta: string; valor: ReactNode; detalle?: ReactNode }) {
   return (
-    <div className="tarjeta col" style={{ gap: 10, padding: '24px 28px' }}>
+    <div className="kpi">
       <span className="etiqueta">{etiqueta}</span>
       <span className="cifra">{valor}</span>
-      {detalle && <span className="tenue">{detalle}</span>}
+      {detalle && <span className="detalle">{detalle}</span>}
     </div>
   );
 }
 
 export function Vacio({ titulo, children, accion }: { titulo: string; children?: ReactNode; accion?: ReactNode }) {
   return <div className="vacio"><b>{titulo}</b>{children && <span>{children}</span>}{accion}</div>;
+}
+
+/** Mensaje del hilo único (P5): el remitente se nombra con texto e icono, no solo con color. */
+export type TipoMensaje = 'cliente' | 'ia' | 'humano' | 'sistema' | 'nota';
+const ROL: Record<TipoMensaje, [string, string]> = {
+  cliente: ['Cliente', 'persona'], ia: ['Agente IA', 'ia'], humano: ['Asesor', 'persona'], sistema: ['Sistema', 'info'], nota: ['Nota interna', 'nota'],
+};
+export function Mensaje({ tipo, quien, rol, hora, meta, a, children }: { tipo: TipoMensaje; quien?: ReactNode; rol?: string; hora?: string; meta?: ReactNode; a?: string; children: ReactNode }) {
+  const [etiqueta, ico] = ROL[tipo];
+  const contenido = <>
+      <div className="msg-quien">
+        <span className="rol"><Icon n={ico} className="" />{rol ?? etiqueta}</span>
+        {quien && <span className="cortar">· {quien}</span>}
+        {hora && <span className="hora">· {hora}</span>}
+      </div>
+      <div className="msg-texto">{children}</div>
+      {meta && <div className="msg-meta">{meta}</div>}
+  </>;
+  if (a) return <Link to={a} className={`msg ${tipo}`}>{contenido}</Link>;
+  return <div className={`msg ${tipo}`}>{contenido}</div>;
 }
 
 export function Cargando({ filas = 4 }: { filas?: number }) {
@@ -129,27 +157,64 @@ export function ErrorCarga({ error, reintentar }: { error: ApiError; reintentar?
   if (error.status === 404) return <div className="bloqueado"><Icon n="candado" className="" size={16} /> No encontramos eso.</div>;
   if (error.status === 403) return <div className="bloqueado"><Icon n="candado" className="" size={16} /> Tu rol no tiene acceso a esta sección.</div>;
   return (
-    <div className="tarjeta fila entre" style={{ padding: '20px 28px' }}>
-      <span><b>No pudimos cargar esta información.</b> <span className="tenue">{error.message}</span></span>
-      {reintentar && <button className="btn" onClick={reintentar}>Reintentar</button>}
+    <div className="aviso" role="alert" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+      <span className="fila" style={{ alignItems: 'flex-start' }}><Icon n="alerta" className="" size={16} /><span><b>No pudimos cargar esta información.</b> <span style={{ fontWeight: 400 }}>{error.message}{reintentar ? ' Vuelve a intentarlo; si persiste, revisa tu conexión.' : ''}</span></span></span>
+      {reintentar && <button className="btn peq" onClick={reintentar}>Reintentar</button>}
     </div>
   );
 }
 
+const ENFOCABLES = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Diálogo modal sobre <dialog> nativo: showModal() deja el resto del documento
+ * inerte y en la capa superior. Foco inicial en el primer campo o, si no hay
+ * campos, en el propio diálogo (nombrado por su título). Tab y Mayús+Tab giran
+ * dentro; Escape, la ✕ y el clic fuera llaman a onCerrar; al cerrar, el foco
+ * vuelve al disparador si sigue en la página.
+ */
 export function Modal({ titulo, children, onCerrar, pie }: { titulo: string; children: ReactNode; onCerrar: () => void; pie?: ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const cerrar = useRef(onCerrar);
+  cerrar.current = onCerrar;
+  const idTitulo = useId();
   useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && onCerrar();
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [onCerrar]);
+    const dlg = ref.current;
+    if (!dlg) return;
+    const previo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!dlg.open) dlg.showModal();
+    const campo = dlg.querySelector<HTMLElement>('.cuerpo :is(input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]))');
+    (campo ?? dlg).focus();
+    const tecla = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const els = [...dlg.querySelectorAll<HTMLElement>(ENFOCABLES)].filter((el) => el.getClientRects().length > 0);
+      if (!els.length) { e.preventDefault(); return; }
+      const primero = els[0], ultimo = els[els.length - 1], act = document.activeElement;
+      if (e.shiftKey && (act === primero || act === dlg || !dlg.contains(act))) { e.preventDefault(); ultimo.focus(); }
+      else if (!e.shiftKey && (act === ultimo || !dlg.contains(act))) { e.preventDefault(); primero.focus(); }
+    };
+    // Escape: el diálogo no se cierra solo; lo desmonta quien lo abrió.
+    const cancelar = (e: Event) => { e.preventDefault(); cerrar.current(); };
+    dlg.addEventListener('keydown', tecla);
+    dlg.addEventListener('cancel', cancelar);
+    return () => {
+      dlg.removeEventListener('keydown', tecla);
+      dlg.removeEventListener('cancel', cancelar);
+      if (dlg.open) dlg.close();
+      if (previo?.isConnected) previo.focus();
+    };
+  }, []);
+  const fuera = (e: React.MouseEvent<HTMLDialogElement>) => {
+    if (e.target !== e.currentTarget) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) onCerrar();
+  };
   return (
-    <div className="capa" onClick={onCerrar}>
-      <div className="decision modal" role="dialog" aria-modal="true" aria-label={titulo} onClick={(e) => e.stopPropagation()}>
-        <div className="cab"><h2 className="titulo-tarjeta" style={{ fontSize: 21 }}>{titulo}</h2><button className="btn sutil peq" style={{ marginLeft: 'auto', width: 32, padding: 0 }} onClick={onCerrar} aria-label="Cerrar"><Icon n="x" className="" size={16} /></button></div>
-        <div className="cuerpo col" style={{ gap: 16 }}>{children}</div>
-        {pie && <div className="pie">{pie}</div>}
-      </div>
-    </div>
+    <dialog ref={ref} className="modal" aria-labelledby={idTitulo} tabIndex={-1} onClick={fuera}>
+      <div className="cab"><h2 id={idTitulo} className="titulo-tarjeta" style={{ fontSize: 17 }}>{titulo}</h2><button type="button" className="btn sutil peq icono" style={{ marginLeft: 'auto' }} onClick={onCerrar} aria-label="Cerrar"><Icon n="x" className="" size={16} /></button></div>
+      <div className="cuerpo col" style={{ gap: 16 }}>{children}</div>
+      {pie && <div className="pie">{pie}</div>}
+    </dialog>
   );
 }
 
@@ -197,15 +262,15 @@ export function Recibo({ e, compacto }: { e: any; compacto?: boolean }) {
   const pendiente = e.decision === 'PENDIENTE_CONFIRMACION';
   return (
     <div className={`recibo ${denegada ? 'denegada' : pendiente ? 'pendiente' : ''}`}>
-      <span className="ic"><Icon n={denegada ? 'candado' : 'ia'} className="" size={13} /></span>
-      <span><b>{HERR_LEGIBLE[e.herramienta] ?? e.herramienta}</b> <span className="herr tenue">{e.herramienta}</span></span>
+      <span className="ic" aria-hidden="true"><Icon n={denegada ? 'candado' : pendiente ? 'reloj' : 'ia'} className="" size={14} /></span>
+      <span className="que"><span className="sr">Acción de IA: </span><b>{HERR_LEGIBLE[e.herramienta] ?? e.herramienta}</b><span className="herr">{e.herramienta}</span></span>
       <Estado v={e.decision} />
       <span className="meta">
-        {e.nivel_riesgo && <span>riesgo <b>{e.nivel_riesgo}</b></span>}
-        {e.permiso_requerido && <span className="mono">{e.permiso_requerido}</span>}
-        {e.confirmado_por && <span>confirmó {e.confirmado_por.replace('CLIENTE:', 'cliente ')}</span>}
+        {e.nivel_riesgo && <span>Riesgo <b>{e.nivel_riesgo}</b></span>}
+        {e.permiso_requerido && <span>Permiso <span className="mono">{e.permiso_requerido}</span></span>}
+        {e.confirmado_por && <span>Confirmó {e.confirmado_por.replace('CLIENTE:', 'cliente ')}</span>}
         {!compacto && e.creado_en && <span>{fechaHora(e.creado_en)}</span>}
-        {!compacto && <Link to={`/auditoria?q=${e.id}`} className="mono">evento {String(e.id).slice(-8)}</Link>}
+        {!compacto && <Link to={`/auditoria?q=${e.id}`}>Auditoría <span className="mono">{String(e.id).slice(-8)}</span></Link>}
       </span>
       {denegada && e.motivo_denegacion && <span className="motivo">{e.comprobacion_fallida ? `Comprobación ${e.comprobacion_fallida} · ` : ''}{MOTIVOS[e.motivo_denegacion] ?? e.motivo_denegacion}</span>}
     </div>
@@ -247,7 +312,7 @@ export function Medidor({ c, etiqueta, oscuro }: { c: any; etiqueta: string; osc
   const tono = c.porcentaje >= 100 ? 'err' : c.proyeccionPorcentaje >= 90 ? 'warn' : '';
   return (
     <div className="medidor">
-      <div className="fila entre"><span className={oscuro ? '' : 'etiqueta'}>{etiqueta}</span><span className="num">{c.cuota ? `${Math.round(c.porcentaje)}%` : num(c.usado)}</span></div>
+      <div className="fila entre"><span className={oscuro ? 'peq-txt' : 'etiqueta'}>{etiqueta}</span><span className="valor">{c.cuota ? `${Math.round(c.porcentaje)}%` : num(c.usado)}</span></div>
       {c.cuota ? <div className={`barra ${tono}`} title={`Proyección al cierre: ${proy}%`}><div className="proy" style={{ width: `${proy}%` }} /><div className="uso" style={{ width: `${pct}%` }} /></div> : <span className="tenue">Sin cuota en tu plan</span>}
       {!oscuro && c.cuota && <span className="tenue">{num(c.usado)} de {num(c.cuota)} · proyección al cierre {Math.round(c.proyeccionPorcentaje)}%{c.agotada ? ' · cuota agotada: se limita' : ''}</span>}
     </div>

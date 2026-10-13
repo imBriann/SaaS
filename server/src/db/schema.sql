@@ -119,6 +119,7 @@ CREATE TABLE onboarding_draft (
   tenant_id       uuid REFERENCES tenant(id),
   password_token  text,
   etapas          jsonb NOT NULL DEFAULT '[]'::jsonb,
+  cierre          jsonb,              -- instantánea del panel al aprovisionar (lo único que ve el token público)
   creado_en       timestamptz NOT NULL DEFAULT now(),
   actualizado_en  timestamptz NOT NULL DEFAULT now()
 );

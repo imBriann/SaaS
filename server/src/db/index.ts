@@ -84,7 +84,11 @@ export class Database {
       );
       return r.rows[0].n > 0;
     });
-    if (done) return false;
+    if (done) {
+      // Ajustes aditivos e idempotentes para bases creadas con una versión anterior del esquema.
+      await this.engine.exec(`ALTER TABLE onboarding_draft ADD COLUMN IF NOT EXISTS cierre jsonb`);
+      return false;
+    }
     const here = dirname(fileURLToPath(import.meta.url));
     await this.engine.exec(readFileSync(join(here, 'schema.sql'), 'utf8'));
     return true;

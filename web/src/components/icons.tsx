@@ -27,6 +27,11 @@ const P: Record<string, string> = {
   enviar: 'M22 2L11 13M22 2l-7 20-4-9-9-4z',
   abajo: 'M6 9l6 6 6-6',
   mas: 'M12 5v14M5 12h14',
+  menu: 'M4 6h16M4 12h16M4 18h16',
+  atras: 'M15 18l-6-6 6-6',
+  derecha: 'M9 6l6 6-6 6',
+  arriba_abajo: 'M8 9l4-4 4 4M8 15l4 4 4-4',
+  nota: 'M4 4h16v12l-4 4H4zM16 20v-4h4M8 9h8M8 13h5',
 };
 
 export function Icon({ n, className = 'ico', size }: { n: keyof typeof P | string; className?: string; size?: number }) {
