@@ -158,7 +158,9 @@ export async function buildApp(db: Database, opts: { logger?: boolean; webDir?: 
   if (existsSync(join(webDir, 'index.html'))) {
     await app.register(fastifyStatic, {
       root: webDir, wildcard: false,
-      setHeaders: (res, path) => { if (/[\\/]assets[\\/]/.test(path)) (res as any).setHeader('cache-control', 'public, max-age=31536000, immutable'); },
+      setHeaders: (reply, path) => {
+        if (/[\\/]assets[\\/]/.test(path)) reply.header('cache-control', 'public, max-age=31536000, immutable');
+      },
     });
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/api/')) return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'No encontramos eso.' } });
