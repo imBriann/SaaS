@@ -1,94 +1,115 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { api, cop, fecha, fechaHora, hora, num, tenantSlug } from '../../api';
-import { Cabecera, useSesion } from '../../components/Layout';
-import { Campo, Cargando, Cifra, Confirmar, ErrorCarga, Estado, Interruptor, Medidor, Modal, Recibo, Tarjeta, useAccion, useApi, Vacio } from '../../components/ui';
+import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { api, cop, descargar, fecha, fechaHora, hora, num } from '../../api';
+import { Cabecera, Escritura, useSesion } from '../../components/Layout';
+import { accionIA, Campo, Cargando, Cifra, Confirmar, ErrorCarga, Estado, Interruptor, Medidor, Modal, motivoIA, Recibo, Tarjeta, useAccion, useApi, useToast, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
 
-// =================================================================== SCR-016 Centro de IA
+const NOMBRE_AGENTE: Record<string, string> = { atencion: 'Atención por WhatsApp', asistente: 'Asistente del panel', copiloto: 'Copiloto del asesor' };
+const DESCRIPCION_AGENTE: Record<string, string> = {
+  atencion: 'Responde a tus clientes, consulta precios y agenda, y propone citas y compras que el cliente confirma.',
+  asistente: 'Responde preguntas sobre tu negocio en el panel con tus propios datos.',
+  copiloto: 'Resume los casos y sugiere respuestas a tu equipo. Nunca le escribe al cliente.',
+};
+
+// =================================================================== Centro de IA
 export function CentroIA() {
   const { puede } = useSesion();
   const { data, error, recargar } = useApi<any>(() => api.get('/api/t/ia'), []);
   const [filtro, setFiltro] = useState('');
-  const ejec = useApi<any[]>(() => api.get(`/api/t/ia/ejecuciones${filtro ? `?decision=${filtro}` : ''}`), [filtro], { cada: 10000 });
+  const ejec = useApi<any[]>(() => api.get(`/api/t/ia/ejecuciones${filtro ? `?decision=${filtro}` : ''}`), [filtro], { cada: 15000 });
   const [apagar, setApagar] = useState<any>(null);
-  const { run } = useAccion();
+  const [tope, setTope] = useState<string>('');
+  const { run, ocupado } = useAccion();
+  useEffect(() => { if (data) setTope(data.tope_mensual ? String(data.tope_mensual) : ''); }, [data?.tope_mensual]);
   if (error) return <><Cabecera titulo="Centro de IA" /><div className="contenido"><ErrorCarga error={error} reintentar={recargar} /></div></>;
   if (!data) return <><Cabecera titulo="Centro de IA" /><div className="tarjeta"><Cargando filas={8} /></div></>;
   const m = data.metricas;
-  const toggle = async (t: any, v: boolean) => { await run(() => api.patch(`/api/t/ia/herramientas/${t.nombre}`, { habilitada: v }), `${t.nombre} ${v ? 'habilitada' : 'deshabilitada'}`); recargar(); };
-  const NOMBRE_AGENTE: Record<string, string> = { atencion: 'Atención (WhatsApp)', asistente: 'Asistente del panel', copiloto: 'Copiloto del asesor' };
+  const toggle = async (t: any, v: boolean) => { await run(() => api.patch(`/api/t/ia/herramientas/${t.nombre}`, { habilitada: v }), `${accionIA(t.nombre)}: ${v ? 'activada' : 'desactivada'}`); recargar(); };
   return (
     <>
-      <Cabecera titulo="Centro de IA" sub="Qué puede y qué no puede hacer la IA sobre los datos de tu negocio" />
+      <Cabecera titulo="Centro de IA" sub="Qué puede y qué no puede hacer la IA con los datos de tu negocio" />
       <div className="contenido">
+        {data.modelo === 'mock' && <div className="aviso peq-txt"><Icon n="info" className="" size={16} /><span>La IA funciona con un simulador de demostración: responde con reglas fijas, no con un modelo de lenguaje.</span></div>}
+        {data.modelo === 'ninguno' && <div className="bloqueado"><Icon n="alerta" className="" size={16} /><span>La IA está pendiente de conectar: las conversaciones pasan directamente a tu equipo.</span></div>}
         <div className="kpis">
-          <Cifra etiqueta="Acciones ejecutadas (30 días)" valor={m.ejecutadas} detalle={`${m.pendientes} esperando confirmación`} />
-          <Cifra etiqueta="Acciones bloqueadas" valor={m.denegadas} detalle="por el Gateway, con motivo" />
-          <Cifra etiqueta="Rechazadas por el cliente" valor={m.rechazadas} detalle="respondió NO a la confirmación" />
-          <div className="kpi"><Medidor c={data.consumo.tokens_ia} etiqueta="Consumo de IA" /></div>
+          <Cifra etiqueta="Acciones hechas (30 días)" valor={m.ejecutadas} detalle={`${m.pendientes} esperando que el cliente confirme`} />
+          <Cifra etiqueta="Acciones bloqueadas" valor={m.denegadas} detalle="por las reglas de permisos" />
+          <Cifra etiqueta="El cliente dijo que no" valor={m.rechazadas} detalle="no se hizo ningún cambio" />
+          <div className="kpi"><Medidor c={data.consumo.tokens_ia} etiqueta="Consumo de IA del mes" /></div>
         </div>
-        <Tarjeta titulo="Agentes" acciones={<span className="tenue peq-txt">Una sola runtime, tres configuraciones</span>} sinCuerpo>
+        <Tarjeta titulo="Asistentes" sinCuerpo>
           <div className="lista">{data.agentes.map((a: any) => (
             <div key={a.id} className="agente-fila">
               <div className="col" style={{ gap: 6 }}>
-                <span className="fila envolver" style={{ gap: 8 }}><b className="titulo-tarjeta">{NOMBRE_AGENTE[a.configuracion as string] ?? a.configuracion}</b>{a.activo ? <Estado v="ACTIVA" texto="Activo" /> : <Estado v="CANCELADA" texto="Inactivo" />}</span>
-                <span className="tenue peq-txt">Rol <span className="mono">{a.rol}</span> · {a.herramientas.length} herramientas</span>
-                <p className="sec peq-txt" style={{ maxWidth: '80ch' }}>{a.prompt_base}</p>
-                <div className="fila envolver" style={{ gap: 4 }} aria-label="Permisos del agente">{a.permisos.map((p: string) => <span key={p} className="estado neutro mono">{p}</span>)}</div>
+                <span className="fila envolver" style={{ gap: 8 }}><b className="titulo-tarjeta">{NOMBRE_AGENTE[a.configuracion] ?? a.configuracion}</b>{a.activo ? <Estado v="ACTIVA" texto="Activo" /> : <Estado v="CANCELADA" texto="Apagado" />}</span>
+                <p className="sec peq-txt" style={{ maxWidth: '80ch' }}>{DESCRIPCION_AGENTE[a.configuracion]}</p>
+                <details className="peq-txt"><summary>Qué puede hacer ({a.permisos_legibles.length})</summary><ul className="lista-permisos">{a.permisos_legibles.map((p: string) => <li key={p}>{p}</li>)}</ul></details>
               </div>
-              <Interruptor on={a.activo} disabled={!puede('ai:configure')} etiqueta={`Activar agente ${NOMBRE_AGENTE[a.configuracion as string] ?? a.configuracion}`} onChange={(v) => run(() => api.patch(`/api/t/ia/agentes/${a.configuracion}`, { activo: v }), v ? 'Agente activado' : 'Agente desactivado').then(recargar)} />
+              <Interruptor on={a.activo} disabled={!puede('ai:configure')} etiqueta={`Activar ${NOMBRE_AGENTE[a.configuracion] ?? a.configuracion}`} onChange={(v) => run(() => api.patch(`/api/t/ia/agentes/${a.configuracion}`, { activo: v }), v ? 'Asistente activado' : 'Asistente apagado').then(recargar)} />
             </div>
           ))}</div>
         </Tarjeta>
-        <Tarjeta titulo="Registro de herramientas" acciones={!puede('ai:configure') && <span className="tenue peq-txt fila"><Icon n="candado" className="" size={14} />Solo lectura para tu rol</span>} sinCuerpo>
-          <div className="tabla-wrap"><table className="tabla">
-            <thead><tr><th>Herramienta</th><th>Riesgo</th><th>Permiso</th><th>Agentes</th><th className="num">Uso 30 días</th><th>Activa</th></tr></thead>
+        <Tarjeta titulo="Acciones permitidas" acciones={!puede('ai:configure') && <span className="tenue peq-txt fila"><Icon n="candado" className="" size={14} />Solo lectura para tu rol</span>} sinCuerpo>
+          <div className="tabla-wrap"><table className="tabla tabla-movil">
+            <thead><tr><th>Acción</th><th>Control</th><th>Quién la usa</th><th className="num">Uso (30 días)</th><th>Activa</th></tr></thead>
             <tbody>{data.herramientas.map((t: any) => (
               <tr key={t.nombre}>
-                <td className="envuelve" style={{ minWidth: 260, maxWidth: 460 }}><span className="mono">{t.nombre}</span><div className="tenue peq-txt" style={{ marginTop: 2 }}>{t.descripcion}{t.limite && ` · máx. ${t.limite} por conversación`}</div></td>
-                <td><Estado v={t.riesgo_efectivo} />{t.riesgo_efectivo !== t.riesgo_declarado && <div className="tenue" style={{ fontSize: 12, marginTop: 2 }}>endurecido por la plantilla</div>}</td>
-                <td className="mono" style={{ whiteSpace: 'nowrap' }}>{t.permiso}</td>
-                <td>{t.prohibida_a_agentes ? <span className="estado err"><Icon n="candado" className="" />Solo personas</span> : t.agentes.length ? t.agentes.join(', ') : <span className="tenue">—</span>}</td>
-                <td className="num"><span className="fila" style={{ gap: 4, justifyContent: 'flex-end' }}><span className="estado ok" title="Ejecutadas"><Icon n="ok" className="" />{t.uso.ejecutadas}<span className="sr"> ejecutadas</span></span>{t.uso.denegadas > 0 && <span className="estado err" title="Denegadas"><Icon n="candado" className="" />{t.uso.denegadas}<span className="sr"> denegadas</span></span>}</span></td>
-                <td>{t.prohibida_a_agentes ? <span className="tenue">—</span> : <Interruptor on={t.habilitada} disabled={!puede('ai:configure')} etiqueta={`Activar ${t.nombre}`} onChange={(v) => (v ? toggle(t, v) : setApagar(t))} />}</td>
+                <td data-etiqueta="Acción" className="principal envuelve"><b style={{ fontWeight: 600 }}>{accionIA(t.nombre)}</b><div className="tenue peq-txt" style={{ marginTop: 2 }}>{t.descripcion}{t.limite && ` · máximo ${t.limite} por conversación`}</div></td>
+                <td data-etiqueta="Control"><Estado v={t.riesgo_efectivo} />{t.riesgo_efectivo !== t.riesgo_declarado && <div className="tenue" style={{ fontSize: 12, marginTop: 2 }}>más estricto por tu sector</div>}</td>
+                <td data-etiqueta="Quién">{t.prohibida_a_agentes ? <span className="estado err"><Icon n="candado" className="" />Solo personas</span> : t.agentes.length ? t.agentes.map((a: string) => NOMBRE_AGENTE[a] ?? a).join(', ') : <span className="tenue">—</span>}</td>
+                <td data-etiqueta="Uso" className="num"><span className="fila" style={{ gap: 4, justifyContent: 'flex-end' }}><span className="estado ok" title="Hechas"><Icon n="ok" className="" />{t.uso.ejecutadas}<span className="sr"> hechas</span></span>{t.uso.denegadas > 0 && <span className="estado err" title="Bloqueadas"><Icon n="candado" className="" />{t.uso.denegadas}<span className="sr"> bloqueadas</span></span>}</span></td>
+                <td data-etiqueta="Activa">{t.prohibida_a_agentes ? <span className="tenue">—</span> : <Interruptor on={t.habilitada} disabled={!puede('ai:configure')} etiqueta={`Activar «${accionIA(t.nombre)}»`} onChange={(v) => (v ? toggle(t, v) : setApagar(t))} />}</td>
               </tr>
             ))}</tbody>
           </table></div>
         </Tarjeta>
         <div className="grid g-main" style={{ alignItems: 'start' }}>
-            <Tarjeta titulo="Ejecuciones recientes" acciones={<select className="input" style={{ width: 'auto' }} value={filtro} onChange={(e) => setFiltro(e.target.value)} aria-label="Filtrar ejecuciones por decisión"><option value="">Todas</option><option value="DENEGADA">Denegadas</option><option value="CONFIRMADA">Confirmadas</option><option value="PENDIENTE_CONFIRMACION">Pendientes</option><option value="PERMITIDA">Permitidas</option></select>}>
-              {ejec.error ? <ErrorCarga error={ejec.error} reintentar={ejec.recargar} /> : !ejec.data ? <Cargando /> : ejec.data.length === 0 ? <Vacio titulo="Sin ejecuciones">{filtro ? 'Ninguna ejecución con esa decisión.' : 'Cuando un agente use una herramienta, verás aquí su recibo.'}</Vacio> : (
-                <div className="col" style={{ maxHeight: 560, overflowY: 'auto', gap: 12, paddingRight: 4 }}>{ejec.data.slice(0, 60).map((e) => <div key={e.id} className="col" style={{ gap: 4 }}><span className="tenue" style={{ fontSize: 12 }}>{NOMBRE_AGENTE[e.configuracion] ?? e.configuracion} · {e.cliente ?? 'panel'}</span><Recibo e={e} /></div>)}</div>
-              )}
+          <Tarjeta titulo="Actividad reciente" acciones={<select className="input" style={{ width: 'auto' }} value={filtro} onChange={(e) => setFiltro(e.target.value)} aria-label="Filtrar actividad"><option value="">Todo</option><option value="DENEGADA">Bloqueadas</option><option value="CONFIRMADA">Confirmadas por el cliente</option><option value="PENDIENTE_CONFIRMACION">Esperando confirmación</option><option value="PERMITIDA">Hechas</option><option value="ERROR">Con error</option></select>}>
+            {ejec.error ? <ErrorCarga error={ejec.error} reintentar={ejec.recargar} /> : !ejec.data ? <Cargando /> : ejec.data.length === 0 ? <Vacio titulo="Sin actividad">{filtro ? 'Nada con ese filtro.' : 'Cuando la IA haga algo, verás aquí su recibo.'}</Vacio> : (
+              <div className="col lista-recibos">{ejec.data.slice(0, 60).map((e) => <div key={e.id} className="col" style={{ gap: 4 }}><span className="tenue" style={{ fontSize: 12 }}>{NOMBRE_AGENTE[e.configuracion] ?? e.configuracion} · {e.cliente ?? 'panel'}</span><Recibo e={e} /></div>)}</div>
+            )}
+          </Tarjeta>
+          <div className="col" style={{ gap: 16 }}>
+            <Tarjeta titulo="Límite de gasto de IA">
+              <form className="col" onSubmit={async (ev: FormEvent) => { ev.preventDefault(); await run(() => api.patch('/api/t/configuracion/empresa', { ia_tope_mensual: tope ? Number(tope) : null }), 'Límite guardado'); recargar(); }}>
+                <span className="sec peq-txt">Tu plan incluye {num(data.consumo.tokens_ia.cuota ?? 0)} unidades de IA al mes. Puedes fijar un tope menor: al alcanzarlo, las conversaciones pasan a tu equipo en lugar de gastar más.</span>
+                <Campo etiqueta="Tope mensual" ayuda="déjalo vacío para usar la cuota del plan"><input className="input" inputMode="numeric" value={tope} onChange={(e) => setTope(e.target.value.replace(/\D/g, ''))} placeholder="Sin tope propio" disabled={!puede('tenant:configure')} /></Campo>
+                {puede('tenant:configure') && <button className="btn" style={{ alignSelf: 'flex-start' }} disabled={ocupado}>Guardar límite</button>}
+              </form>
             </Tarjeta>
-            <Tarjeta titulo="¿Dónde se detuvieron los bloqueos?">
-              {data.por_comprobacion.length === 0 ? <Vacio titulo="Sin bloqueos">Ninguna llamada ha sido denegada.</Vacio> : <div className="lista">{data.por_comprobacion.map((c: any, i: number) => <div key={i} className="lista-fila" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}><span>Comprobación {c.c}<br /><span className="mono tenue">{c.motivo}</span></span><span className="cifra" style={{ fontSize: 22 }}>{c.n}</span></div>)}</div>}
-              <p className="tenue peq-txt" style={{ marginTop: 12 }}>Comprobaciones del Gateway: 1 registro · 2 esquema · 3 permiso · 4 contexto y política.</p>
+            <Tarjeta titulo="Por qué se bloquearon">
+              {data.por_comprobacion.length === 0 ? <Vacio titulo="Sin bloqueos">Ninguna acción ha sido bloqueada.</Vacio> : <div className="lista">{data.por_comprobacion.map((c: any, i: number) => <div key={i} className="lista-fila" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}><span className="peq-txt">{motivoIA(c.motivo)}</span><span className="cifra" style={{ fontSize: 20 }}>{c.n}</span></div>)}</div>}
             </Tarjeta>
+          </div>
         </div>
       </div>
-      {apagar && <Confirmar titulo={`Deshabilitar ${apagar.nombre}`} efecto={<>Ningún agente podrá usar <span className="mono">{apagar.nombre}</span>. Si lo intenta, la llamada se bloquea y queda registrada.</>} textoBoton="Deshabilitar" onCerrar={() => setApagar(null)} onConfirmar={() => { toggle(apagar, false); setApagar(null); }} />}
+      {apagar && <Confirmar titulo={`Desactivar «${accionIA(apagar.nombre)}»`} efecto={<>Ningún asistente podrá hacerlo. Si lo intenta, se bloquea y queda registrado.</>} textoBoton="Desactivar" onCerrar={() => setApagar(null)} onConfirmar={() => { toggle(apagar, false); setApagar(null); }} />}
     </>
   );
 }
 
-// =================================================================== SCR-018 Configuración
+// =================================================================== Configuración
+const DIAS: [string, string][] = [['lun', 'Lunes'], ['mar', 'Martes'], ['mie', 'Miércoles'], ['jue', 'Jueves'], ['vie', 'Viernes'], ['sab', 'Sábado'], ['dom', 'Domingo']];
+const ZONAS = ['America/Bogota', 'America/Mexico_City', 'America/Lima', 'America/Guayaquil', 'America/Caracas', 'America/Santiago', 'America/Argentina/Buenos_Aires', 'America/Panama', 'America/New_York', 'Europe/Madrid'];
+const TABS: [string, string][] = [['personas', 'Equipo'], ['equipo', 'Horarios'], ['empresa', 'Empresa'], ['canal', 'WhatsApp'], ['cobros', 'Cobros'], ['modulos', 'Módulos'], ['integraciones', 'Integraciones']];
+
 export function Configuracion() {
   const { s, recargar: recargarSesion } = useSesion();
   const { data, error, recargar } = useApi<any>(() => api.get('/api/t/configuracion'), []);
-  const [tab, setTab] = useState('personas');
+  const [params, setParams] = useSearchParams();
+  const tab = TABS.some(([k]) => k === params.get('tab')) ? params.get('tab')! : 'personas';
   const [invitar, setInvitar] = useState(false);
   const [empresa, setEmpresa] = useState<any>(null);
-  const [pasarela, setPasarela] = useState({ proveedor: 'pasarela-simulada', cuenta_id: '', llave_privada: '' });
   const { run, ocupado } = useAccion();
   useEffect(() => { if (data) setEmpresa({ ...data.tenant }); }, [data]);
   if (error) return <><Cabecera titulo="Configuración" /><div className="contenido"><ErrorCarga error={error} reintentar={recargar} /></div></>;
   if (!data || !empresa) return <><Cabecera titulo="Configuración" /><div className="tarjeta"><Cargando filas={8} /></div></>;
   const rolesPersonas = data.roles.filter((r: any) => !r.es_agente);
-  const permisos = Object.keys(data.catalogo_permisos);
   const tema = data.tenant.tema;
+  const guardarEmpresa = (campos: Record<string, unknown>, ok = 'Datos guardados') => run(() => api.patch('/api/t/configuracion/empresa', campos), ok).then((r) => { if (r) { recargar(); recargarSesion(); } return r; });
   const subirLogo = async (file: File) => {
+    if (file.size > 200_000) return run(() => Promise.reject(new Error(`El logotipo pesa ${Math.round(file.size / 1000)} KB. Usa uno de menos de 200 KB.`)));
     const url = await new Promise<string>((ok) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.readAsDataURL(file); });
     const img = new Image(); img.src = url; await img.decode();
     const cv = document.createElement('canvas'); cv.width = cv.height = 48; const cx = cv.getContext('2d')!; cx.drawImage(img, 0, 0, 48, 48);
@@ -98,40 +119,56 @@ export function Configuracion() {
     const r = await run(() => api.post('/api/t/configuracion/tema', { colores, logo_data_url: url }), 'Identidad actualizada');
     if (r) { recargar(); recargarSesion(); }
   };
+  const campo = (k: string, l: string, extra: any = {}) => <Campo key={k} etiqueta={l} ayuda={extra.ayuda}><input className="input" value={empresa[k] ?? ''} onChange={(e) => setEmpresa({ ...empresa, [k]: e.target.value })} {...extra.input} /></Campo>;
   return (
     <>
-      <Cabecera titulo="Configuración" sub={`${data.tenant.nombre} · ${data.tenant.slug}`} />
+      <Cabecera titulo="Configuración" sub={data.tenant.nombre} />
       <div className="contenido">
-        <div className="tabs" role="group" aria-label="Secciones de configuración">{[['personas', 'Personas y roles'], ['modulos', 'Módulos'], ['empresa', 'Empresa e identidad'], ['canal', 'WhatsApp y cobros']].map(([k, v]) => <button key={k} aria-pressed={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{v}</button>)}</div>
+        <div className="tabs tabs-config" role="tablist" aria-label="Secciones de configuración">{TABS.map(([k, v]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setParams({ tab: k })}>{v}</button>)}</div>
 
         {tab === 'personas' && <>
-          <Tarjeta titulo="Personas con acceso" acciones={<button className="btn primario peq" onClick={() => setInvitar(true)}><Icon n="mas" className="" size={14} />Invitar</button>} sinCuerpo>
-            <div className="tabla-wrap"><table className="tabla"><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Recibe casos</th><th>Acceso</th></tr></thead>
+          <Tarjeta titulo="Personas con acceso" acciones={<Escritura permiso="user:manage"><button className="btn primario peq" onClick={() => setInvitar(true)}><Icon n="mas" className="" size={14} />Invitar</button></Escritura>} sinCuerpo>
+            <div className="tabla-wrap"><table className="tabla tabla-movil"><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Recibe radicados</th><th>Acceso</th></tr></thead>
               <tbody>{data.personas.map((p: any) => (
-                <tr key={p.id}>
-                  <td style={{ whiteSpace: 'nowrap' }}><b style={{ fontWeight: 600 }}>{p.nombre}</b>{p.id === s.usuario.id && <span className="tenue"> (tú)</span>}</td><td className="mono">{p.email}</td>
-                  <td><select className="input" style={{ width: 'auto', minWidth: 160 }} value={p.rol} disabled={p.id === s.usuario.id} aria-label={`Rol de ${p.nombre}`} onChange={(e) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { rol: e.target.value }), 'Rol actualizado').then(recargar)}>{rolesPersonas.map((r: any) => <option key={r.clave} value={r.clave}>{r.nombre}</option>)}</select></td>
-                  <td><Interruptor on={p.disponible} etiqueta={`${p.nombre} recibe casos`} onChange={(v) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { disponible: v })).then(recargar)} /></td>
-                  <td><Interruptor on={p.activo} disabled={p.id === s.usuario.id} etiqueta={`Acceso de ${p.nombre}`} onChange={(v) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { activo: v }), v ? 'Acceso restituido' : 'Acceso retirado').then(recargar)} /></td>
+                <tr key={p.id} className={p.activo ? '' : 'inactiva'}>
+                  <td data-etiqueta="Nombre" className="principal"><b style={{ fontWeight: 600 }}>{p.nombre}</b>{p.id === s.usuario.id && <span className="tenue"> (tú)</span>}</td><td data-etiqueta="Correo" className="mono">{p.email}</td>
+                  <td data-etiqueta="Rol"><select className="input" style={{ width: 'auto', minWidth: 150 }} value={p.rol} disabled={p.id === s.usuario.id || s.solo_lectura} aria-label={`Rol de ${p.nombre}`} onChange={(e) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { rol: e.target.value }), 'Rol actualizado').then(recargar)}>{rolesPersonas.map((r: any) => <option key={r.clave} value={r.clave}>{r.nombre}</option>)}</select></td>
+                  <td data-etiqueta="Radicados">{p.atiende_casos ? <Interruptor on={p.disponible} disabled={s.solo_lectura || !p.activo} etiqueta={`${p.nombre} recibe radicados`} onChange={(v) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { disponible: v }), v ? 'Recibirá radicados' : 'No recibirá radicados nuevos').then(recargar)} /> : <span className="tenue peq-txt">Su rol no atiende</span>}</td>
+                  <td data-etiqueta="Acceso"><Interruptor on={p.activo} disabled={p.id === s.usuario.id || s.solo_lectura} etiqueta={`Acceso de ${p.nombre}`} onChange={(v) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { activo: v }), v ? 'Acceso restituido' : 'Acceso retirado. Sus radicados volvieron a la cola.').then(recargar)} /></td>
                 </tr>
               ))}</tbody></table></div>
           </Tarjeta>
+          {data.invitaciones.length > 0 && (
+            <Tarjeta titulo="Invitaciones" sinCuerpo>
+              <div className="tabla-wrap"><table className="tabla tabla-movil"><thead><tr><th>Persona</th><th>Rol</th><th>Estado</th><th>Vence</th><th><span className="sr">Acciones</span></th></tr></thead>
+                <tbody>{data.invitaciones.map((i: any) => (
+                  <tr key={i.id}>
+                    <td data-etiqueta="Persona" className="principal"><b style={{ fontWeight: 600 }}>{i.nombre}</b><br /><span className="tenue peq-txt mono">{i.email}</span></td>
+                    <td data-etiqueta="Rol">{i.rol}</td><td data-etiqueta="Estado"><Estado v={i.estado} /></td>
+                    <td data-etiqueta="Vence">{i.estado === 'ACEPTADA' ? fecha(i.aceptada_en) : fecha(i.expira_en)}</td>
+                    <td data-etiqueta="Acciones"><div className="acciones-fila">{['PENDIENTE', 'EXPIRADA'].includes(i.estado) && <Escritura permiso="user:manage"><button className="btn peq" onClick={async () => { const r = await run(() => api.post(`/api/t/configuracion/invitaciones/${i.id}/reenviar`), 'Invitación reenviada'); if (r?.enlace) { navigator.clipboard?.writeText(r.enlace); } recargar(); }}>Reenviar</button></Escritura>}{i.estado === 'PENDIENTE' && <Escritura permiso="user:manage"><button className="btn peq peligro" onClick={() => run(() => api.post(`/api/t/configuracion/invitaciones/${i.id}/revocar`), 'Invitación retirada').then(recargar)}>Retirar</button></Escritura>}</div></td>
+                  </tr>
+                ))}</tbody></table></div>
+            </Tarjeta>
+          )}
           <Tarjeta titulo="Qué puede hacer cada rol" sinCuerpo>
-            <div className="tabla-wrap"><table className="tabla">
-              <thead><tr><th>Permiso</th>{data.roles.map((r: any) => <th key={r.clave} style={{ textAlign: 'center' }}>{r.nombre}{r.es_agente && <><br /><span className="estado ia" style={{ height: 18, marginTop: 2 }}>IA</span></>}</th>)}</tr></thead>
-              <tbody>{permisos.map((p) => (
-                <tr key={p}><td className="envuelve" style={{ minWidth: 220 }}><span className="mono">{p}</span><br /><span className="tenue peq-txt">{data.catalogo_permisos[p]}</span></td>
-                  {data.roles.map((r: any) => <td key={r.clave} style={{ textAlign: 'center' }}>{r.permisos.includes(p) ? <span className="estado ok" title="Tiene el permiso"><Icon n="ok" className="" /><span className="sr">Sí</span></span> : <span className="tenue" title="No tiene el permiso">—<span className="sr">No</span></span>}</td>)}</tr>
+            <div className="tabla-wrap"><table className="tabla matriz">
+              <thead><tr><th>Permiso</th>{rolesPersonas.map((r: any) => <th key={r.clave} style={{ textAlign: 'center' }}>{r.nombre}</th>)}</tr></thead>
+              <tbody>{Object.entries(data.catalogo_permisos).filter(([p]) => p !== 'platform:govern').map(([p, desc]) => (
+                <tr key={p}><td className="envuelve" style={{ minWidth: 200 }}>{desc as string}</td>
+                  {rolesPersonas.map((r: any) => <td key={r.clave} style={{ textAlign: 'center' }}>{r.permisos.includes(p) ? <span className="estado ok" title="Sí"><Icon n="ok" className="" /><span className="sr">Sí</span></span> : <span className="tenue" title="No">—<span className="sr">No</span></span>}</td>)}</tr>
               ))}</tbody>
             </table></div>
           </Tarjeta>
         </>}
 
+        {tab === 'equipo' && <Horarios recursos={data.recursos} etiqueta={s.tenant.etiqueta_recurso ?? 'Recurso'} onCambio={recargar} />}
+
         {tab === 'modulos' && (
           <Tarjeta titulo="Módulos" sinCuerpo>
-            <div className="tabla-wrap"><table className="tabla"><thead><tr><th>Módulo</th><th>Plan</th><th>Activo</th></tr></thead><tbody>{data.modulos.map((m: any) => (
-              <tr key={m.modulo}><td className="envuelve" style={{ minWidth: 220 }}><b style={{ fontWeight: 600 }}>{m.nombre}</b><br /><span className="tenue peq-txt">{m.descripcion}</span></td><td style={{ whiteSpace: 'nowrap' }}>{m.incluido_en_plan ? <span className="tenue">Incluido en tu plan</span> : <Estado v="PENDIENTE" texto="Requiere otro plan" />}</td>
-                <td><Interruptor on={m.activo} disabled={!m.incluido_en_plan && !m.activo} etiqueta={`Módulo ${m.nombre}`} onChange={(v) => run(() => api.patch(`/api/t/configuracion/modulos/${m.modulo}`, { activo: v }), `Módulo ${v ? 'activado' : 'desactivado'}`).then(() => { recargar(); recargarSesion(); })} /></td></tr>
+            <div className="tabla-wrap"><table className="tabla tabla-movil"><thead><tr><th>Módulo</th><th>Plan</th><th>Activo</th></tr></thead><tbody>{data.modulos.map((m: any) => (
+              <tr key={m.modulo}><td data-etiqueta="Módulo" className="principal envuelve"><b style={{ fontWeight: 600 }}>{m.nombre}</b><br /><span className="tenue peq-txt">{m.descripcion}</span></td><td data-etiqueta="Plan">{m.incluido_en_plan ? <span className="tenue">Incluido en tu plan</span> : <Estado v="PENDIENTE" texto="Requiere otro plan" />}</td>
+                <td data-etiqueta="Activo"><Interruptor on={m.activo} disabled={(!m.incluido_en_plan && !m.activo) || s.solo_lectura} etiqueta={`Módulo ${m.nombre}`} onChange={(v) => run(() => api.patch(`/api/t/configuracion/modulos/${m.modulo}`, { activo: v }), `Módulo ${v ? 'activado' : 'desactivado'}`).then(() => { recargar(); recargarSesion(); })} /></td></tr>
             ))}</tbody></table></div>
           </Tarjeta>
         )}
@@ -139,47 +176,39 @@ export function Configuracion() {
         {tab === 'empresa' && (
           <div className="grid g2">
             <Tarjeta titulo="Datos de la empresa">
-              <div className="col">
-                {[['nombre', 'Nombre'], ['nit', 'NIT con dígito de verificación'], ['ciudad', 'Ciudad'], ['email_contacto', 'Correo de avisos'], ['telefono', 'Teléfono']].map(([k, l]) => (
-                  <Campo key={k} etiqueta={l}><input className="input" value={empresa[k] ?? ''} onChange={(e) => setEmpresa({ ...empresa, [k]: e.target.value })} /></Campo>
-                ))}
-                <button className="btn primario" style={{ alignSelf: 'flex-start' }} disabled={ocupado || !empresa.nombre?.trim()} onClick={() => run(() => api.patch('/api/t/configuracion/empresa', { nombre: empresa.nombre, nit: empresa.nit || null, ciudad: empresa.ciudad || null, email_contacto: empresa.email_contacto, telefono: empresa.telefono || null }), 'Datos guardados').then(() => { recargar(); recargarSesion(); })}>Guardar cambios</button>
-              </div>
+              <form className="col" onSubmit={(e) => { e.preventDefault(); guardarEmpresa({ nombre: empresa.nombre, nit: empresa.nit || null, ciudad: empresa.ciudad || null, email_contacto: empresa.email_contacto, telefono: empresa.telefono || null, zona_horaria: empresa.zona_horaria }); }}>
+                {campo('nombre', 'Nombre comercial')}
+                {campo('nit', 'NIT con dígito de verificación', { ayuda: 'se usa en tus facturas', input: { placeholder: '901456789-3' } })}
+                {campo('ciudad', 'Ciudad')}
+                {campo('email_contacto', 'Correo de avisos', { ayuda: 'recibe alertas de facturas, inventario y suscripción', input: { type: 'email' } })}
+                {campo('telefono', 'Teléfono')}
+                <Campo etiqueta="Zona horaria" ayuda="la agenda y los reportes usan esta hora"><select className="input" value={empresa.zona_horaria} onChange={(e) => setEmpresa({ ...empresa, zona_horaria: e.target.value })}>{[...new Set([empresa.zona_horaria, ...ZONAS])].map((z) => <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>)}</select></Campo>
+                <Escritura permiso="tenant:configure"><button className="btn primario" style={{ alignSelf: 'flex-start' }} disabled={ocupado || !empresa.nombre?.trim()}>Guardar cambios</button></Escritura>
+              </form>
             </Tarjeta>
             <Tarjeta titulo="Identidad visual">
               <div className="col" style={{ gap: 14 }}>
                 <div className="fila" style={{ gap: 12 }}>
-                  <div style={{ width: 56, height: 56, borderRadius: 12, background: tema.acento, color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 600, fontSize: 18, overflow: 'hidden', flex: 'none' }}>{data.tenant.logo_data_url ? <img src={data.tenant.logo_data_url} alt="Logotipo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : tema.monograma}</div>
-                  <div className="col" style={{ gap: 2 }}><span className="mono">{tema.acento}</span><span className="tenue peq-txt">Contraste del botón con texto blanco: {tema.contraste.acento_blanco}:1 (mínimo AA 4,5:1)</span>{tema.ajustado && <span className="tenue peq-txt">Luminosidad ajustada automáticamente para ser legible.</span>}</div>
+                  <div className="muestra-logo" style={{ background: tema.acento }}>{data.tenant.logo_data_url ? <img src={data.tenant.logo_data_url} alt="Logotipo" /> : tema.monograma}</div>
+                  <div className="col" style={{ gap: 2 }}><span className="mono">{tema.acento}</span><span className="tenue peq-txt">Contraste del botón con texto blanco: {tema.contraste.acento_blanco}:1 (mínimo recomendado 4,5:1)</span>{tema.ajustado && <span className="tenue peq-txt">Ajustamos el tono para que se lea bien.</span>}</div>
                 </div>
-                {/* Muestras con los colores que el panel usa de verdad (tema claro + acento del tenant) */}
-                <div className="fila envolver" style={{ gap: 10 }}>{[['Acción', tema.acento], ['Selección', `color-mix(in srgb, ${tema.acento} 9%, #fff)`], ['Tarjeta', 'var(--superficie)'], ['Lienzo', 'var(--lienzo)']].map(([n, c]) => <span key={n} className="col" style={{ alignItems: 'center', gap: 4 }}><span style={{ width: 40, height: 40, borderRadius: 8, background: c, border: '1px solid var(--borde-2)' }} /><span className="tenue" style={{ fontSize: 12 }}>{n}</span></span>)}</div>
-                <label className="btn" style={{ alignSelf: 'flex-start' }}><Icon n="subir" className="" size={16} /> Cambiar logotipo<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden onChange={(e) => e.target.files?.[0] && subirLogo(e.target.files[0])} /></label>
-                <span className="tenue peq-txt">La marca de la plataforma solo aparece en las páginas públicas; dentro del panel, tu equipo ve tu negocio.</span>
+                <Escritura permiso="tenant:configure"><label className="btn" style={{ alignSelf: 'flex-start' }}><Icon n="subir" className="" size={16} /> Cambiar logotipo<input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => e.target.files?.[0] && subirLogo(e.target.files[0])} /></label></Escritura>
+                <span className="tenue peq-txt">Tu panel toma su color de tu logotipo. Tu equipo ve tu negocio, no nuestra marca.</span>
               </div>
             </Tarjeta>
           </div>
         )}
 
-        {tab === 'canal' && (
-          <div className="grid g2">
-            <Tarjeta titulo="Número de WhatsApp">
-              <div className="col">
-                <Campo etiqueta="Phone number ID de la cuenta de negocio" ayuda="lo entrega Meta al registrar el número; en el piloto puede ser sim-<nombre>"><input className="input mono" value={empresa.whatsapp_phone_number_id ?? ''} onChange={(e) => setEmpresa({ ...empresa, whatsapp_phone_number_id: e.target.value })} /></Campo>
-                <button className="btn primario" style={{ alignSelf: 'flex-start' }} disabled={ocupado} onClick={() => run(() => api.patch('/api/t/configuracion/empresa', { whatsapp_phone_number_id: empresa.whatsapp_phone_number_id || null }), 'Número vinculado').then(recargar)}>Vincular</button>
-                <span className="tenue">El webhook del canal resuelve tu empresa por este identificador y verifica la firma de Meta antes de aceptar cualquier mensaje.</span>
-              </div>
-            </Tarjeta>
-            <Tarjeta titulo="Cobros a tus clientes">
-              <div className="col">
-                {data.pasarela ? <span className="fila envolver"><Estado v="EXITO" texto="Cuenta vinculada" /> <span className="mono">{data.pasarela.cuenta_id}</span> · {fecha(data.pasarela.vinculado_en)}</span> : <span className="fila"><Estado v="PENDIENTE" texto="Sin cuenta vinculada" /></span>}
-                <Campo etiqueta="ID de tu cuenta en la pasarela"><input className="input mono" value={pasarela.cuenta_id} onChange={(e) => setPasarela({ ...pasarela, cuenta_id: e.target.value })} /></Campo>
-                <Campo etiqueta="Llave privada" ayuda="se guarda cifrada"><input className="input mono" type="password" value={pasarela.llave_privada} onChange={(e) => setPasarela({ ...pasarela, llave_privada: e.target.value })} autoComplete="off" /></Campo>
-                <button className="btn primario" style={{ alignSelf: 'flex-start' }} disabled={ocupado || !pasarela.cuenta_id || !pasarela.llave_privada} onClick={() => run(() => api.post('/api/t/configuracion/pasarela', pasarela), 'Cuenta vinculada').then(() => { setPasarela({ ...pasarela, llave_privada: '' }); recargar(); })}>Vincular cuenta</button>
-                <span className="tenue">El dinero de tus ventas va directo a tu cuenta: la plataforma solo genera el enlace de cobro y concilia el resultado.</span>
-              </div>
-            </Tarjeta>
-          </div>
+        {tab === 'canal' && <CanalWhatsApp data={data} onCambio={() => { recargar(); recargarSesion(); }} guardarEmpresa={guardarEmpresa} />}
+        {tab === 'cobros' && <Cobros data={data} onCambio={recargar} />}
+
+        {tab === 'integraciones' && (
+          <Tarjeta titulo="Estado de las integraciones" sinCuerpo>
+            <div className="lista">{data.integraciones.map((i: any) => (
+              <div key={i.clave} className="agente-fila"><div className="col" style={{ gap: 4 }}><b>{i.nombre}</b><span className="tenue peq-txt">{i.detalle}</span></div><Estado v={i.estado} /></div>
+            ))}</div>
+            <p className="cuerpo tenue peq-txt">Las conexiones con proveedores las configura quien administra el servidor (ver la guía de instalación). «Simulado» significa que esa parte funciona en modo de demostración y no se comunica con el proveedor real.</p>
+          </Tarjeta>
         )}
       </div>
       {invitar && <Invitar roles={rolesPersonas} onCerrar={() => setInvitar(false)} onHecho={recargar} />}
@@ -187,34 +216,177 @@ export function Configuracion() {
   );
 }
 
-function Invitar({ roles, onCerrar, onHecho }: { roles: any[]; onCerrar: () => void; onHecho: () => void }) {
-  const [f, setF] = useState({ email: '', nombre: '', rol: roles.find((r) => r.clave !== 'administrador')?.clave ?? roles[0].clave });
-  const [temporal, setTemporal] = useState<string | null | undefined>(undefined);
-  const { run, ocupado } = useAccion();
+function Horarios({ recursos, etiqueta, onCambio }: { recursos: any[]; etiqueta: string; onCambio: () => void }) {
+  const [editar, setEditar] = useState<any>(null);
+  const resumen = (h: any) => DIAS.filter(([k]) => h?.[k]).map(([k, n]) => `${n.slice(0, 3)} ${h[k][0]}–${h[k][1]}`).join(' · ') || 'Sin horario';
   return (
-    <Modal titulo="Invitar a una persona" onCerrar={onCerrar} pie={temporal === undefined ? <><button className="btn" onClick={onCerrar}>Cancelar</button><button className="btn primario" disabled={ocupado || !f.email || !f.nombre} onClick={async () => { const r = await run(() => api.post('/api/t/configuracion/personas', f), 'Persona invitada'); if (r) { setTemporal(r.contrasena_temporal); onHecho(); } }}>Invitar</button></> : <button className="btn primario" onClick={onCerrar}>Listo</button>}>
-      {temporal === undefined ? <>
-        <Campo etiqueta="Nombre"><input className="input" value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} /></Campo>
-        <Campo etiqueta="Correo"><input className="input" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Campo>
-        <Campo etiqueta="Rol"><select className="input" value={f.rol} onChange={(e) => setF({ ...f, rol: e.target.value })}>{roles.map((r) => <option key={r.clave} value={r.clave}>{r.nombre}</option>)}</select></Campo>
-      </> : temporal ? <><span>Comparte esta contraseña temporal con {f.nombre} por un canal seguro:</span><code style={{ fontSize: 16 }}>{temporal}</code><span className="tenue">No se volverá a mostrar.</span></> : <span>{f.nombre} ya tenía cuenta en la plataforma: puede entrar con su contraseña actual y elegir esta empresa.</span>}
+    <Tarjeta titulo={`Agendas (${etiqueta.toLowerCase()}s)`} acciones={<Escritura permiso="tenant:configure"><button className="btn primario peq" onClick={() => setEditar({ nombre: '', horario: { lun: ['09:00', '18:00'], mar: ['09:00', '18:00'], mie: ['09:00', '18:00'], jue: ['09:00', '18:00'], vie: ['09:00', '18:00'] }, activo: true })}><Icon n="mas" className="" size={14} />Agregar</button></Escritura>} sinCuerpo>
+      {recursos.length === 0 ? <Vacio titulo="Sin agendas">Agrega a cada persona o espacio que atiende con su horario.</Vacio> : (
+        <div className="lista">{recursos.map((r) => (
+          <div key={r.id} className="agente-fila"><div className="col" style={{ gap: 4 }}><span className="fila" style={{ gap: 8 }}><b>{r.nombre}</b>{!r.activo && <Estado v="CANCELADA" texto="Inactivo" />}</span><span className="tenue peq-txt">{resumen(r.horario)}</span></div>
+            <Escritura permiso="tenant:configure"><button className="btn peq" onClick={() => setEditar(r)}>Editar</button></Escritura></div>
+        ))}</div>
+      )}
+      {editar && <EditarHorario r={editar} etiqueta={etiqueta} onCerrar={() => setEditar(null)} onHecho={() => { setEditar(null); onCambio(); }} />}
+    </Tarjeta>
+  );
+}
+
+function EditarHorario({ r, etiqueta, onCerrar, onHecho }: { r: any; etiqueta: string; onCerrar: () => void; onHecho: () => void }) {
+  const [f, setF] = useState<any>({ nombre: r.nombre, horario: { ...r.horario }, activo: r.activo });
+  const { run, ocupado, error } = useAccion();
+  const set = (dia: string, i: number, v: string) => setF({ ...f, horario: { ...f.horario, [dia]: i === 0 ? [v, f.horario[dia][1]] : [f.horario[dia][0], v] } });
+  const invalido = DIAS.some(([d]) => f.horario[d] && f.horario[d][0] >= f.horario[d][1]);
+  return (
+    <Modal titulo={r.id ? `Editar ${r.nombre}` : `Nueva agenda`} onCerrar={onCerrar} pie={<><button className="btn" onClick={onCerrar}>Cancelar</button><button className="btn primario" disabled={ocupado || f.nombre.trim().length < 2 || invalido} onClick={async () => { const x = await run(() => (r.id ? api.patch(`/api/t/agenda/recursos/${r.id}`, f) : api.post('/api/t/agenda/recursos', f)), 'Horario guardado', { silencioso: true }); if (x) onHecho(); }}>Guardar</button></>}>
+      {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
+      <Campo etiqueta={`Nombre (${etiqueta.toLowerCase()})`}><input className="input" value={f.nombre} maxLength={40} onChange={(e) => setF({ ...f, nombre: e.target.value })} /></Campo>
+      <div className="col horario-edicion">{DIAS.map(([d, n]) => (
+        <div key={d} className="horario-dia">
+          <label className="fila"><input type="checkbox" checked={!!f.horario[d]} onChange={(e) => { const h = { ...f.horario }; if (e.target.checked) h[d] = ['09:00', '18:00']; else delete h[d]; setF({ ...f, horario: h }); }} />{n}</label>
+          {f.horario[d] ? <span className="fila" style={{ gap: 6 }}><input className="input" type="time" value={f.horario[d][0]} onChange={(e) => set(d, 0, e.target.value)} aria-label={`${n}: abre`} /><span className="tenue">a</span><input className="input" type="time" value={f.horario[d][1]} onChange={(e) => set(d, 1, e.target.value)} aria-label={`${n}: cierra`} /></span> : <span className="tenue peq-txt">No atiende</span>}
+        </div>
+      ))}</div>
+      {invalido && <span className="error peq-txt" role="alert">En cada día, la hora de cierre debe ser posterior a la de apertura.</span>}
+      {r.id && <label className="fila"><input type="checkbox" checked={f.activo} onChange={(e) => setF({ ...f, activo: e.target.checked })} />Activa (se puede agendar)</label>}
     </Modal>
   );
 }
 
-// =================================================================== SCR-019 Suscripción
-export function Suscripcion() {
-  const { data, error } = useApi<any>(() => api.get('/api/t/suscripcion'), []);
+function CanalWhatsApp({ data, onCambio, guardarEmpresa }: { data: any; onCambio: () => void; guardarEmpresa: (c: Record<string, unknown>, ok?: string) => Promise<any> }) {
+  const t = data.tenant;
+  const [pid, setPid] = useState(t.whatsapp_phone_number_id ?? '');
+  const [diag, setDiag] = useState<any>(null);
   const { run, ocupado } = useAccion();
-  if (error) return <><Cabecera titulo="Suscripción" /><div className="contenido"><ErrorCarga error={error} /></div></>;
+  const toast = useToast();
+  const verificar = async () => { const r = await run(() => api.post('/api/t/configuracion/whatsapp/verificar')); if (r) { setDiag(r); onCambio(); } };
+  const d = diag ?? t.whatsapp_diagnostico;
+  return (
+    <div className="col" style={{ gap: 16 }}>
+      <div className="grid g2">
+        <Tarjeta titulo="Número de WhatsApp" acciones={<Estado v={t.whatsapp_estado} texto={{ CONECTADO: 'Conectado', SIMULADO: 'Simulador', PENDIENTE_VERIFICAR: 'Por verificar', ERROR: 'Con error', SIN_CONFIGURAR: 'Sin configurar' }[t.whatsapp_estado as string]} />}>
+          <form className="col" onSubmit={async (e) => { e.preventDefault(); const r = await guardarEmpresa({ whatsapp_phone_number_id: pid.trim() || null }, 'Número guardado. Lo estamos verificando con Meta.'); if (r) setDiag(null); }}>
+            {t.whatsapp_numero_visible && <span>Número de tus clientes: <b>{t.whatsapp_numero_visible}</b></span>}
+            <Campo etiqueta="Identificador del número (Phone number ID)" ayuda="NO es el número de teléfono: es el código que Meta muestra junto a él"><input className="input mono" inputMode="numeric" value={pid} onChange={(e) => setPid(e.target.value.trim())} placeholder="Ej.: 106540352242922" /></Campo>
+            <div className="fila envolver" style={{ gap: 8 }}>
+              <Escritura permiso="tenant:configure"><button className="btn primario" disabled={ocupado || pid === (t.whatsapp_phone_number_id ?? '')}>Guardar</button></Escritura>
+              {t.whatsapp_phone_number_id && <Escritura permiso="tenant:configure"><button type="button" className="btn" disabled={ocupado} onClick={verificar}>Probar conexión</button></Escritura>}
+            </div>
+            {d && <div className={d.ok ? 'aviso exito' : 'bloqueado'} role="status"><Icon n={d.ok ? 'ok' : 'alerta'} className="" size={16} /><span>{d.ok ? `Meta respondió: ${d.numero ?? ''} ${d.nombre ? `(${d.nombre})` : ''}${d.calidad ? ` · calidad ${String(d.calidad).toLowerCase()}` : ''}` : d.error ?? d.mensaje}{d.comprobado && <span className="tenue peq-txt"> · {fechaHora(d.comprobado)}</span>}</span></div>}
+          </form>
+        </Tarjeta>
+        <Tarjeta titulo="Datos para configurar en Meta">
+          <div className="col" style={{ gap: 10 }}>
+            <span className="sec peq-txt">En el panel de desarrolladores de Meta (WhatsApp › Configuración), registra este webhook y suscríbete al campo <b>messages</b>.</span>
+            <Campo etiqueta="URL del webhook"><span className="fila"><input className="input mono" readOnly value={data.webhook_whatsapp} onFocus={(e) => e.target.select()} /><button type="button" className="btn peq" onClick={() => navigator.clipboard?.writeText(data.webhook_whatsapp).then(() => toast('URL copiada'))}>Copiar</button></span></Campo>
+            <span className="tenue peq-txt">El token de verificación lo define quien administra el servidor (variable WHATSAPP_VERIFY_TOKEN). Cada mensaje entrante se acepta solo si trae la firma válida de Meta.</span>
+          </div>
+        </Tarjeta>
+      </div>
+      <Tarjeta titulo="Plantillas de mensajes" sinCuerpo>
+        <p className="cuerpo sec peq-txt">Fuera de las 24 horas siguientes al último mensaje del cliente, WhatsApp solo entrega plantillas aprobadas. Crea cada una en el administrador de WhatsApp de Meta con el mismo texto y marca aquí su nombre cuando Meta la apruebe.</p>
+        <div className="lista">{data.plantillas.map((p: any) => <Plantilla key={p.clave} p={p} onCambio={onCambio} />)}</div>
+      </Tarjeta>
+    </div>
+  );
+}
+
+function Plantilla({ p, onCambio }: { p: any; onCambio: () => void }) {
+  const [abierta, setAbierta] = useState(false);
+  const [f, setF] = useState({ nombre_proveedor: p.nombre_proveedor ?? '', idioma: p.idioma ?? 'es', estado_aprobacion: p.estado_aprobacion });
+  const { run, ocupado } = useAccion();
+  const meta = String(p.cuerpo).replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => `{{${(p.variables as string[]).indexOf(k) + 1}}}`);
+  return (
+    <div className="plantilla-fila">
+      <div className="fila entre envolver" style={{ gap: 8 }}>
+        <span className="col" style={{ gap: 2, minWidth: 0 }}><b>{p.clave.replace(/_/g, ' ')}</b><span className="tenue peq-txt">{p.categoria === 'UTILIDAD' ? 'Utilidad' : p.categoria === 'MARKETING' ? 'Marketing' : 'Autenticación'}{p.nombre_proveedor ? ` · en Meta: ${p.nombre_proveedor}` : ''}</span></span>
+        <span className="fila" style={{ gap: 6 }}><Estado v={p.estado_aprobacion} /><button type="button" className="btn peq" onClick={() => setAbierta(!abierta)} aria-expanded={abierta}>{abierta ? 'Cerrar' : 'Registrar'}</button></span>
+      </div>
+      {abierta && (
+        <div className="col" style={{ gap: 10, marginTop: 10 }}>
+          <Campo etiqueta="Texto para copiar en Meta" ayuda="las variables van numeradas"><textarea className="input mono" readOnly value={meta} rows={3} /></Campo>
+          <div className="grid g2">
+            <Campo etiqueta="Nombre aprobado en Meta"><input className="input mono" value={f.nombre_proveedor} placeholder="recordatorio_cita" onChange={(e) => setF({ ...f, nombre_proveedor: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') })} /></Campo>
+            <Campo etiqueta="Idioma"><input className="input mono" value={f.idioma} placeholder="es o es_CO" onChange={(e) => setF({ ...f, idioma: e.target.value })} /></Campo>
+            <Campo etiqueta="Estado en Meta"><select className="input" value={f.estado_aprobacion} onChange={(e) => setF({ ...f, estado_aprobacion: e.target.value })}><option value="NO_REGISTRADA">Sin registrar</option><option value="APROBADA">Aprobada</option><option value="RECHAZADA">Rechazada</option><option value="PAUSADA">Pausada</option></select></Campo>
+          </div>
+          <Escritura permiso="tenant:configure"><button className="btn primario" style={{ alignSelf: 'flex-start' }} disabled={ocupado} onClick={() => run(() => api.patch(`/api/t/configuracion/plantillas/${p.clave}`, { ...f, nombre_proveedor: f.nombre_proveedor || null }), 'Plantilla actualizada').then((r) => { if (r) { setAbierta(false); onCambio(); } })}>Guardar</button></Escritura>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Cobros({ data, onCambio }: { data: any; onCambio: () => void }) {
+  const { s } = useSesion();
+  const [f, setF] = useState({ entorno: 'sandbox', llave_publica: '', secreto_integridad: '', secreto_eventos: '' });
+  const { run, ocupado, error } = useAccion();
+  const toast = useToast();
+  const cuenta = data.pasarela;
+  const completo = f.llave_publica && f.secreto_integridad && f.secreto_eventos;
+  return (
+    <div className="grid g2">
+      <Tarjeta titulo="Cuenta de cobros (Wompi)" acciones={cuenta ? <Estado v="CONECTADO" texto={cuenta.proveedor === 'wompi' ? `Wompi · ${cuenta.entorno === 'produccion' ? 'producción' : 'pruebas'}` : 'Simulada'} /> : <Estado v="SIN_CONFIGURAR" />}>
+        <form className="col" onSubmit={async (e) => { e.preventDefault(); const r = await run(() => api.post('/api/t/configuracion/pasarela', { proveedor: 'wompi', ...f }), 'Cuenta vinculada', { silencioso: true }); if (r) { setF({ ...f, secreto_integridad: '', secreto_eventos: '' }); onCambio(); } }}>
+          <span className="sec peq-txt">El dinero de tus ventas va directo a tu cuenta de Wompi. Encuentra estos datos en el panel de Wompi › Desarrolladores.</span>
+          {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
+          <Campo etiqueta="Entorno"><select className="input" value={f.entorno} onChange={(e) => setF({ ...f, entorno: e.target.value })}><option value="sandbox">Pruebas (llaves pub_test_…)</option><option value="produccion">Producción (llaves pub_prod_…)</option></select></Campo>
+          <Campo etiqueta="Llave pública"><input className="input mono" value={f.llave_publica} onChange={(e) => setF({ ...f, llave_publica: e.target.value.trim() })} placeholder="pub_test_…" autoComplete="off" /></Campo>
+          <Campo etiqueta="Secreto de integridad" ayuda="se guarda cifrado"><input className="input mono" type="password" value={f.secreto_integridad} onChange={(e) => setF({ ...f, secreto_integridad: e.target.value.trim() })} autoComplete="off" /></Campo>
+          <Campo etiqueta="Secreto de eventos" ayuda="se guarda cifrado"><input className="input mono" type="password" value={f.secreto_eventos} onChange={(e) => setF({ ...f, secreto_eventos: e.target.value.trim() })} autoComplete="off" /></Campo>
+          <Escritura permiso="subscription:manage"><button className="btn primario" style={{ alignSelf: 'flex-start' }} disabled={ocupado || !completo}>{cuenta ? 'Actualizar cuenta' : 'Vincular cuenta'}</button></Escritura>
+          {s.simuladores && !cuenta && <button type="button" className="btn sutil peq" style={{ alignSelf: 'flex-start' }} onClick={() => run(() => api.post('/api/t/configuracion/pasarela', { proveedor: 'simulada', cuenta_id: 'cuenta-demo' }), 'Pasarela simulada vinculada').then(onCambio)}>Usar la pasarela simulada (demostración)</button>}
+        </form>
+      </Tarjeta>
+      {cuenta?.webhook_url && (
+        <Tarjeta titulo="Confirmación automática de pagos">
+          <div className="col" style={{ gap: 10 }}>
+            <span className="sec peq-txt">Copia esta URL en Wompi › Desarrolladores › «URL de eventos» del mismo entorno. Así cada pago se confirma solo, aunque el cliente cierre la página.</span>
+            <span className="fila"><input className="input mono" readOnly value={cuenta.webhook_url} onFocus={(e) => e.target.select()} /><button type="button" className="btn peq" onClick={() => navigator.clipboard?.writeText(cuenta.webhook_url).then(() => toast('URL copiada'))}>Copiar</button></span>
+            <span className="tenue peq-txt">Vinculada el {fecha(cuenta.vinculado_en)}. Un pago solo se marca como recibido cuando Wompi lo confirma con su firma.</span>
+          </div>
+        </Tarjeta>
+      )}
+    </div>
+  );
+}
+
+function Invitar({ roles, onCerrar, onHecho }: { roles: any[]; onCerrar: () => void; onHecho: () => void }) {
+  const [f, setF] = useState({ email: '', nombre: '', rol: roles.find((r) => r.clave !== 'administrador')?.clave ?? roles[0].clave });
+  const [hecho, setHecho] = useState<any>(null);
+  const { run, ocupado, error } = useAccion();
+  const toast = useToast();
+  return (
+    <Modal titulo="Invitar a una persona" onCerrar={onCerrar} pie={!hecho ? <><button className="btn" onClick={onCerrar}>Cancelar</button><button className="btn primario" disabled={ocupado || !f.email || f.nombre.trim().length < 2} onClick={async () => { const r = await run(() => api.post('/api/t/configuracion/invitaciones', f), undefined, { silencioso: true }); if (r) { setHecho(r); onHecho(); } }}>Enviar invitación</button></> : <button className="btn primario" onClick={onCerrar}>Listo</button>}>
+      {!hecho ? <>
+        {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
+        <Campo etiqueta="Nombre"><input className="input" value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} /></Campo>
+        <Campo etiqueta="Correo"><input className="input" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Campo>
+        <Campo etiqueta="Rol"><select className="input" value={f.rol} onChange={(e) => setF({ ...f, rol: e.target.value })}>{roles.map((r) => <option key={r.clave} value={r.clave}>{r.nombre}</option>)}</select></Campo>
+        <span className="tenue peq-txt">Recibirá un enlace para crear su contraseña (o entrar con la suya si ya tiene cuenta). Vence en 7 días.</span>
+      </> : hecho.correo_enviado ? <span>Enviamos la invitación a <b>{f.email}</b>.</span> : <>
+        <span>Invitación creada. El correo está pendiente de conectar, así que comparte este enlace con {f.nombre} por un canal seguro:</span>
+        <span className="fila"><input className="input mono" readOnly value={hecho.enlace} onFocus={(e) => e.target.select()} /><button type="button" className="btn peq" onClick={() => navigator.clipboard?.writeText(hecho.enlace).then(() => toast('Enlace copiado'))}>Copiar</button></span>
+      </>}
+    </Modal>
+  );
+}
+
+// =================================================================== Suscripción
+export function Suscripcion() {
+  const { data, error, recargar } = useApi<any>(() => api.get('/api/t/suscripcion'), []);
+  const { run, ocupado } = useAccion();
+  if (error) return <><Cabecera titulo="Suscripción" /><div className="contenido"><ErrorCarga error={error} reintentar={recargar} /></div></>;
   if (!data) return <><Cabecera titulo="Suscripción" /><div className="tarjeta"><Cargando filas={8} /></div></>;
   const s = data.suscripcion;
-  const ciclo = ['ACTIVA', 'PAGO_PENDIENTE', 'EN_GRACIA', 'SUSPENDIDA', 'CANCELADA'];
-  const efecto: Record<string, string> = { ACTIVA: 'Acceso completo según el plan', PAGO_PENDIENTE: 'Acceso completo; te avisamos', EN_GRACIA: 'Acceso completo; avisos crecientes', SUSPENDIDA: 'Solo lectura y exportación; el canal deja de atender', CANCELADA: 'Acceso cerrado; inicia el plazo de retención' };
+  const ciclo = ['ACTIVA', 'PAGO_PENDIENTE', 'EN_GRACIA', 'SUSPENDIDA'];
+  const efecto: Record<string, string> = { ACTIVA: 'Todo funciona según tu plan', PAGO_PENDIENTE: 'Sigue funcionando; renueva pronto', EN_GRACIA: 'Sigue funcionando por pocos días', SUSPENDIDA: 'Solo lectura y exportación; WhatsApp pausado' };
+  const pagar = async () => { const r = await run(() => api.post('/api/t/suscripcion/pagar')); if (r?.url) window.location.assign(r.url.startsWith(window.location.origin) ? r.url.replace(window.location.origin, '') : r.url); };
+  const etiquetaMetrica: Record<string, string> = { tokens_ia: 'IA', mensajes: 'Mensajes', documentos: 'Documentos fiscales', plantillas_marketing: 'Plantillas de marketing' };
   return (
     <>
-      <Cabecera titulo="Suscripción" sub="Funciones y consumo de tu negocio">
-        <span className="estado neutro">Configuración a medida</span>
+      <Cabecera titulo="Suscripción" sub={`Plan ${s.plan_nombre} · ${cop(s.precio_mensual)} al mes`}>
+        {data.pagos_en_linea && <button className="btn primario" disabled={ocupado} onClick={pagar}>{ocupado ? 'Preparando…' : s.estado === 'ACTIVA' ? 'Pagar el próximo mes' : s.estado === 'SUSPENDIDA' ? 'Pagar y reactivar' : 'Renovar ahora'}</button>}
       </Cabecera>
       <div className="contenido">
         <Tarjeta titulo={<span className="fila">Estado <Estado v={s.estado} /></span>} nivel={['SUSPENDIDA', 'EN_GRACIA'].includes(s.estado) ? 3 : 2}>
@@ -225,25 +397,26 @@ export function Suscripcion() {
               </li>
             ))}
           </ol>
-          <p className="sec" style={{ marginTop: 12 }}>Periodo actual: {fecha(s.periodo_inicio)} – {fecha(s.periodo_fin)}. Suspender no borra tus datos: conservas lectura y exportación.</p>
+          <p className="sec" style={{ marginTop: 12 }}>Periodo actual: {fecha(s.periodo_inicio)} – {fecha(s.periodo_fin)}{s.gracia_hasta ? ` · gracia hasta el ${fecha(s.gracia_hasta)}` : ''}. Suspender no borra tus datos: conservas lectura y exportación.</p>
+          {!data.pagos_en_linea && <p className="aviso peq-txt" style={{ marginTop: 12 }}><Icon n="info" className="" size={14} />El pago en línea está pendiente de conectar. Escríbenos para renovar.</p>}
         </Tarjeta>
         <div className="kpis k3" aria-label="Consumo del mes">
-          <div className="kpi"><Medidor c={data.consumo.tokens_ia} etiqueta="IA (tokens)" /></div>
+          <div className="kpi"><Medidor c={data.consumo.tokens_ia} etiqueta="IA" /></div>
           <div className="kpi"><Medidor c={data.consumo.mensajes} etiqueta="Mensajes" /></div>
           <div className="kpi"><Medidor c={data.consumo.documentos} etiqueta="Documentos fiscales" /></div>
         </div>
         <Tarjeta titulo="Tu plan">
           <dl className="plan-def">
             <div><dt>Personas</dt><dd>{data.usuarios} de {s.max_usuarios}</dd></div>
-            <div><dt>Tokens de IA / mes</dt><dd>{num(s.cuota_tokens_ia)}</dd></div>
-            <div><dt>Mensajes / mes</dt><dd>{num(s.cuota_mensajes)}</dd></div>
-            <div><dt>Documentos / mes</dt><dd>{num(s.cuota_documentos)}</dd></div>
+            <div><dt>IA al mes</dt><dd>{num(s.cuota_tokens_ia)}</dd></div>
+            <div><dt>Mensajes al mes</dt><dd>{num(s.cuota_mensajes)}</dd></div>
+            <div><dt>Documentos al mes</dt><dd>{num(s.cuota_documentos)}</dd></div>
           </dl>
-          <p className="sec" style={{ marginTop: 12 }}>{s.politica_excedente === 'LIMITAR' ? 'Al llegar al tope de IA, el agente pasa las conversaciones a tu equipo en lugar de generar cobros adicionales.' : `Excedente de IA facturado a ${cop(s.precio_excedente_1k_tokens)} por cada 1.000 tokens.`} Los mensajes dentro de la ventana de 24 horas no tienen costo de canal.</p>
+          <p className="sec" style={{ marginTop: 12 }}>{s.politica_excedente === 'LIMITAR' ? 'Al llegar al tope de IA, el agente pasa las conversaciones a tu equipo en lugar de generar cobros adicionales.' : `El excedente de IA se cobra a ${cop(s.precio_excedente_1k_tokens)} por cada 1.000 unidades.`} Estos pagos son de tu plan con nosotros; los cobros a tus clientes van a tu propia cuenta.</p>
         </Tarjeta>
         {data.historico.length > 0 && (
-          <Tarjeta titulo="Histórico de consumo" sinCuerpo>
-            <div className="tabla-wrap"><table className="tabla"><thead><tr><th>Periodo</th><th>Métrica</th><th className="num">Cantidad</th></tr></thead><tbody>{data.historico.map((h: any, i: number) => <tr key={i}><td className="mono">{h.periodo}</td><td>{h.metrica}</td><td className="num">{num(h.cantidad)}</td></tr>)}</tbody></table></div>
+          <Tarjeta titulo="Consumo de meses anteriores" sinCuerpo>
+            <div className="tabla-wrap"><table className="tabla"><thead><tr><th>Mes</th><th>Concepto</th><th className="num">Cantidad</th></tr></thead><tbody>{data.historico.map((h: any, i: number) => <tr key={i}><td className="mono">{h.periodo}</td><td>{etiquetaMetrica[h.metrica] ?? h.metrica}</td><td className="num">{num(h.cantidad)}</td></tr>)}</tbody></table></div>
           </Tarjeta>
         )}
       </div>
@@ -251,66 +424,74 @@ export function Suscripcion() {
   );
 }
 
-// =================================================================== SCR-020 Auditoría
+// =================================================================== Auditoría
+const ACTOR: Record<string, string> = { USUARIO: 'Persona', AGENTE: 'IA', SISTEMA: 'Sistema', CLIENTE: 'Cliente', PLATAFORMA: 'Plataforma', ANONIMO: 'Externo' };
+const CLAVES_DETALLE: Record<string, string> = { motivo: 'Motivo', campos: 'Campos', numero: 'Número', referencia: 'Referencia', radicado: 'Radicado', prioridad: 'Prioridad', estado: 'Estado', filas: 'Filas', total: 'Total', decision: 'Decisión', ruta: 'Ruta', metodo: 'Método', de: 'Antes', a: 'Después', activo: 'Activo', habilitada: 'Habilitada', plan: 'Plan', error: 'Error' };
+
+function valorLegible(v: unknown): string {
+  if (v === null || v === undefined) return '—';
+  if (Array.isArray(v)) return v.map(valorLegible).join(', ');
+  if (typeof v === 'boolean') return v ? 'sí' : 'no';
+  if (typeof v === 'object') return Object.entries(v as object).map(([k, x]) => `${CLAVES_DETALLE[k] ?? k}: ${valorLegible(x)}`).join(' · ');
+  return String(v);
+}
+
 export function Auditoria() {
   const [params, setParams] = useSearchParams();
   const [tipo, setTipo] = useState('');
   const [resultado, setResultado] = useState('');
   const [q, setQ] = useState(params.get('q') ?? '');
-  const { data, error, recargar } = useApi<any[]>(() => api.get(`/api/t/auditoria?${new URLSearchParams({ tipo, resultado, q }).toString()}`), [tipo, resultado, q]);
+  const [pagina, setPagina] = useState(1);
+  const [filas, setFilas] = useState<any[]>([]);
+  const { data, error, recargar, cargando } = useApi<any[]>(() => api.get(`/api/t/auditoria?${new URLSearchParams({ tipo, resultado, q, pagina: String(pagina) }).toString()}`), [tipo, resultado, q, pagina]);
+  useEffect(() => { setPagina(1); }, [tipo, resultado, q]);
+  useEffect(() => { if (data) setFilas((prev) => (pagina === 1 ? data : [...prev, ...data])); }, [data]);
   const [sel, setSel] = useState<any>(null);
-  const exportar = async () => {
-    const res = await fetch(`/api/t/auditoria.csv?${new URLSearchParams({ tipo, resultado, q })}`, { headers: { 'x-tenant-slug': tenantSlug() ?? '' }, credentials: 'include' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(await res.blob());
-    a.download = 'auditoria.csv';
-    a.click();
-    recargar();
-  };
+  const { run } = useAccion();
   return (
     <>
-      <Cabecera titulo="Auditoría" sub={<span className="fila"><Icon n="candado" className="" size={14} />Registro de solo inserción: no se puede editar ni borrar</span>}>
-        {!error && <button className="btn" onClick={exportar}>Exportar CSV</button>}
+      <Cabecera titulo="Auditoría" sub={<span className="fila"><Icon n="candado" className="" size={14} />Registro inalterable: no se puede editar ni borrar</span>}>
+        {!error && <button className="btn" onClick={() => run(() => descargar(`/api/t/auditoria.csv?${new URLSearchParams({ tipo, resultado, q })}`, 'auditoria.csv'), 'Exportación lista').then(recargar)}>Exportar</button>}
       </Cabecera>
       <div className="contenido">
         {error && <ErrorCarga error={error} reintentar={recargar} />}
         <section className="tarjeta" hidden={!!error}>
           <div className="filtros">
-            <div className="tabs" role="group" aria-label="Tipo de evento">{[['', 'Todo'], ['ia', 'IA'], ['seguridad', 'Seguridad'], ['fiscal', 'Fiscal'], ['configuracion', 'Configuración']].map(([k, v]) => <button key={k} className={tipo === k ? 'on' : ''} aria-pressed={tipo === k} onClick={() => setTipo(k)}>{v}</button>)}</div>
+            <div className="tabs" role="group" aria-label="Tipo de evento">{[['', 'Todo'], ['ia', 'IA'], ['seguridad', 'Seguridad'], ['fiscal', 'Facturación'], ['cobros', 'Cobros'], ['configuracion', 'Configuración']].map(([k, v]) => <button key={k} className={tipo === k ? 'on' : ''} aria-pressed={tipo === k} onClick={() => setTipo(k)}>{v}</button>)}</div>
             <select className="input" style={{ width: 'auto' }} value={resultado} onChange={(e) => setResultado(e.target.value)} aria-label="Resultado"><option value="">Cualquier resultado</option>{['EXITO', 'PERMITIDO', 'DENEGADO', 'NO_ENCONTRADO', 'ERROR'].map((r) => <option key={r} value={r}>{{ EXITO: 'Éxito', PERMITIDO: 'Permitido', DENEGADO: 'Denegado', NO_ENCONTRADO: 'No encontrado', ERROR: 'Error' }[r]}</option>)}</select>
-            <label className="buscar" style={{ minWidth: 0, flex: '1 1 240px', maxWidth: 360 }}><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Buscar acción, actor o recurso" aria-label="Buscar en auditoría" value={q} onChange={(e) => { setQ(e.target.value); setParams(e.target.value ? { q: e.target.value } : {}); }} /></label>
+            <label className="buscar" style={{ minWidth: 0, flex: '1 1 240px', maxWidth: 360 }}><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Acción, persona o código" aria-label="Buscar en auditoría" value={q} onChange={(e) => { setQ(e.target.value); setParams(e.target.value ? { q: e.target.value } : {}); }} /></label>
           </div>
-          {!data ? <Cargando /> : data.length === 0 ? <Vacio titulo="Sin eventos para este filtro">Cambia el tipo, el resultado o la búsqueda.</Vacio> : (
-            <div className="tabla-wrap" style={{ maxHeight: 'calc(100vh - 250px)' }}><table className="tabla">
-              <thead><tr><th>Momento</th><th>Actor</th><th>Acción</th><th>Recurso</th><th>Resultado</th><th>Origen</th><th>Evento</th></tr></thead>
-              <tbody>{data.map((e) => (
-                <tr key={e.id} className="clic" onClick={() => setSel(e)}>
-                  <td className="mono" style={{ whiteSpace: 'nowrap' }}>{fecha(e.creado_en)} {hora(e.creado_en)}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}><Estado v={e.actor_tipo === 'AGENTE' ? 'AGENTE' : e.actor_tipo === 'USUARIO' ? 'PANEL' : undefined} texto={e.actor_tipo.toLowerCase()} /> {e.actor_nombre}</td>
-                  <td className="mono">{e.accion}</td>
-                  <td className="mono tenue">{e.recurso ? `${e.recurso}${e.recurso_id ? ' · ' + String(e.recurso_id).slice(-8) : ''}` : '—'}</td>
-                  <td><Estado v={e.resultado} /></td><td>{e.origen}</td><td className="mono tenue">{String(e.id).slice(-8)}</td>
-                </tr>
-              ))}</tbody>
-            </table></div>
+          {!data && pagina === 1 ? <Cargando /> : filas.length === 0 ? <Vacio titulo="Sin eventos para este filtro">Cambia el tipo, el resultado o la búsqueda.</Vacio> : (
+            <>
+              <div className="tabla-wrap" style={{ maxHeight: 'calc(100vh - 260px)' }}><table className="tabla tabla-movil">
+                <thead><tr><th>Momento</th><th>Quién</th><th>Acción</th><th>Resultado</th><th>Desde</th></tr></thead>
+                <tbody>{filas.map((e) => (
+                  <tr key={e.id} className="clic" onClick={() => setSel(e)}>
+                    <td data-etiqueta="Momento" className="mono">{fecha(e.creado_en)} {hora(e.creado_en)}</td>
+                    <td data-etiqueta="Quién"><span className="tenue peq-txt">{ACTOR[e.actor_tipo] ?? e.actor_tipo}</span> {e.actor_nombre}</td>
+                    <td data-etiqueta="Acción" className="principal">{e.accion.startsWith('ia.herramienta.') ? accionIA(e.accion.replace('ia.herramienta.', '')) : e.accion.replace(/[._]/g, ' ')}</td>
+                    <td data-etiqueta="Resultado"><Estado v={e.resultado} /></td><td data-etiqueta="Desde">{e.origen.toLowerCase()}</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+              {data && data.length === 100 && <div className="cuerpo"><button className="btn" disabled={cargando} onClick={() => setPagina(pagina + 1)}>{cargando ? 'Cargando…' : 'Ver más antiguos'}</button></div>}
+            </>
           )}
         </section>
-        <p className="nota-pie"><Icon n="candado" className="" size={14} />Los intentos de acceso a datos de otra empresa se registran aquí y se responden al solicitante con «no encontramos eso», sin confirmar que el recurso existe.</p>
+        <p className="nota-pie"><Icon n="candado" className="" size={14} />Los intentos de acceder a datos de otra empresa se registran aquí y se responden con «no encontramos eso», sin confirmar si el dato existe.</p>
       </div>
       {sel && (
-        <Modal titulo={sel.accion} onCerrar={() => setSel(null)}>
+        <Modal titulo={sel.accion.startsWith('ia.herramienta.') ? accionIA(sel.accion.replace('ia.herramienta.', '')) : sel.accion.replace(/[._]/g, ' ')} onCerrar={() => setSel(null)}>
           <div className="col" style={{ gap: 12 }}>
             <dl className="datos-def">
               <dt>Momento</dt><dd>{fechaHora(sel.creado_en)}</dd>
-              <dt>Actor</dt><dd>{sel.actor_tipo.toLowerCase()} · {sel.actor_nombre}</dd>
+              <dt>Quién</dt><dd>{ACTOR[sel.actor_tipo] ?? sel.actor_tipo} · {sel.actor_nombre}</dd>
               <dt>Resultado</dt><dd><Estado v={sel.resultado} /></dd>
-              <dt>Correlación</dt><dd className="mono">{sel.correlacion}</dd>
-              <dt>Evento</dt><dd className="mono">{sel.id}</dd>
+              <dt>Desde</dt><dd>{sel.origen.toLowerCase()}</dd>
+              {Object.entries(sel.detalle ?? {}).filter(([k]) => !['agente', 'comprobacion', 'conversacion', 'permiso', 'riesgo'].includes(k)).map(([k, v]) => <Fragment key={k}><dt>{CLAVES_DETALLE[k] ?? k.replace(/_/g, ' ')}</dt><dd>{k === 'motivo' && sel.accion.startsWith('ia.') ? motivoIA(String(v)) : valorLegible(v)}</dd></Fragment>)}
+              <dt>Código de seguimiento</dt><dd className="mono">{sel.correlacion}</dd>
             </dl>
-            {sel.recurso === 'ai_execution' && sel.detalle?.decision && <Recibo e={{ id: sel.recurso_id, herramienta: sel.accion.replace('ia.herramienta.', ''), decision: sel.detalle.decision, nivel_riesgo: sel.detalle.riesgo, permiso_requerido: sel.detalle.permiso, motivo_denegacion: sel.detalle.motivo, comprobacion_fallida: sel.detalle.comprobacion, creado_en: sel.creado_en }} />}
-            <span className="etiqueta">Detalle registrado</span>
-            <pre className="mono" style={{ background: 'var(--superficie-2)', border: '1px solid var(--borde)', padding: 12, borderRadius: 8, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: 0, fontSize: 12 }}>{JSON.stringify(sel.detalle, null, 2)}</pre>
-            <span className="tenue peq-txt fila"><Icon n="candado" className="" size={14} />Este evento no se puede editar ni borrar.</span>
+            <span className="tenue peq-txt fila"><Icon n="candado" className="" size={14} />Este registro no se puede editar ni borrar. Si soporte te lo pide, comparte el código de seguimiento.</span>
           </div>
         </Modal>
       )}
@@ -318,7 +499,7 @@ export function Auditoria() {
   );
 }
 
-// =================================================================== Simulador del canal (piloto)
+// =================================================================== Simulador del canal (solo demostración)
 export function Simulador() {
   const { s } = useSesion();
   const [tel, setTel] = useState('+573001234567');
@@ -328,24 +509,25 @@ export function Simulador() {
   const { run, ocupado } = useAccion();
   const fin = useRef<HTMLDivElement>(null);
   useEffect(() => { fin.current?.scrollIntoView({ block: 'end' }); }, [data?.mensajes?.length]);
-  const enviar = async (e?: FormEvent, t?: string) => {
+  const enviar = async (e?: FormEvent, t?: string, tipo = 'text') => {
     e?.preventDefault();
-    const msg = (t ?? texto).trim();
+    const msg = (t ?? texto).trim() || (tipo !== 'text' ? '-' : '');
     if (!msg) return;
-    setTexto('');
-    await run(() => api.post('/api/t/simulador/whatsapp', { telefono: tel, nombre, texto: msg }));
+    if (tipo === 'text') setTexto('');
+    await run(() => api.post('/api/t/simulador/whatsapp', { telefono: tel, nombre, texto: msg, tipo }));
     recargar();
   };
   const sugerencias = ['Hola', 'Sí', '¿Cuánto vale el corte + barba?', 'Quiero una cita de corte clásico mañana a las 10', 'Sí', '¿A qué hora es mi cita?', 'Quiero comprar una cera para peinar', '¿Me llegó la factura?', 'Quiero poner un reclamo'];
+  if (!s.simuladores) return <><Cabecera titulo="Simulador de WhatsApp" /><div className="contenido"><Vacio titulo="No disponible">El simulador solo existe en el entorno de demostración.</Vacio></div></>;
   return (
     <>
       <Cabecera titulo="Simulador de WhatsApp" sub="Escribe como un cliente: el mensaje entra por el mismo webhook firmado que usa Meta" />
       <div className="contenido">
-        {!s.tenant.whatsapp_phone_number_id && <div className="bloqueado"><Icon n="candado" className="" size={16} />Vincula primero un número en Configuración › WhatsApp y cobros (en el piloto: sim-{s.tenant.slug}).</div>}
-        <div className="aviso peq-txt"><Icon n="info" className="" size={16} />Herramienta de piloto: los mensajes que escribas aquí entran como si fueran de un cliente real y quedan en Conversaciones y Auditoría.</div>
+        {!s.tenant.whatsapp_phone_number_id && <div className="bloqueado"><Icon n="candado" className="" size={16} /><span>Vincula primero un número en <Link to="/configuracion?tab=canal">Configuración › WhatsApp</Link> (en demostración: sim-{s.tenant.slug}).</span></div>}
+        <div className="aviso peq-txt"><Icon n="info" className="" size={16} />Herramienta de pruebas: lo que escribas aquí entra como si fuera de un cliente real y queda en Conversaciones y Auditoría. Las respuestas no salen a WhatsApp.</div>
         <div className="grid g-main" style={{ alignItems: 'start' }}>
           <section className="tarjeta telefono" aria-label="Vista del cliente en WhatsApp (simulada)">
-            <div className="fila" style={{ padding: '12px 14px', gap: 10, borderBottom: '1px solid var(--borde)' }}><span className="marca-negocio" style={{ borderRadius: '50%' }}>{s.tenant.logo_data_url ? <img src={s.tenant.logo_data_url} alt="" /> : s.tenant.tema?.monograma}</span><span style={{ minWidth: 0 }}><b className="cortar" style={{ display: 'block' }}>{s.tenant.nombre}</b><span className="tenue cortar" style={{ fontSize: 12, display: 'block' }}>WhatsApp Business · {s.tenant.whatsapp_phone_number_id ?? 'sin número'}</span></span></div>
+            <div className="fila" style={{ padding: '12px 14px', gap: 10, borderBottom: '1px solid var(--borde)' }}><span className="marca-negocio" style={{ borderRadius: '50%' }}>{s.tenant.logo_data_url ? <img src={s.tenant.logo_data_url} alt="" /> : s.tenant.tema?.monograma}</span><span style={{ minWidth: 0 }}><b className="cortar" style={{ display: 'block' }}>{s.tenant.nombre}</b><span className="tenue cortar" style={{ fontSize: 12, display: 'block' }}>WhatsApp Business · simulado</span></span></div>
             <div className="hilo telefono-hilo" aria-live="polite">
               {(data?.mensajes ?? []).map((m: any) => (
                 <div key={m.id} className={`wa ${m.remitente === 'CUSTOMER' ? 'propio' : ''}`}>
@@ -362,12 +544,17 @@ export function Simulador() {
               <div className="col">
                 <Campo etiqueta="Teléfono"><input className="input mono" value={tel} onChange={(e) => setTel(e.target.value)} /></Campo>
                 <Campo etiqueta="Nombre de perfil"><input className="input" value={nombre} onChange={(e) => setNombre(e.target.value)} /></Campo>
-                <span className="tenue">Cambia el teléfono para empezar como un cliente nuevo (verás el aviso de privacidad).</span>
+                <span className="tenue peq-txt">Cambia el teléfono para empezar como un cliente nuevo (verás el aviso de privacidad).</span>
               </div>
             </Tarjeta>
             <Tarjeta titulo="Guion sugerido">
               <div className="fila envolver" style={{ gap: 6 }}>{sugerencias.map((t, i) => <button key={i} type="button" className="chip" onClick={() => enviar(undefined, t)} disabled={ocupado}>{t}</button>)}</div>
-              <p className="tenue peq-txt" style={{ marginTop: 12 }}>Abre Conversaciones en otra pestaña para ver los recibos de cada acción y tomar el caso cuando se escale.</p>
+              <div className="fila envolver" style={{ gap: 6, marginTop: 10 }}>
+                <button type="button" className="chip" disabled={ocupado} onClick={() => enviar(undefined, '-', 'image')}>Enviar una foto</button>
+                <button type="button" className="chip" disabled={ocupado} onClick={() => enviar(undefined, '-', 'audio')}>Enviar un audio</button>
+                <button type="button" className="chip" disabled={ocupado} onClick={() => enviar(undefined, '-', 'unsupported')}>Tipo no admitido</button>
+              </div>
+              <p className="tenue peq-txt" style={{ marginTop: 12 }}>Abre Conversaciones en otra pestaña para ver los recibos de cada acción y tomar el radicado cuando se escale.</p>
             </Tarjeta>
           </div>
         </div>

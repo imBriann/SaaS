@@ -39,6 +39,9 @@ export interface LoopOutput {
   tokens: number;
   toolCalls: number;
   stopReason: string;
+  /** Desglose técnico (sin contenido) para el costo del proveedor. */
+  tokensEntrada?: number;
+  tokensSalida?: number;
 }
 
 export interface StructuredInput<T> {
@@ -54,5 +57,5 @@ export interface LlmClient {
   nombre: string;
   runLoop(input: LoopInput, onToolCall: (name: string, args: unknown) => Promise<ToolCallOutcome>): Promise<LoopOutput>;
   /** data: validado contra el esquema; raw: salida sin validar, para descartar campo a campo (D-02). */
-  structured<T>(input: StructuredInput<T>): Promise<{ data: T | null; raw: unknown; tokens: number }>;
+  structured<T>(input: StructuredInput<T>): Promise<{ data: T | null; raw: unknown; tokens: number; tokensEntrada?: number; tokensSalida?: number }>;
 }

@@ -6,7 +6,7 @@
    coreografía que explica el producto); el resto de la página es sobrio.
    Sin animaciones en bucle.
    ===================================================================== */
-.publico { --acento: #5b36c9; --sobre-acento: #fff; min-height: 100vh; overflow-x: clip; background: var(--superficie); color: var(--tinta); }
+.publico { --acento: #5B4CEF; --marca: #6D5EF8; --marca-cian: #22D3EE; --marca-coral: #F97316; --marca-rosa: #EC4899; --marca-noche: #0F172A; --sobre-acento: #fff; --fuente-marca: 'Outfit', var(--sans); min-height: 100vh; overflow-x: clip; background: var(--superficie); color: var(--tinta); }
 
 /* navegación */
 .publico .nav { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 16px; height: 64px; max-width: 1240px; margin: 0 auto; padding: 0 24px; background: var(--superficie); }
@@ -29,20 +29,21 @@
    degradado violeta; el panel que emerge es claro, como el producto. */
 .hero-caos { position: relative; isolation: isolate; max-width: 1280px; margin: 0 auto; padding: 40px 24px 72px; display: grid; grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr); gap: 48px; align-items: center; }
 .hero-caos::before { content: ''; position: absolute; inset: -64px calc(50% - 50vw) 0; z-index: -1; pointer-events: none;
-  background: radial-gradient(48% 60% at 78% 38%, rgba(91, 54, 201, 0.16), transparent 70%), radial-gradient(30% 40% at 96% 8%, rgba(232, 92, 140, 0.12), transparent 70%); }
+  background: radial-gradient(48% 60% at 78% 38%, rgba(109, 94, 248, 0.18), transparent 70%), radial-gradient(30% 40% at 96% 8%, rgba(34, 211, 238, 0.16), transparent 70%), radial-gradient(22% 30% at 70% 92%, rgba(249, 115, 22, 0.08), transparent 70%); }
 .hero-copy h1 { font-size: clamp(40px, 5vw, 66px); line-height: 1.02; letter-spacing: -0.04em; font-weight: 750; max-width: 11ch; text-wrap: balance; }
 .hero-copy h1 em { font-style: normal; color: var(--acento); }
 .hero-copy p { margin: 22px 0 30px; font-size: 18px; line-height: 1.55; color: var(--tinta-2); max-width: 40ch; }
 .hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.hero-actions .btn.primario { box-shadow: 0 10px 24px -10px rgba(91, 54, 201, 0.7); }
+.hero-actions .btn.primario { box-shadow: 0 10px 24px -10px rgba(91, 76, 239, 0.7); }
 
 .escena-marco { margin: 0; container-type: inline-size; min-width: 0; }
 .escena { --pieza-w: 216px; --mover: 900ms; position: relative; height: 520px; border-radius: 20px; overflow: hidden; isolation: isolate;
   background:
-    radial-gradient(70% 60% at 12% 0%, rgba(140, 104, 255, 0.45), transparent 62%),
-    radial-gradient(50% 50% at 100% 100%, rgba(232, 92, 140, 0.28), transparent 70%),
-    linear-gradient(155deg, #261a52 0%, #160f33 55%, #100b24 100%);
-  box-shadow: 0 40px 80px -36px rgba(38, 22, 92, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+    radial-gradient(70% 60% at 12% 0%, rgba(109, 94, 248, 0.5), transparent 62%),
+    radial-gradient(50% 50% at 100% 100%, rgba(34, 211, 238, 0.28), transparent 70%),
+    radial-gradient(30% 30% at 88% 6%, rgba(236, 72, 153, 0.22), transparent 70%),
+    linear-gradient(155deg, #1B1F4B 0%, #111634 55%, #0F172A 100%);
+  box-shadow: 0 40px 80px -36px rgba(15, 23, 42, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
 .escena::before { content: ''; position: absolute; inset: 0; z-index: -1; opacity: 0.5; transition: opacity 600ms var(--ease-out);
   background-image: radial-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1.4px); background-size: 22px 22px;
   mask-image: radial-gradient(80% 80% at 50% 40%, #000, transparent); }
@@ -71,7 +72,7 @@
 
 /* uniones */
 .escena-lineas { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: visible; }
-.escena-lineas path { fill: none; stroke: #b9a4ff; stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: trazar 700ms var(--ease-out) forwards; filter: drop-shadow(0 0 3px rgba(185, 164, 255, 0.55)); }
+.escena-lineas path { fill: none; stroke: #67E8F9; stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: trazar 700ms var(--ease-out) forwards; filter: drop-shadow(0 0 3px rgba(34, 211, 238, 0.55)); }
 .escena[data-fase='orden'] .escena-lineas path { stroke: color-mix(in srgb, var(--acento) 55%, transparent); filter: none; }
 @keyframes trazar { to { stroke-dashoffset: 0; } }
 
@@ -320,4 +321,53 @@
   .cp-ventana { grid-template-columns: 128px minmax(0, 1fr); min-height: 260px; }
   .cp-main { padding: 10px; }
   .cp-leyenda ul { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* =====================================================================
+   Marca Omnegia en las páginas públicas (iteración 3)
+   ===================================================================== */
+.marca-logo img { display: block; height: 34px; width: auto; }
+.publico h1, .hero-copy h1, .statement-strip p, .feature-intro h2, .closing-cta h2, .onb-titulo, .auth-form h1 { font-family: var(--fuente-marca); letter-spacing: -0.03em; }
+.hero-copy h1 em { background: linear-gradient(120deg, var(--marca) 10%, var(--marca-cian) 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.ep-logo { background: linear-gradient(135deg, #8B5CF6, var(--marca) 40%, var(--marca-cian)); }
+.statement-strip li > svg, .auth-story li > svg { background: color-mix(in srgb, var(--marca) 12%, #fff); color: var(--acento); }
+.closing-cta { background: radial-gradient(60% 120% at 100% 0%, color-mix(in srgb, var(--marca-cian) 14%, transparent), transparent 70%), radial-gradient(60% 120% at 0% 100%, color-mix(in srgb, var(--marca) 14%, transparent), transparent 70%), var(--lienzo); }
+.pie-legal { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.pie-legal img { height: 30px; width: auto; }
+.pie-legal > span:first-of-type { font-family: var(--fuente-marca); font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--tinta-2); }
+.pie-legal > span:last-child { max-width: 70ch; }
+
+/* páginas de acceso de una columna */
+.auth-layout.solo { grid-template-columns: minmax(0, 460px); justify-content: center; }
+.auth-form .aviso, .auth-form .bloqueado { margin: 0; }
+
+/* creación del espacio: cada etapa se marca solo cuando el servidor la registró */
+.creacion { display: flex; flex-direction: column; gap: 16px; padding: 18px; border-radius: 16px; border: 1px solid var(--borde); background: radial-gradient(90% 90% at 100% 0%, color-mix(in srgb, var(--marca) 10%, transparent), transparent 70%), var(--superficie); }
+.creacion-cab { display: flex; align-items: center; gap: 12px; }
+.creacion-loader { flex: none; }
+.creacion-sello { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--ok); color: #fff; animation: sello 420ms cubic-bezier(.34, 1.56, .64, 1) both; }
+.creacion-sello.error { background: var(--error); }
+@keyframes sello { from { transform: scale(0.6); opacity: 0; } }
+.creacion-etapas { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; position: relative; }
+.creacion-etapas li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 12px; align-items: start; padding: 7px 0; color: var(--tinta-3); position: relative; }
+.creacion-etapas li::before { content: ''; position: absolute; left: 11px; top: 31px; bottom: -9px; width: 2px; background: var(--borde); }
+.creacion-etapas li:last-child::before { display: none; }
+.creacion-etapas li b { font-weight: 500; color: var(--tinta-2); }
+.creacion-etapas .punto { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--superficie); box-shadow: inset 0 0 0 1.5px var(--borde-2); z-index: 1; transition: background-color 260ms var(--ease-out), box-shadow 260ms var(--ease-out); }
+.creacion-etapas li.hecha .punto { background: var(--ok); color: #fff; box-shadow: none; animation: etapa 320ms var(--ease-out) both; }
+.creacion-etapas li.hecha::before { background: var(--ok); }
+.creacion-etapas li.hecha b { color: var(--tinta); }
+.creacion-etapas li.curso .punto { box-shadow: inset 0 0 0 2px var(--marca); }
+.creacion-etapas li.curso .punto::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--marca); animation: pulso 1.2s ease-in-out infinite; }
+.creacion-etapas li.fallo .punto { background: var(--error); color: #fff; box-shadow: none; }
+.creacion-etapas li.fallo b { color: var(--error); }
+@keyframes etapa { from { transform: scale(0.5); } }
+@keyframes pulso { 50% { transform: scale(0.55); opacity: 0.5; } }
+.creacion.terminada { border-color: color-mix(in srgb, var(--ok) 40%, var(--borde)); }
+@media (prefers-reduced-motion: reduce) {
+  .creacion-sello, .creacion-etapas li.hecha .punto, .creacion-etapas li.curso .punto::after { animation: none; }
+}
+@media (max-width: 760px) {
+  .marca-logo img { height: 28px; }
+  .creacion { padding: 14px; }
 }

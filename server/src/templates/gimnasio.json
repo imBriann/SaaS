@@ -1,6 +1,6 @@
 {
   "sector": "gimnasio",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "nombre": "Gimnasio",
   "descripcion": "Gimnasios y centros de entrenamiento con membresías y clases grupales.",
   "modulos": ["clientes", "catalogo", "ventas", "agenda", "inventario", "facturacion", "conversaciones", "ia", "membresias"],
@@ -64,6 +64,7 @@
     { "tipo": "PRODUCTO", "nombre": "Proteína 2 lb", "categoria": "Suplementos", "precio": 120000, "iva_pct": 19, "controla_stock": true, "stock": 10, "stock_minimo": 3 }
   ],
   "plantillas_mensaje": [
+    { "clave": "reprogramacion", "categoria": "UTILIDAD", "cuerpo": "Hola {{cliente}}, tu cita de {{servicio}} quedó para el {{fecha}} a las {{hora}} con {{recurso}}." },
     { "clave": "confirmacion_cita", "categoria": "UTILIDAD", "cuerpo": "¡Listo, {{cliente}}! Tu {{servicio}} quedó para el {{fecha}} a las {{hora}} en {{recurso}}." },
     { "clave": "recordatorio_24h", "categoria": "UTILIDAD", "cuerpo": "Hola {{cliente}}, mañana a las {{hora}} tienes {{servicio}}. ¡Te esperamos!" },
     { "clave": "vencimiento_membresia", "categoria": "UTILIDAD", "cuerpo": "Hola {{cliente}}, tu membresía vence pronto. Escríbenos para renovarla." },
@@ -93,6 +94,8 @@
   "widgets_panel": ["citas_hoy", "ocupacion_por_recurso", "ingresos_semana", "clientes_nuevos"],
   "reglas_automatizacion": [
     { "evento": "cita_creada", "accion": "enviar_plantilla", "parametros": { "plantilla": "confirmacion_cita" }, "condicion": { "origen": "PANEL" } },
+    { "evento": "cita_reprogramada", "accion": "enviar_plantilla", "parametros": { "plantilla": "reprogramacion" } },
+    { "evento": "cita_reprogramada", "accion": "programar_recordatorio", "parametros": { "plantilla": "recordatorio_24h", "horas_antes": 24 } },
     { "evento": "cita_creada", "accion": "programar_recordatorio", "parametros": { "plantilla": "recordatorio_24h", "horas_antes": 24 } },
     { "evento": "venta_registrada", "accion": "emitir_factura", "parametros": {} },
     { "evento": "documento_rechazado", "accion": "notificar_admin", "parametros": { "asunto": "La DIAN rechazó una factura" } }

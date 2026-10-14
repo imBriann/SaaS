@@ -1,0 +1,26 @@
+{
+  "Primario": {
+    "hex": "#6D5EF8",
+    "atributos": "Tecnología · Confianza"
+  },
+  "Secundario": {
+    "hex": "#22D3EE",
+    "atributos": "Conexión · Innovación"
+  },
+  "Acento": {
+    "hex": "#F97316",
+    "atributos": "Energía · Crecimiento"
+  },
+  "Complementario": {
+    "hex": "#EC4899",
+    "atributos": "Cercanía · Impulso"
+  },
+  "Neutro oscuro": {
+    "hex": "#0F172A",
+    "atributos": "Solidez · Profesional"
+  },
+  "Neutro claro": {
+    "hex": "#F8FAFC",
+    "atributos": "Limpieza · Equilibrio"
+  }
+}

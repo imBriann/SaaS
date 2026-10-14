@@ -32,6 +32,11 @@ const P: Record<string, string> = {
   derecha: 'M9 6l6 6-6 6',
   arriba_abajo: 'M8 9l4-4 4 4M8 15l4 4 4-4',
   nota: 'M4 4h16v12l-4 4H4zM16 20v-4h4M8 9h8M8 13h5',
+  soporte: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM5.6 5.6l3.9 3.9M14.5 14.5l3.9 3.9M18.4 5.6l-3.9 3.9M9.5 14.5l-3.9 3.9',
+  salud: 'M3 12h4l2.5-6 4 12 2.5-6H21',
+  integraciones: 'M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5',
+  correo: 'M3 5h18v14H3zM3 6l9 7 9-7',
+  descargar: 'M12 4v12M6 10l6 6 6-6M4 20h16',
 };
 
 export function Icon({ n, className = 'ico', size }: { n: keyof typeof P | string; className?: string; size?: number }) {

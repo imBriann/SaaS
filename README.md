@@ -1,102 +1,134 @@
-# Plataforma SaaS Inteligente Multi-Tenant
+# Omnegia
 
-Sistema operativo conversacional y fiscal para micronegocios colombianos: el cliente entra por WhatsApp, la operación queda registrada, la factura sale válida ante la DIAN y llega por WhatsApp y correo, y la IA actúa sobre el negocio con permisos verificados y auditados.
+Plataforma multiempresa para negocios: WhatsApp con IA y paso a una persona con radicados, clientes, agenda, ventas, inventario, cobros, facturación, suscripciones y un panel interno para el operador de Omnegia.
 
-Implementa las **Capas 0 y 1** de PRO-SW-001 Rev 0.2 (más el segundo sector de la Capa 2), la arquitectura de PRO-SW-002 Rev 0.1 y las 20 pantallas de PRO-SW-003 Rev 0.2.
+- `server/`: Fastify 5 + TypeScript, PostgreSQL (o PGlite para desarrollo), trabajador en segundo plano.
+- `web/`: React 19 + Vite. En producción el servidor sirve el panel compilado.
 
-## Arranque rápido
+## 1. Requisitos e instalación
 
-Requisitos: Node 22+ (probado con Node 26). No hace falta instalar PostgreSQL: sin `DATABASE_URL`, el servidor usa **PGlite** (PostgreSQL real compilado a WASM, con las mismas políticas RLS).
-
-```bash
-npm run instalar
-```
+Necesitas Node 22 o superior (probado con Node 26). En desarrollo no hace falta PostgreSQL: sin `DATABASE_URL`, el servidor usa PGlite (PostgreSQL en WASM, con las mismas políticas de seguridad).
 
 ```bash
-npm run dev
+npm run instalar     # dependencias de server/ y web/
+npm run dev          # API en :3000 y panel en http://localhost:5173
 ```
 
-- Landing y onboarding: http://localhost:5173
-- Panel de la barbería de demostración: http://elparche.localhost:5173
-- La primera ejecución crea la base en `server/data/pglite` y carga los datos de demostración. Para empezar de cero: `npm run reset`.
+La primera ejecución crea la base en `server/data/pglite` y carga datos de demostración. Para empezar de cero: `npm run reset`.
 
-Cuentas de demostración:
-
-| Cuenta | Contraseña | Rol |
+| Cuenta | Contraseña | Qué es |
 |---|---|---|
 | admin@elparche.test | demo-parche-2026 | Administradora de Barbería El Parche |
-| laura@elparche.test | demo-equipo-2026 | Recepción (asesora: recibe los casos escalados) |
-| andres@elparche.test | demo-equipo-2026 | Barbero (acceso mínimo) |
-| admin@fuerzanorte.test | demo-fuerza-2026 | Admin del gimnasio **y** supervisor en la barbería (una identidad, dos contextos) |
-| plataforma@saas.test | demo-plataforma-2026 | Administrador del SaaS |
+| laura@elparche.test | demo-equipo-2026 | Recepción (recibe los casos escalados) |
+| admin@fuerzanorte.test | demo-fuerza-2026 | Administrador del gimnasio y supervisor en la barbería |
+| plataforma@saas.test | demo-plataforma-2026 | Operador de Omnegia (rol ADMIN) |
+| soporte@saas.test | demo-soporte-2026 | Operador de Omnegia (rol SOPORTE) |
 
-Recorrido sugerido: **Simulador WhatsApp** (menú «Piloto») → escribe como cliente → mira **Conversaciones** (recibos de cada acción de IA) → **Ventas** (#1042 tiene la factura rechazada por la DIAN: corrige el NIT del cliente y reintenta) → **Centro de IA** → **Auditoría**.
+Las cuentas del operador piden un código de seis dígitos enviado por correo. En desarrollo el correo no sale de la máquina: cada mensaje queda como `.html` y `.txt` en `server/.buzon-dev/`. Esa carpeta está fuera del repositorio.
 
-## Pruebas
+## 2. Variables de entorno
+
+Copia `server/.env.example` a `server/.env`. Nunca subas `.env` al repositorio. En producción (`NODE_ENV=production`), el servidor no arranca si falta algo obligatorio y nunca activa un simulador por falta de credenciales.
+
+| Área | Variables |
+|---|---|
+| Base | `APP_PUBLIC_URL` (https en producción), `API_PUBLIC_URL`, `BASE_DOMAIN`, `DATABASE_URL`, `APP_KEY` (32+ caracteres: `openssl rand -base64 48`) |
+| Correo | `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS`, `EMAIL_REPLY_TO`, `EMAIL_SUPPORT_INBOX`, `EMAIL_OTP_EXPIRY_MINUTES`, `RESEND_WEBHOOK_SECRET` |
+| SMTP alternativo | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` |
+| WhatsApp (Meta) | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` |
+| IA (Claude) | `ANTHROPIC_API_KEY`, `LLM_MODEL` (por defecto `claude-opus-5-5`), `IA_PRECIO_ENTRADA_USD_MTOK`, `IA_PRECIO_SALIDA_USD_MTOK` |
+| Pagos (Wompi) | `WOMPI_ENTORNO`, `WOMPI_LLAVE_PUBLICA`, `WOMPI_SECRETO_INTEGRIDAD`, `WOMPI_SECRETO_EVENTOS`, `TARIFAS_CONFIRMADAS` |
+| Sesiones | `SESION_DIAS`, `SESION_INACTIVIDAD_HORAS`, `LOGIN_MAX_INTENTOS`, `LOGIN_VENTANA_MIN` |
+
+El panel muestra el estado de cada integración en Configuración › Integraciones. El operador lo ve en su panel, en Integraciones. `GET /api/salud/listo` responde 200 solo si la base está disponible y las migraciones están aplicadas.
+
+## 3. Correo transaccional
+
+Zoho Mail recibe la correspondencia humana en `soporte@brianacevedo.dev`. Resend envía lo automático: códigos, recuperación de contraseña, invitaciones, avisos y tickets. No uses el SMTP de Zoho para envíos automáticos: su política no lo permite, y el servidor rechaza `SMTP_HOST` con Zoho al arrancar.
+
+**Clave de API.** En resend.com, entra a API Keys, pulsa Create API Key y elige permiso «Sending access». Ponla en `RESEND_API_KEY`.
+
+**Registros DNS que debe verificar el propietario del dominio.** Añade el dominio en Resend › Domains y copia exactamente los registros que muestre:
+
+| Registro | Nombre | Para qué |
+|---|---|---|
+| TXT | `resend._domainkey` | Firma DKIM de Resend |
+| MX | `send` | Dirección de retorno de Resend (subdominio, no toca la raíz) |
+| TXT | `send` | SPF de Resend para ese subdominio |
+| TXT | `_dmarc` | Política DMARC. Para empezar, `v=DMARC1; p=none; rua=mailto:soporte@brianacevedo.dev` |
+
+No modifiques los registros MX de la raíz: son de Zoho y siguen recibiendo. Tampoco crees un segundo SPF en la raíz: el de Zoho se queda como está. Espera a que Resend marque el dominio como «Verified» antes de enviar.
+
+**Estados de entrega (opcional, recomendado).** En Resend › Webhooks, crea uno hacia `https://<tu-api>/api/webhooks/correo` con los eventos `email.delivered`, `email.bounced`, `email.complained`, `email.failed` y `email.suppressed`. Copia su secreto `whsec_…` en `RESEND_WEBHOOK_SECRET`. Sin webhook, un correo queda como «aceptado por el proveedor», que no es lo mismo que entregado.
+
+**Prueba de envío.**
 
 ```bash
-npm test
+cd server
+npm run correo:prueba -- tu-correo@dominio.com
 ```
 
-69 pruebas contra PostgreSQL (PGlite en memoria), organizadas según el marco de investigación (PRO-SW-001 §25):
+El comando imprime el id que devuelve el proveedor, o el código del fallo. Revisa la bandeja de entrada para confirmar la entrega. Si respondes ese correo, la respuesta llega a `EMAIL_REPLY_TO`.
 
-| Archivo | Qué demuestra | Variable de §25.4 |
-|---|---|---|
-| `test/isolation.test.ts` | RLS habilitada **y forzada** en toda tabla con `tenant_id`; consultas sin filtro siguen aisladas; `WITH CHECK`; FK compuestas; auditoría inalterable; matriz HTTP «recurso de B desde A = recurso inexistente»; 403 auditado aunque la petición falle | Eficacia del aislamiento |
-| `test/ai-policy.test.ts` | Matriz de casos del Gateway (las 4 comprobaciones), confirmación determinista por el cliente, corpus adversario con un modelo «totalmente convencido», clasificador resistente a inyección y consistente ante paráfrasis | Eficacia de la autorización de IA · Resistencia a la manipulación · Consistencia del clasificador |
-| `test/onboarding.test.ts` | Borrador sin tenant hasta el pago; reglas deterministas; importación con encabezado desplazado y precios como texto; webhook ×3 → un solo tenant; firmas y repeticiones; contraste AA | Eficiencia del onboarding · Calidad de la inferencia |
-| `test/operacion.test.ts` | Conversación → venta → factura validada → entrega; rechazo DIAN → corrección → reintento; nota crédito; escalamiento con SLA y copiloto; suspensión; cuota agotada | Completitud de la trazabilidad · Efecto operativo |
+**Cambiar de proveedor o de remitente** no requiere tocar el código:
 
-## Estructura
+- Otro remitente: cambia `EMAIL_FROM_NAME` y `EMAIL_FROM_ADDRESS`, verifica ese dominio en el proveedor y reinicia.
+- SMTP transaccional (Postmark, SES, Mailgun…): `EMAIL_PROVIDER=smtp` con `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER` y `SMTP_PASSWORD`.
+- Desarrollo sin envíos reales: `EMAIL_PROVIDER=fake`.
 
+Cómo funciona el envío:
+
+- Cada correo pasa por una bandeja de salida en la base y lo entrega el trabajador, con reintentos y una clave de idempotencia por correo.
+- Los correos con códigos o enlaces de acceso se guardan cifrados y su contenido se borra en cuanto el proveedor los acepta.
+- Los fallos quedan con un código seguro (credencial, dominio no verificado, límite, destinatario) y nunca se muestran como éxito.
+- Las respuestas que se den desde Zoho no se sincronizan con el panel: eso requeriría una integración de entrada aparte.
+
+## 4. Otras integraciones
+
+- **WhatsApp:** en Meta, registra el webhook `https://<tu-api>/api/webhooks/whatsapp` con `WHATSAPP_VERIFY_TOKEN`. Cada empresa guarda su identificador de número (Phone number ID) en Configuración › WhatsApp y pulsa «Probar conexión». Fuera de la ventana de 24 horas solo salen plantillas aprobadas en Meta.
+- **IA:** con `ANTHROPIC_API_KEY`, el agente usa Claude. Sin ella, en producción las conversaciones pasan a una persona.
+- **Wompi:** las altas y renovaciones usan las llaves de la plataforma. URL de eventos: `https://<tu-api>/api/webhooks/wompi`. Cada comercio conecta su propia cuenta para cobrar a sus clientes. `TARIFAS_CONFIRMADAS=1` solo cuando los precios comerciales estén definidos.
+- **Facturación electrónica:** solo existe el entorno de pruebas, y sus documentos dicen «sin validez fiscal». Falta conectar un proveedor autorizado por la DIAN.
+
+## 5. Panel del operador de Omnegia
+
+Está en `/operador`. Sus secciones son Resumen, Empresas, Suscripciones, Salud del sistema, Incidentes, Integraciones, Soporte y Auditoría.
+
+- Exige una cuenta con rol de plataforma (`ADMIN` o `SOPORTE`) y segundo factor por correo en cada inicio de sesión.
+- Las consultas corren con un rol de base de datos propio (`app_operador`), sin `BYPASSRLS` y con privilegios por columna. Ese rol no puede leer clientes, conversaciones, mensajes, citas, ventas, inventario, facturas, cuentas de cobro de los comercios, sesiones, contraseñas ni secretos: la base lo rechaza.
+- Los incidentes guardan un código, una descripción de catálogo y detalles técnicos de una lista permitida. Nunca guardan el texto de un proveedor o una excepción.
+- Solo se reintentan trabajos idempotentes. Mensajes de WhatsApp, facturas y cobros no se reintentan desde el panel.
+- Suspender, cancelar o cambiar el plan exige un motivo y escribir el subdominio. Nada borra datos, y todo queda en una auditoría de solo inserción.
+- Son restricciones de la aplicación. Quien administra la infraestructura (el usuario dueño de la base) conserva sus privilegios. Limita ese acceso por separado.
+
+Para dar el rol a una persona, usa una consulta en la base: `UPDATE users SET rol_plataforma='ADMIN' WHERE email='…'`. El panel no ofrece esa acción a propósito.
+
+## 6. Pruebas
+
+```bash
+cd server
+npm test                 # suite completa sobre PGlite
+npm run test:postgres    # archivos críticos sobre PostgreSQL 18 real (embebido, se descarga solo)
+npm run typecheck
+cd ../web && npm run build
 ```
-server/src
-  db/schema.sql        Esquema físico: RLS en doble barrera, FK compuestas, auditoría append-only (PRO-SW-002 §4, §15)
-  db/index.ts          withTenant() (rol app_rt + app.tenant_id) y withPlatform() (rol app_platform)
-  core/                Contexto, permisos, auditoría, bus de eventos, medición de consumo
-  http/                Resolución de tenant (subdominio o cabecera), sesión, rutas
-  modules/             Clientes, catálogo, agenda, ventas, facturación, conversaciones, cobros, administración
-  ai/registry.ts       Registro de herramientas con contrato, permiso y nivel de riesgo
-  ai/gateway.ts        AI Action Gateway: 4 comprobaciones + registro de toda llamada intentada
-  ai/runtime.ts        Runtime única: atención, asistente y copiloto como configuraciones
-  ai/llm/              Adaptador de Claude y simulador determinista (misma interfaz)
-  onboarding/          Clasificador, tabla de reglas de plan, importador, tema, aprovisionamiento
-  adapters/            Puertos: WhatsApp, pasarela, proveedor fiscal, correo
-  templates/*.json     Plantillas de sector como datos versionados (barbería, gimnasio)
-  worker/jobs.ts       Proceso trabajador: eventos → reglas, emisión fiscal, entregas, reintentos
-web/src                Panel React: sistema de diseño (PRO-SW-003 §7) y las 20 pantallas del catálogo
-```
 
-## Decisiones de arquitectura → código
+Las pruebas usan proveedores falsos y servidores locales (un HTTP con la forma de la API de Resend y un SMTP mínimo): no envían correos reales.
 
-| Decisión | Dónde se cumple |
-|---|---|
-| ADR-01 Doble barrera | `withTenant()` + políticas `tenant_isolation` con `FORCE ROW LEVEL SECURITY`; tercera barrera en FK `(tenant_id, x_id)` |
-| ADR-02 Doble resolución de tenant | `http/context.ts` (subdominio, valida pertenencia) y `modules/channelInbound.ts` (`phone_number_id` del webhook firmado) |
-| ADR-03 IA solo por herramientas | `ai/registry.ts`; el modelo nunca recibe `tenant_id` ni credenciales |
-| ADR-04 Una runtime | `ai/runtime.ts` + tabla `ai_agent` (configuración, rol, herramientas, prompt) |
-| ADR-05 Plantillas como datos | `templates/*.json` validadas con `templates/schema.ts`; el gimnasio no tiene una línea de código propia |
-| ADR-06 El modelo clasifica, las reglas deciden | `onboarding/classifier.ts` (validación campo a campo) + `onboarding/planRules.ts` |
-| ADR-07 Aprovisionamiento idempotente tras pago verificado | `onboarding/service.ts#handlePaymentWebhook`: HMAC con marca de tiempo, `provisioning_event.event_id` único, una transacción |
-| ADR-08 Proveedor fiscal habilitado | `adapters/fiscal.ts` (puerto + sandbox con CUFE SHA-384 y validación de NIT) |
-| ADR-09 El dinero del comercio no pasa por la plataforma | `modules/payments.ts`: cuenta propia del comercio, enlace y conciliación |
-| ADR-10 Medición desde los cimientos | `core/usage.ts`, usado por mensajes, tokens y documentos; política LIMITAR escala a una persona |
-| DD-03 «No encontrado» uniforme | `lib/errors.ts`; el Gateway devuelve `no_encontrado` y la auditoría distingue el acceso cruzado |
+## 7. Producción
 
-## Qué es real y qué está simulado
+1. Crea la base en UTF8 con `CREATE DATABASE omnegia ENCODING 'UTF8' TEMPLATE template0;`. La primera migración crea los roles y necesita un superusuario.
+2. Aplica las migraciones con `cd server && npm run migrar`. También se aplican al arrancar.
+3. Compila con `npm run build`, en la raíz.
+4. Arranca con `NODE_ENV=production npm start`, detrás de https y con DNS comodín `*.tu-dominio`.
 
-Los puntos go/no-go de PRO-SW-001 §31 siguen abiertos, así que cada tercero está detrás de un adaptador con una implementación de pruebas que respeta el contrato real:
+Respaldo: con PostgreSQL usa `pg_dump -Fc` y `pg_restore`. Con PGlite, `npm run respaldo -- crear` y `npm run respaldo -- restaurar <archivo>`.
 
-| Tercero | Estado | Para pasar a producción |
-|---|---|---|
-| Modelo de lenguaje | **Real** con `ANTHROPIC_API_KEY` (Claude, `claude-opus-5`, fallbacks de servidor ante rechazos); sin clave, simulador determinista | Definir la clave; ajustar `LLM_MODEL` según costo por conversación medido |
-| WhatsApp Cloud API | Webhook real (verificación GET + firma `X-Hub-Signature-256`); envío real con `WHATSAPP_ACCESS_TOKEN`, simulado sin él | Punto go/no-go 1: habilitación del número |
-| Pasarela de pagos | Simulada, mismo contrato (checkout alojado, webhook firmado HMAC con marca de tiempo) | Punto 4: adaptador de la pasarela elegida |
-| Proveedor tecnológico DIAN | Sandbox (CUFE, rechazos por NIT, reintentos) | Punto 3: adaptador de Facele/Factus/Alegra/Siigo en su entorno de pruebas |
-| Correo transaccional | Registro con evidencia de entrega simulada | Adaptador del proveedor con SPF/DKIM |
+Errores frecuentes:
 
-Para producción: `NODE_ENV=production`, `DATABASE_URL` (PostgreSQL 15+; la migración concede `app_rt` y `app_platform` al usuario que la ejecuta, y crear `app_platform` con `BYPASSRLS` requiere un superusuario la primera vez), secretos en `server/.env` (ver `server/.env.example`), `npm run build` y `npm start` (el servidor sirve el panel compilado) detrás de un DNS comodín `*.tu-dominio`.
+- «codificación … debe ser UTF8»: la base se creó con otra codificación. Créala de nuevo como en el paso 1.
+- «APP_KEY es obligatoria»: falta la clave o tiene menos de 32 caracteres.
+- Cookies que no persisten: `APP_PUBLIC_URL` debe usar https en producción.
+- Correos FALLIDO con `REMITENTE_NO_VERIFICADO`: el dominio aún no está verificado en Resend.
 
-## Pendiente (fuera de las capas 0–1)
-
-Cobro del excedente de IA del plan Pro (hoy se mide y no se limita, pero no se factura), contrato de API formal (OpenAPI), versiones tableta/móvil diseñadas, pruebas de usabilidad, copiloto como agente independiente con herramientas propias en el panel, constructor visual de automatizaciones y modo marketplace de pagos (Capa 3), y los documentos de cumplimiento (contrato de encargo, política y aviso de privacidad publicados).
+Prueba de carga: `node server/scripts/carga.mjs http://localhost:3000 15 20` (15 segundos por caso, 20 clientes concurrentes).

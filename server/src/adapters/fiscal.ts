@@ -1,4 +1,5 @@
 import { sha384, token } from '../lib/util.js';
+import { config } from '../config.js';
 
 /**
  * Puerto del proveedor tecnológico de facturación electrónica (PRO-SW-001 §16.1,
@@ -16,6 +17,7 @@ export interface DocumentoFiscalSolicitud {
   impuestos: number;
   total: number;
   moneda: string;
+  descuento?: number;
   documentoReferencia?: { numero: string; cufe: string | null; motivo: string };
 }
 
@@ -75,10 +77,18 @@ export class SandboxFiscalProvider implements FiscalProvider {
     const cufe = sha384(
       [doc.numero, doc.fecha, doc.subtotal.toFixed(2), '01', doc.impuestos.toFixed(2), doc.total.toFixed(2), doc.emisor.nit, doc.adquirente.numeroDocumento ?? '222222222222', 'clave-tecnica-sandbox', '2'].join(''),
     );
-    return { ok: true, cufe, codigo: '00', mensaje: 'Documento validado por la DIAN', crudo: { ...crudo, trackId: token(12) } };
+    return { ok: true, cufe, codigo: '00', mensaje: 'Validado en el entorno de pruebas (sin validez fiscal)', crudo: { ...crudo, trackId: token(12) } };
   }
 }
 
-let provider: FiscalProvider = new SandboxFiscalProvider();
+/** Sin proveedor habilitado: no se inventa una validación; el documento queda en espera. */
+export class SinProveedorFiscal implements FiscalProvider {
+  nombre = 'ninguno';
+  async emitir(doc: DocumentoFiscalSolicitud): Promise<RespuestaProveedor> {
+    return { ok: false, reintentable: false, codigo: 'SIN_PROVEEDOR', mensaje: 'La facturación electrónica está pendiente de conectar con un proveedor habilitado por la DIAN.', crudo: { numero: doc.numero } };
+  }
+}
+
+let provider: FiscalProvider = config.fiscal.provider === 'sandbox' ? new SandboxFiscalProvider() : new SinProveedorFiscal();
 export const fiscalProvider = () => provider;
 export const setFiscalProvider = (p: FiscalProvider) => (provider = p);

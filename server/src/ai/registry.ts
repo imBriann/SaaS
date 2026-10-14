@@ -7,7 +7,8 @@ import { findProductsByName, lowStock } from '../modules/catalog.js';
 import { insertOrder } from '../modules/orders.js';
 import { escalate } from '../modules/conversations.js';
 import { allQuotas } from '../core/usage.js';
-import { addDays, formatFechaLarga, todayLocal, utcToLocal } from '../lib/time.js';
+import { formatFechaLarga, rangoDia, todayLocal, utcToLocal } from '../lib/time.js';
+import { zonaDe } from '../core/tenant.js';
 import { cop } from '../lib/util.js';
 import { createPaymentLink } from '../modules/payments.js';
 
@@ -52,9 +53,7 @@ export interface ToolDef<A extends z.ZodType = z.ZodType> {
 const fecha = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Fecha local AAAA-MM-DD');
 const uuid = z.uuid();
 
-async function tz(tx: Tx) {
-  return (await tx.query(`SELECT zona_horaria FROM tenant LIMIT 1`)).rows[0]?.zona_horaria ?? 'America/Bogota';
-}
+const tz = zonaDe;
 
 function def<A extends z.ZodType>(d: ToolDef<A>): ToolDef<A> { return d; }
 
@@ -231,7 +230,7 @@ export const TOOLS: ToolDef<any>[] = [
         `SELECT a.inicio, a.estado, a.origen, c.nombre AS cliente, p.nombre AS servicio, r.nombre AS recurso FROM appointment a
          JOIN customer c ON c.id=a.customer_id JOIN product p ON p.id=a.product_id JOIN resource r ON r.id=a.resource_id
          WHERE a.inicio >= $1 AND a.inicio < $2 ORDER BY a.inicio`,
-        [new Date(`${f}T00:00:00-05:00`).toISOString(), new Date(`${addDays(f, 1)}T00:00:00-05:00`).toISOString()],
+        [rangoDia(f, zona).desde.toISOString(), rangoDia(f, zona).hasta.toISOString()],
       )).rows;
       return { fecha: f, citas: rows.map((r: any) => ({ ...r, hora: utcToLocal(new Date(r.inicio), zona).hora })) };
     },
@@ -261,7 +260,7 @@ export const TOOLS: ToolDef<any>[] = [
     args: z.object({}).strict(),
     permiso: 'customer:read', riesgo: 'lectura', efectos: [], requiereCliente: true,
     run: async (_a, { tx, customerId }) => ({
-      compras: (await tx.query(`SELECT numero, total, creado_en FROM "order" WHERE customer_id=$1 ORDER BY creado_en DESC LIMIT 5`, [customerId])).rows
+      compras: (await tx.query(`SELECT numero, total, creado_en FROM "order" WHERE customer_id=$1 AND estado='CONFIRMADA' ORDER BY creado_en DESC LIMIT 5`, [customerId])).rows
         .map((o: any) => ({ ...o, total: cop(Number(o.total)) })),
       citas: (await tx.query(`SELECT a.inicio, a.estado, p.nombre FROM appointment a JOIN product p ON p.id=a.product_id WHERE a.customer_id=$1 ORDER BY a.inicio DESC LIMIT 5`, [customerId])).rows,
     }),

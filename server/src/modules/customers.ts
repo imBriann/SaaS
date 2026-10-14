@@ -3,13 +3,22 @@ import type { Tx } from '../db/index.js';
 import { type Ctx, requirePerm, requireWritable } from '../core/context.js';
 import { audit } from '../core/audit.js';
 import { publish } from '../core/events.js';
-import { notFound } from '../lib/errors.js';
+import { AppError, notFound } from '../lib/errors.js';
 import { isUuid, uuidv7 } from '../lib/util.js';
 
+/** «300 123 4567», «(300) 123-4567» → +573001234567. Otros países deben venir con indicativo. */
+export function normalizarTelefono(t: string | null | undefined): string | null {
+  if (!t) return null;
+  const limpio = t.replace(/[\s().-]/g, '');
+  if (/^3\d{9}$/.test(limpio)) return `+57${limpio}`;
+  if (/^57\d{10}$/.test(limpio)) return `+${limpio}`;
+  return limpio.startsWith('+') ? limpio : `+${limpio}`;
+}
+
 export const CustomerInput = z.object({
-  nombre: z.string().trim().min(1).max(120),
-  telefono: z.string().trim().regex(/^\+?\d{7,15}$/).optional().nullable(),
-  email: z.email().optional().nullable(),
+  nombre: z.string().trim().min(1, 'Escribe el nombre.').max(120),
+  telefono: z.string().trim().transform((v) => (v ? normalizarTelefono(v) : null)).pipe(z.string().regex(/^\+\d{7,15}$/, 'Teléfono no válido: usa el indicativo, por ejemplo +573001234567.').nullable()).optional().nullable(),
+  email: z.email('Correo no válido.').optional().nullable(),
   tipo_documento: z.enum(['CC', 'NIT', 'CE', 'PP']).optional().nullable(),
   numero_documento: z.string().trim().max(20).optional().nullable(),
   notas: z.string().max(2000).optional().nullable(),
@@ -17,23 +26,42 @@ export const CustomerInput = z.object({
 
 const COLS = `id, nombre, telefono, email, tipo_documento, numero_documento, consentimiento_en, consentimiento_via, notas, creado_en`;
 
-export async function listCustomers(tx: Tx, ctx: Ctx, q?: string) {
+export async function listCustomers(tx: Tx, ctx: Ctx, f: { q?: string; pagina?: number; por_pagina?: number } = {}) {
   requirePerm(ctx, 'customer:read');
   const params: unknown[] = [];
   let where = 'eliminado_en IS NULL';
+  const q = (f.q ?? '').trim().slice(0, 80);
   if (q) {
     params.push(`%${q}%`);
-    where += ` AND (nombre ILIKE $1 OR telefono ILIKE $1 OR email ILIKE $1 OR numero_documento ILIKE $1)`;
+    const digitos = q.replace(/\D/g, '');
+    where += ` AND (nombre ILIKE $1 OR email ILIKE $1 OR numero_documento ILIKE $1 OR telefono ILIKE $1${digitos.length >= 4 ? ` OR telefono LIKE '%${digitos}%'` : ''})`;
   }
+  const porPagina = Math.min(Math.max(Number(f.por_pagina) || 50, 10), 500);
+  const pagina = Math.max(Number(f.pagina) || 1, 1);
+  const total = (await tx.query(`SELECT count(*)::int AS n FROM customer c WHERE ${where}`, params)).rows[0].n;
   const { rows } = await tx.query(
     `SELECT ${COLS},
        (SELECT count(*)::int FROM "order" o WHERE o.customer_id = c.id AND o.estado='CONFIRMADA') AS compras,
        (SELECT coalesce(sum(total),0) FROM "order" o WHERE o.customer_id = c.id AND o.estado='CONFIRMADA') AS total_compras,
        (SELECT max(inicio) FROM appointment a WHERE a.customer_id = c.id AND a.estado <> 'CANCELADA') AS ultima_cita
-     FROM customer c WHERE ${where} ORDER BY creado_en DESC LIMIT 500`,
+     FROM customer c WHERE ${where} ORDER BY nombre LIMIT ${porPagina} OFFSET ${(pagina - 1) * porPagina}`,
     params,
   );
-  return rows.map((r) => ({ ...r, total_compras: Number(r.total_compras) }));
+  return { clientes: rows.map((r) => ({ ...r, total_compras: Number(r.total_compras) })), total, pagina, por_pagina: porPagina };
+}
+
+/** Comprobación de duplicados antes de guardar: mismo teléfono (bloquea) o mismo documento (bloquea). */
+async function verificarDuplicados(tx: Tx, d: { telefono?: string | null; numero_documento?: string | null; tipo_documento?: string | null }, excluir?: string) {
+  if (d.telefono) {
+    const r = (await tx.query(`SELECT nombre FROM customer WHERE telefono=$1 AND eliminado_en IS NULL ${excluir ? 'AND id <> $2' : ''}`, excluir ? [d.telefono, excluir] : [d.telefono])).rows[0];
+    if (r) throw new AppError('CONFLICT', `Ya existe un cliente con ese teléfono: ${r.nombre}.`, { duplicado: 'telefono' });
+  }
+  if (d.numero_documento) {
+    const r = (await tx.query(
+      `SELECT nombre FROM customer WHERE numero_documento=$1 AND coalesce(tipo_documento,'')=coalesce($2,'') AND eliminado_en IS NULL ${excluir ? 'AND id <> $3' : ''}`,
+      excluir ? [d.numero_documento, d.tipo_documento ?? null, excluir] : [d.numero_documento, d.tipo_documento ?? null])).rows[0];
+    if (r) throw new AppError('CONFLICT', `Ya existe un cliente con ese documento: ${r.nombre}.`, { duplicado: 'documento' });
+  }
 }
 
 export async function getCustomer(tx: Tx, ctx: Ctx, id: string) {
@@ -58,6 +86,7 @@ export async function createCustomer(tx: Tx, ctx: Ctx, input: z.infer<typeof Cus
   requirePerm(ctx, 'customer:write');
   requireWritable(ctx);
   const d = CustomerInput.parse(input);
+  await verificarDuplicados(tx, d);
   const id = uuidv7();
   await tx.query(
     `INSERT INTO customer (id, tenant_id, nombre, telefono, email, tipo_documento, numero_documento, notas)
@@ -74,6 +103,7 @@ export async function updateCustomer(tx: Tx, ctx: Ctx, id: string, input: Partia
   requireWritable(ctx);
   if (!isUuid(id)) throw notFound();
   const d = CustomerInput.partial().parse(input);
+  await verificarDuplicados(tx, d, id);
   const sets: string[] = [];
   const params: unknown[] = [id];
   for (const [k, v] of Object.entries(d)) {

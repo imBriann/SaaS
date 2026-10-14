@@ -56,7 +56,11 @@ export async function seedDemo(db: Database) {
     await tx.query(`INSERT INTO user_tenant (user_id, tenant_id, role_id, disponible) VALUES ($1,$2,$3,false)`, [diego, parche.tenantId, parche.roleIds.supervisor]);
     // La administradora no recibe casos automáticamente: los atiende recepción.
     await tx.query(`UPDATE user_tenant SET disponible=false WHERE user_id=(SELECT id FROM users WHERE email=$1)`, [DEMO.email]);
-    await tx.query(`INSERT INTO users (id, email, nombre, password_hash, es_admin_plataforma) VALUES ($1,'plataforma@saas.test','Administración SaaS',$2,true)`, [uuidv7(), hashPassword('demo-plataforma-2026')]);
+    // Operadores de la plataforma (sin pertenencia a ninguna empresa): entran con segundo factor por correo.
+    await tx.query(`INSERT INTO users (id, email, nombre, password_hash, es_admin_plataforma, rol_plataforma) VALUES ($1,'plataforma@saas.test','Administración SaaS',$2,true,'ADMIN')`, [uuidv7(), hashPassword('demo-plataforma-2026')]);
+    await tx.query(`INSERT INTO users (id, email, nombre, password_hash, rol_plataforma) VALUES ($1,'soporte@saas.test','Soporte SaaS',$2,'SOPORTE')`, [uuidv7(), hashPassword('demo-soporte-2026')]);
+    // Cuentas de demostración: el correo se da por verificado.
+    await tx.query(`UPDATE users SET email_verificado_en=now() WHERE email_verificado_en IS NULL`);
   });
 
   const hoy = todayLocal();

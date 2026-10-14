@@ -8,6 +8,8 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    // Las fuentes locales son recursos estables; OneDrive puede bloquear sus watchers.
+    watch: { ignored: ['**/public/fonts/**'] },
     allowedHosts: ['.localhost'],
     proxy: { '/api': { target: 'http://localhost:3000', changeOrigin: false } },
   },

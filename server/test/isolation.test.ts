@@ -32,7 +32,8 @@ describe('Barrera 2 — Row-Level Security', () => {
       );
       expect(acceso, `tabla ${t} sin RLS y accesible para app_rt`).toBe(false);
     }
-    expect(sinRls.sort()).toEqual(['onboarding_draft', 'payment']);
+    // incidente y auditoria_plataforma son del operador: guardan el id de la empresa, pero app_rt no tiene ningún privilegio sobre ellas.
+    expect(sinRls.sort()).toEqual(['auditoria_plataforma', 'incidente', 'onboarding_draft', 'payment']);
   });
 
   it('desde el contexto de A no se ve ninguna fila de B en ninguna tabla', async () => {
@@ -128,8 +129,8 @@ describe('Barrera 1 — resolución de tenant y autorización en HTTP', () => {
     const enA = await api(E.app, cookie, 'elparche').get('/clientes');
     expect(enB.status).toBe(200);
     expect(enA.status).toBe(200);
-    const ids = new Set(enB.body.map((c: any) => c.id));
-    expect(enA.body.some((c: any) => ids.has(c.id))).toBe(false);
+    const ids = new Set(enB.body.clientes.map((c: any) => c.id));
+    expect(enA.body.clientes.some((c: any) => ids.has(c.id))).toBe(false);
   });
 
   it('matriz: todo recurso de B pedido desde A responde igual que uno inexistente', async () => {

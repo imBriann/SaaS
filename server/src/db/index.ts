@@ -1,4 +1,4 @@
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
@@ -25,17 +25,20 @@ export interface Tx {
 interface Engine {
   transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
   exec(sql: string): Promise<void>;
+  /** Ejecuta un script de varias sentencias dentro de UNA transacción (migraciones). */
+  execAtomic(sql: string): Promise<void>;
   close(): Promise<void>;
 }
 
 class PgliteEngine implements Engine {
-  constructor(private db: PGlite) {}
+  constructor(public db: PGlite) {}
   transaction<T>(fn: (tx: Tx) => Promise<T>) {
     return this.db.transaction(async (t) =>
       fn({ query: async (sql, params) => ({ rows: (await t.query(sql, params as any[])).rows as any[] }) }),
     );
   }
   async exec(sql: string) { await this.db.exec(sql); }
+  async execAtomic(sql: string) { await this.db.transaction(async (t) => { await t.exec(sql); }); }
   async close() { await this.db.close(); }
 }
 
@@ -56,6 +59,19 @@ class PgEngine implements Engine {
     }
   }
   async exec(sql: string) { await this.pool.query(sql); }
+  async execAtomic(sql: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(sql);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
   async close() { await this.pool.end(); }
 }
 
@@ -69,7 +85,10 @@ export class Database {
 
   static async open(opts: { url?: string; dataDir?: string } = {}): Promise<Database> {
     if (opts.url) {
-      return new Database(new PgEngine(new pg.Pool({ connectionString: opts.url, max: 10 })));
+      const pool = new pg.Pool({ connectionString: opts.url, max: Number(process.env.DATABASE_POOL_MAX ?? 10), idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000 });
+      // Un error en un cliente inactivo no debe tumbar el proceso.
+      pool.on('error', (e) => console.error('[base] conexión inactiva con error:', e.message));
+      return new Database(new PgEngine(pool));
     }
     if (opts.dataDir && opts.dataDir !== 'memory://') mkdirSync(opts.dataDir, { recursive: true });
     const db = new PGlite(opts.dataDir && opts.dataDir !== 'memory://' ? opts.dataDir : undefined);
@@ -77,21 +96,45 @@ export class Database {
     return new Database(new PgliteEngine(db));
   }
 
+  /**
+   * Migraciones versionadas (db/migrations/NNN_nombre.sql), cada una en su propia
+   * transacción y registrada en schema_migrations. Devuelve true si la base se creó
+   * en esta ejecución (sirve para decidir si se cargan datos de demostración).
+   */
   async migrate(): Promise<boolean> {
-    const done = await this.engine.transaction(async (tx) => {
-      const r = await tx.query<{ n: number }>(
-        `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema='public' AND table_name='tenant'`,
-      );
-      return r.rows[0].n > 0;
-    });
-    if (done) {
-      // Ajustes aditivos e idempotentes para bases creadas con una versión anterior del esquema.
-      await this.engine.exec(`ALTER TABLE onboarding_draft ADD COLUMN IF NOT EXISTS cierre jsonb`);
-      return false;
+    // Nombres, mensajes y emojis de WhatsApp exigen UTF-8 en la base.
+    const enc = await this.engine.transaction(async (tx) => (await tx.query<{ e: string }>(`SELECT pg_encoding_to_char(encoding) AS e FROM pg_database WHERE datname = current_database()`)).rows[0]?.e);
+    if (enc && enc !== 'UTF8') throw new Error(`La base de datos usa la codificación ${enc}; debe ser UTF8. Créala con: CREATE DATABASE nombre ENCODING 'UTF8' TEMPLATE template0;`);
+    await this.engine.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, aplicada_en timestamptz NOT NULL DEFAULT now())`);
+    const estado = await this.engine.transaction(async (tx) => ({
+      base: (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema='public' AND table_name='tenant'`)).rows[0].n > 0,
+      aplicadas: new Set((await tx.query<{ version: string }>(`SELECT version FROM schema_migrations`)).rows.map((r) => r.version)),
+    }));
+    // Bases creadas antes de existir el registro: el esquema base ya está aplicado.
+    if (estado.base && !estado.aplicadas.has('001_base')) {
+      await this.engine.exec(`INSERT INTO schema_migrations (version) VALUES ('001_base') ON CONFLICT DO NOTHING`);
+      estado.aplicadas.add('001_base');
     }
-    const here = dirname(fileURLToPath(import.meta.url));
-    await this.engine.exec(readFileSync(join(here, 'schema.sql'), 'utf8'));
-    return true;
+    const dir = join(dirname(fileURLToPath(import.meta.url)), 'migrations');
+    const archivos = readdirSync(dir).filter((f) => /^\d{3}_.+\.sql$/.test(f)).sort();
+    for (const f of archivos) {
+      const version = f.replace(/\.sql$/, '');
+      if (estado.aplicadas.has(version)) continue;
+      const sql = readFileSync(join(dir, f), 'utf8');
+      await this.engine.execAtomic(`${sql}
+;INSERT INTO schema_migrations (version) VALUES ('${version}');`);
+    }
+    return !estado.base;
+  }
+
+  /** Versiones aplicadas (comprobación de salud y pruebas). */
+  async migrations(): Promise<string[]> {
+    return this.engine.transaction(async (tx) => (await tx.query<{ version: string }>(`SELECT version FROM schema_migrations ORDER BY version`)).rows.map((r) => r.version));
+  }
+
+  /** Comprobación de disponibilidad de la base (readiness). */
+  async ping(): Promise<boolean> {
+    try { await this.engine.transaction((tx) => tx.query('SELECT 1')); return true; } catch { return false; }
   }
 
   /** Transacción con contexto de tenant validado. Sujeta a RLS. */
@@ -113,9 +156,41 @@ export class Database {
     });
   }
 
+  /**
+   * Transacción del panel del operador de Omnegia (rol app_operador): sin BYPASSRLS
+   * y con privilegios por columna. Una consulta a datos privados de un negocio
+   * falla con «permission denied» aunque el código la intente.
+   */
+  withOperador<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+    return this.engine.transaction(async (tx) => {
+      await tx.query('SET LOCAL ROLE app_operador');
+      return fn(tx);
+    });
+  }
+
+  /** Script de varias sentencias sin parámetros (mantenimiento y pruebas). */
+  execScript(sql: string): Promise<void> {
+    return this.engine.exec(sql);
+  }
+
   /** Transacción sin rol ni contexto: solo pruebas de seguridad. */
   raw<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
     return this.engine.transaction(fn);
+  }
+
+  /** Copia completa de una base PGlite (tar.gz). En PostgreSQL se usa pg_dump. */
+  async respaldoPglite(): Promise<Buffer> {
+    if (!(this.engine instanceof PgliteEngine)) throw new Error('El respaldo integrado solo aplica a PGlite; en PostgreSQL usa pg_dump (ver README).');
+    const blob = await this.engine.db.dumpDataDir('gzip');
+    return Buffer.from(await blob.arrayBuffer());
+  }
+
+  /** Crea una base PGlite en dataDir a partir de un respaldo (el directorio debe estar vacío). */
+  static async restaurarPglite(dataDir: string, respaldo: Buffer): Promise<void> {
+    mkdirSync(dataDir, { recursive: true });
+    const db = new PGlite(dataDir, { loadDataDir: new Blob([new Uint8Array(respaldo)]) });
+    await db.waitReady;
+    await db.close();
   }
 
   close() { return this.engine.close(); }

@@ -10,7 +10,11 @@
     "seed": "tsx src/seed/run.ts",
     "reset": "tsx src/seed/run.ts --reset",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:postgres": "node scripts/pruebas-postgres.mjs",
+    "migrar": "tsx src/db/migrar.ts",
+    "respaldo": "tsx src/db/respaldo.ts",
+    "correo:prueba": "tsx src/email/prueba.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
@@ -20,12 +24,16 @@
     "@fastify/static": "^10.1.4",
     "exceljs": "^4.4.0",
     "fastify": "^5.12.5",
+    "nodemailer": "^10.1.0",
     "pg": "^8.23.0",
+    "resend": "^6.32.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
+    "embedded-postgres": "^18.4.0-beta.17",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"

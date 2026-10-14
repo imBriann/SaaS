@@ -146,3 +146,59 @@ export async function listMovements(tx: Tx, ctx: Ctx) {
      FROM stock_movement m JOIN product p ON p.id=m.product_id ORDER BY m.creado_en DESC LIMIT 100`,
   )).rows.map((r) => ({ ...r, cantidad: Number(r.cantidad) }));
 }
+
+// ---------------------------------------------------------------------------
+// Importación desde hoja de cálculo (panel): vista previa y confirmación atómica
+// ---------------------------------------------------------------------------
+export const FilaImportacion = z.object({
+  tipo: z.enum(['PRODUCTO', 'SERVICIO']),
+  nombre: z.string().trim().min(1).max(120),
+  categoria: z.string().trim().max(60).nullable().optional(),
+  precio: z.number().nonnegative().max(999_999_999),
+  iva_pct: z.number().refine((v) => [0, 5, 19].includes(v), 'IVA admitido: 0, 5 o 19 %.').default(0),
+  duracion_min: z.number().int().positive().max(600).nullable().optional(),
+  stock: z.number().min(0).nullable().optional(),
+  sku: z.string().max(40).nullable().optional(),
+});
+
+/** Marca qué filas coinciden con un ítem existente (mismo nombre, sin tildes ni mayúsculas). */
+export async function marcarDuplicados(tx: Tx, ctx: Ctx, nombres: string[]) {
+  requirePerm(ctx, 'catalog:write');
+  const existentes = (await tx.query(`SELECT id, nombre FROM product WHERE eliminado_en IS NULL`)).rows;
+  const porNombre = new Map(existentes.map((p: any) => [normalizeText(p.nombre), p.nombre]));
+  return nombres.map((n) => porNombre.get(normalizeText(n)) ?? null);
+}
+
+/** Todo o nada: si una fila falla, no se guarda ninguna (la transacción se revierte). */
+export async function confirmImport(tx: Tx, ctx: Ctx, body: unknown) {
+  requirePerm(ctx, 'catalog:write');
+  requireWritable(ctx);
+  const d = z.object({ filas: z.array(FilaImportacion).min(1, 'No hay filas para importar.').max(2000), duplicados: z.enum(['omitir', 'actualizar']), archivo: z.string().max(200).optional() }).parse(body);
+  const vistos = new Set<string>();
+  for (const f of d.filas) {
+    const k = normalizeText(f.nombre);
+    if (vistos.has(k)) throw invalid(`El archivo repite «${f.nombre}». Deja una sola fila por producto o servicio.`);
+    vistos.add(k);
+  }
+  const existentes = new Map((await tx.query(`SELECT id, nombre, tipo, controla_stock FROM product WHERE eliminado_en IS NULL FOR UPDATE`)).rows.map((p: any) => [normalizeText(p.nombre), p]));
+  let creados = 0, actualizados = 0, omitidos = 0;
+  for (const f of d.filas) {
+    const e: any = existentes.get(normalizeText(f.nombre));
+    if (e) {
+      if (d.duplicados === 'omitir') { omitidos++; continue; }
+      if (e.tipo !== f.tipo) throw invalid(`«${f.nombre}» ya existe como ${e.tipo === 'SERVICIO' ? 'servicio' : 'producto'}; corrige el tipo en el archivo.`);
+      await tx.query(`UPDATE product SET precio=$2, iva_pct=$3, categoria=coalesce($4, categoria), duracion_min=coalesce($5, duracion_min), sku=coalesce($6, sku) WHERE id=$1`,
+        [e.id, f.precio, f.iva_pct, f.categoria ?? null, f.tipo === 'SERVICIO' ? f.duracion_min ?? null : null, f.sku ?? null]);
+      actualizados++;
+      continue;
+    }
+    const controla = f.tipo === 'PRODUCTO' && f.stock != null;
+    await insertProduct(tx, ctx, {
+      tipo: f.tipo, nombre: f.nombre, categoria: f.categoria ?? null, precio: f.precio, iva_pct: f.iva_pct,
+      duracion_min: f.tipo === 'SERVICIO' ? f.duracion_min ?? 30 : null, controla_stock: controla, stock: controla ? f.stock! : 0, stock_minimo: 0, sku: f.sku ?? null, activo: true,
+    });
+    creados++;
+  }
+  await audit(tx, ctx, { accion: 'catalogo.importar', recurso: 'product', resultado: 'EXITO', detalle: { archivo: d.archivo, creados, actualizados, omitidos, modo: d.duplicados } });
+  return { creados, actualizados, omitidos };
+}

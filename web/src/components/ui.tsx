@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useRef, useSt
 import { Link } from 'react-router-dom';
 import { Icon } from './icons';
 import { ApiError, fechaHora, num } from '../api';
+export type { ApiError };
 
 // ---------------------------------------------------------------- datos
 export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = [], opts: { cada?: number } = {}) {
@@ -53,18 +54,46 @@ function Aviso({ t }: { t: { m: string; err?: boolean } }) {
 export function useAccion() {
   const toast = useToast();
   const [ocupado, setOcupado] = useState(false);
-  const run = async <T,>(fn: () => Promise<T>, exito?: string): Promise<T | undefined> => {
+  const [error, setError] = useState<ApiError | null>(null);
+  const run = async <T,>(fn: () => Promise<T>, exito?: string, opts: { silencioso?: boolean } = {}): Promise<T | undefined> => {
     setOcupado(true);
+    setError(null);
     try {
       const r = await fn();
       if (exito) toast(exito);
       return r;
     } catch (e) {
-      toast((e as Error).message, true);
+      setError(e as ApiError);
+      if (!opts.silencioso) toast((e as Error).message, true);
       return undefined;
     } finally { setOcupado(false); }
   };
-  return { run, ocupado };
+  return { run, ocupado, error, limpiarError: () => setError(null) };
+}
+
+/** Paginación de listas servidas por páginas. */
+export function Paginador({ pagina, total, porPagina, onPagina }: { pagina: number; total: number; porPagina: number; onPagina: (p: number) => void }) {
+  const paginas = Math.max(1, Math.ceil(total / porPagina));
+  if (total <= porPagina) return null;
+  const desde = (pagina - 1) * porPagina + 1;
+  const hasta = Math.min(total, pagina * porPagina);
+  return (
+    <nav className="paginador" aria-label="Paginación">
+      <span className="tenue peq-txt">{desde}–{hasta} de {num(total)}</span>
+      <span className="fila" style={{ gap: 4 }}>
+        <button type="button" className="btn peq" disabled={pagina <= 1} onClick={() => onPagina(pagina - 1)} aria-label="Página anterior"><Icon n="atras" className="" size={14} />Anterior</button>
+        <span className="peq-txt" aria-live="polite">Página {pagina} de {paginas}</span>
+        <button type="button" className="btn peq" disabled={pagina >= paginas} onClick={() => onPagina(pagina + 1)} aria-label="Página siguiente">Siguiente<Icon n="derecha" className="" size={14} /></button>
+      </span>
+    </nav>
+  );
+}
+
+/** Valor con retardo: evita una petición por cada tecla en los buscadores. */
+export function useRetardo<T>(valor: T, ms = 300): T {
+  const [v, setV] = useState(valor);
+  useEffect(() => { const t = setTimeout(() => setV(valor), ms); return () => clearTimeout(t); }, [valor, ms]);
+  return v;
 }
 
 // ---------------------------------------------------------------- estados (§11)
@@ -76,7 +105,14 @@ const ESTADOS: Record<string, [Tono, string, string]> = {
   // ventas y citas
   CONFIRMADA: ['ok', 'ok', 'Confirmada'], ANULADA: ['neutro', 'x', 'Anulada'], BORRADOR: ['neutro', 'reloj', 'Borrador'],
   RESERVADA: ['neutro', 'reloj', 'Reservada'], CANCELADA: ['neutro', 'x', 'Cancelada'], ATENDIDA: ['ok', 'ok', 'Atendida'], NO_ASISTIO: ['warn', 'alerta', 'No asistió'],
-  PAGADA: ['ok', 'ok', 'Pagada'],
+  PAGADA: ['ok', 'ok', 'Pagada'], PAGADO: ['ok', 'ok', 'Pagado'], ABIERTO: ['warn', 'reloj', 'Esperando pago'], EXPIRADO: ['neutro', 'reloj', 'Vencido'],
+  // entrega de mensajes
+  LEIDO: ['ok', 'ok', 'Leído'], SIMULADO: ['neutro', 'info', 'Simulado'], FALLIDO: ['err', 'alerta', 'No entregado'],
+  // invitaciones e integraciones
+  ACEPTADA: ['ok', 'ok', 'Aceptada'], REVOCADA: ['neutro', 'x', 'Retirada'], EXPIRADA: ['neutro', 'reloj', 'Vencida'],
+  CONECTADO: ['ok', 'ok', 'Conectado'], SIN_CONFIGURAR: ['neutro', 'info', 'Sin configurar'], PENDIENTE_VERIFICAR: ['warn', 'reloj', 'Por verificar'],
+  conectado: ['ok', 'ok', 'Conectado'], simulado: ['warn', 'info', 'Simulado'], pendiente: ['err', 'alerta', 'Pendiente de conectar'],
+  APROBADA: ['ok', 'ok', 'Aprobada en Meta'], NO_REGISTRADA: ['neutro', 'info', 'Sin registrar'], PAUSADA: ['warn', 'alerta', 'Pausada'],
   // conversaciones y casos
   ABIERTA: ['neutro', 'conversaciones', 'Abierta'], ESCALADA: ['info', 'persona', 'Escalada'], CERRADA: ['neutro', 'ok', 'Cerrada'],
   EN_COLA: ['warn', 'reloj', 'En cola'], ASIGNADO: ['info', 'persona', 'Asignado'], EN_ATENCION: ['info', 'persona', 'En atención'], CERRADO: ['neutro', 'ok', 'Cerrado'],
@@ -88,9 +124,15 @@ const ESTADOS: Record<string, [Tono, string, string]> = {
   SUSPENDIDA: ['err', 'candado', 'Suspendida'],
   // auditoría
   EXITO: ['ok', 'ok', 'Éxito'], PERMITIDO: ['ok', 'ok', 'Permitido'], DENEGADO: ['err', 'candado', 'Denegado'], NO_ENCONTRADO: ['err', 'candado', 'No encontrado'],
-  // riesgo
-  lectura: ['neutro', 'info', 'Lectura'], reversible: ['neutro', 'info', 'Reversible'], confirmable: ['warn', 'alerta', 'Confirmable'], critica: ['err', 'candado', 'Crítica'],
+  // riesgo (en lenguaje del negocio)
+  lectura: ['neutro', 'info', 'Solo consulta'], reversible: ['neutro', 'info', 'Cambio reversible'], confirmable: ['warn', 'alerta', 'Pide confirmación'], critica: ['err', 'candado', 'Solo una persona'],
   AGENTE: ['ia', 'ia', 'Agente IA'], PANEL: ['neutro', 'persona', 'Panel'], PERSONA: ['info', 'persona', 'Persona'],
+  // soporte, incidentes y operador
+  EN_PROCESO: ['info', 'persona', 'En proceso'], ESPERANDO_CLIENTE: ['warn', 'reloj', 'Esperando respuesta'], RESUELTO: ['ok', 'ok', 'Resuelto'],
+  RECONOCIDO: ['info', 'persona', 'Reconocido'], CRITICA: ['err', 'alerta', 'Crítica'], ALTA: ['err', 'alerta', 'Alta'], MEDIA: ['warn', 'info', 'Media'], BAJA: ['neutro', 'info', 'Baja'],
+  URGENTE: ['err', 'alerta', 'Urgente'], NORMAL: ['neutro', 'info', 'Normal'], SIN_SUSCRIPCION: ['neutro', 'info', 'Sin suscripción'],
+  REBOTADO: ['err', 'x', 'Rebotó'], QUEJA: ['err', 'alerta', 'Marcado como spam'], SIN_CAMBIOS: ['neutro', 'info', 'Sin cambios'],
+  ADMIN: ['info', 'candado', 'Administración'], SOPORTE: ['neutro', 'persona', 'Soporte'],
 };
 export function Estado({ v, texto }: { v: string | null | undefined; texto?: string }) {
   if (!v) return <span className="tenue">—</span>;
@@ -154,8 +196,8 @@ export function Cargando({ filas = 4 }: { filas?: number }) {
 
 /** Estado «Bloqueado»: el texto lo fija la arquitectura (DD-03), no el diseño. */
 export function ErrorCarga({ error, reintentar }: { error: ApiError; reintentar?: () => void }) {
-  if (error.status === 404) return <div className="bloqueado"><Icon n="candado" className="" size={16} /> No encontramos eso.</div>;
-  if (error.status === 403) return <div className="bloqueado"><Icon n="candado" className="" size={16} /> Tu rol no tiene acceso a esta sección.</div>;
+  if (error.status === 404) return <div className="bloqueado"><Icon n="candado" className="" size={16} /> No encontramos eso. Puede que no exista o que pertenezca a otra empresa.</div>;
+  if (error.status === 403) return <div className="bloqueado"><Icon n="candado" className="" size={16} /> Tu rol no tiene acceso a esta sección. Pide acceso a quien administra la empresa.</div>;
   return (
     <div className="aviso" role="alert" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
       <span className="fila" style={{ alignItems: 'flex-start' }}><Icon n="alerta" className="" size={16} /><span><b>No pudimos cargar esta información.</b> <span style={{ fontWeight: 400 }}>{error.message}{reintentar ? ' Vuelve a intentarlo; si persiste, revisa tu conexión.' : ''}</span></span></span>
@@ -239,22 +281,25 @@ export function Interruptor({ on, onChange, disabled, etiqueta }: { on: boolean;
   return <button type="button" role="switch" aria-checked={on} aria-label={etiqueta} className={`interruptor ${on ? 'on' : ''}`} disabled={disabled} onClick={() => onChange(!on)} />;
 }
 
-// ---------------------------------------------------------------- componentes firma (§7.5)
-const HERR_LEGIBLE: Record<string, string> = {
-  consultar_catalogo: 'Consultó el catálogo', consultar_precio: 'Consultó un precio', consultar_disponibilidad: 'Consultó disponibilidad',
-  crear_cita: 'Crear cita', mis_citas: 'Consultó citas del cliente', cancelar_cita: 'Cancelar cita', consultar_inventario: 'Consultó existencias',
-  registrar_venta: 'Registrar venta', generar_enlace_pago: 'Generó enlace de pago', estado_factura: 'Consultó facturas', escalar_a_humano: 'Escaló a una persona',
-  resumen_ventas: 'Resumen de ventas', citas_del_dia: 'Citas del día', stock_bajo_minimo: 'Stock bajo mínimo', buscar_cliente: 'Buscó cliente',
-  historial_cliente: 'Historial del cliente', consumo_del_plan: 'Consumo del plan', ayuda_plataforma: 'Ayuda de la plataforma', emitir_nota_credito: 'Emitir nota crédito',
+// ---------------------------------------------------------------- componentes firma
+/** Nombre de cada acción de la IA en lenguaje del negocio (los nombres internos no se muestran). */
+export const ACCION_IA: Record<string, string> = {
+  consultar_catalogo: 'Consultó el catálogo', consultar_precio: 'Consultó un precio', consultar_disponibilidad: 'Consultó la agenda',
+  crear_cita: 'Agendar una cita', mis_citas: 'Consultó las citas del cliente', cancelar_cita: 'Cancelar una cita', consultar_inventario: 'Consultó existencias',
+  registrar_venta: 'Registrar una venta', generar_enlace_pago: 'Generó un enlace de pago', estado_factura: 'Consultó facturas', escalar_a_humano: 'Pasó la conversación a una persona',
+  resumen_ventas: 'Resumió las ventas', citas_del_dia: 'Consultó las citas del día', stock_bajo_minimo: 'Revisó productos bajo mínimo', buscar_cliente: 'Buscó un cliente',
+  historial_cliente: 'Revisó el historial del cliente', consumo_del_plan: 'Consultó el consumo del plan', ayuda_plataforma: 'Explicó cómo usar el panel', emitir_nota_credito: 'Anular una factura (nota crédito)',
 };
+export const accionIA = (h: string) => ACCION_IA[h] ?? 'Acción del asistente';
 const MOTIVOS: Record<string, string> = {
-  herramienta_no_registrada_para_el_agente: 'La herramienta no existe para este agente',
-  herramienta_deshabilitada: 'Herramienta apagada en el Centro de IA', modulo_inactivo: 'Módulo inactivo',
-  argumentos_invalidos: 'Argumentos fuera del contrato', sin_cliente_en_contexto: 'Sin cliente en contexto',
-  accion_critica_reservada_a_personas: 'Acción crítica: solo una persona', permiso_prohibido_a_agentes: 'Permiso prohibido a agentes',
-  permiso_ausente: 'El rol del agente no tiene el permiso', limite_por_conversacion: 'Límite por conversación superado',
-  recurso_no_encontrado: 'Recurso inexistente o de otra empresa',
+  herramienta_no_registrada_para_el_agente: 'Esa acción no está permitida para este asistente.',
+  herramienta_deshabilitada: 'La apagaste en el Centro de IA.', modulo_inactivo: 'El módulo está desactivado.',
+  argumentos_invalidos: 'La solicitud venía incompleta o con datos no válidos.', sin_cliente_en_contexto: 'No había un cliente identificado.',
+  accion_critica_reservada_a_personas: 'Solo una persona del equipo puede hacerlo.', permiso_prohibido_a_agentes: 'Ningún asistente de IA puede hacerlo.',
+  permiso_ausente: 'El asistente no tiene permiso para eso.', limite_por_conversacion: 'Se alcanzó el máximo de veces por conversación.',
+  recurso_no_encontrado: 'No encontró lo que se pidió (no existe o es de otra empresa).',
 };
+export const motivoIA = (m?: string | null) => (m ? MOTIVOS[m] ?? (/^[a-z_]+$/.test(m) ? 'No se pudo completar.' : m) : '');
 
 /** Recibo de acción de IA (P9). Idéntico en hilo, detalle de venta, Centro de IA y auditoría. */
 export function Recibo({ e, compacto }: { e: any; compacto?: boolean }) {
@@ -263,16 +308,15 @@ export function Recibo({ e, compacto }: { e: any; compacto?: boolean }) {
   return (
     <div className={`recibo ${denegada ? 'denegada' : pendiente ? 'pendiente' : ''}`}>
       <span className="ic" aria-hidden="true"><Icon n={denegada ? 'candado' : pendiente ? 'reloj' : 'ia'} className="" size={14} /></span>
-      <span className="que"><span className="sr">Acción de IA: </span><b>{HERR_LEGIBLE[e.herramienta] ?? e.herramienta}</b><span className="herr">{e.herramienta}</span></span>
+      <span className="que"><span className="sr">Acción de IA: </span><b>{accionIA(e.herramienta)}</b></span>
       <Estado v={e.decision} />
       <span className="meta">
-        {e.nivel_riesgo && <span>Riesgo <b>{e.nivel_riesgo}</b></span>}
-        {e.permiso_requerido && <span>Permiso <span className="mono">{e.permiso_requerido}</span></span>}
-        {e.confirmado_por && <span>Confirmó {e.confirmado_por.replace('CLIENTE:', 'cliente ')}</span>}
+        {e.nivel_riesgo && e.nivel_riesgo !== 'lectura' && <span>{ESTADOS[e.nivel_riesgo]?.[2] ?? e.nivel_riesgo}</span>}
+        {e.confirmado_por && <span>Confirmó {e.confirmado_por.replace('CLIENTE:', 'el cliente ')}</span>}
         {!compacto && e.creado_en && <span>{fechaHora(e.creado_en)}</span>}
-        {!compacto && <Link to={`/auditoria?q=${e.id}`}>Auditoría <span className="mono">{String(e.id).slice(-8)}</span></Link>}
+        {!compacto && e.id && <Link to={`/auditoria?q=${e.id}`}>Ver en auditoría</Link>}
       </span>
-      {denegada && e.motivo_denegacion && <span className="motivo">{e.comprobacion_fallida ? `Comprobación ${e.comprobacion_fallida} · ` : ''}{MOTIVOS[e.motivo_denegacion] ?? e.motivo_denegacion}</span>}
+      {denegada && (e.motivo_denegacion || e.motivo) && <span className="motivo">{motivoIA(e.motivo_denegacion ?? e.motivo)}</span>}
     </div>
   );
 }
@@ -322,3 +366,28 @@ export function Medidor({ c, etiqueta, oscuro }: { c: any; etiqueta: string; osc
 export function Campo({ etiqueta, ayuda, error, children }: { etiqueta: string; ayuda?: ReactNode; error?: string; children: ReactNode }) {
   return <label className="campo"><span>{etiqueta}{ayuda && <span className="ayuda"> · {ayuda}</span>}</span>{children}{error && <span className="error" role="alert">{error}</span>}</label>;
 }
+
+/**
+ * Campo para un código de seis dígitos: teclado numérico en móvil, autocompletado
+ * desde el correo o SMS (one-time-code) y pegado tolerante a espacios y guiones.
+ */
+export function CodigoOtp({ valor, onCambio, etiqueta = 'Código de 6 dígitos', autoFocus }: { valor: string; onCambio: (v: string) => void; etiqueta?: string; autoFocus?: boolean }) {
+  return (
+    <Campo etiqueta={etiqueta}>
+      <input className="input codigo-otp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={6} autoFocus={autoFocus}
+        value={valor} onChange={(e) => onCambio(e.target.value.replace(/\D/g, '').slice(0, 6))} aria-describedby={undefined} placeholder="••••••" />
+    </Campo>
+  );
+}
+
+/** Cuenta atrás para reenviar un código (el servidor aplica el mismo límite). */
+export function useCuentaAtras(segundosIniciales = 0) {
+  const [s, setS] = useState(segundosIniciales);
+  useEffect(() => {
+    if (s <= 0) return;
+    const t = setTimeout(() => setS((x) => x - 1), 1000);
+    return () => clearTimeout(t);
+  }, [s]);
+  return { restante: s, iniciar: (n = 60) => setS(n) };
+}
+

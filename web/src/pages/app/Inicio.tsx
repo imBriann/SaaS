@@ -25,6 +25,7 @@ export function Inicio() {
         {cargando && !data && <div className="tarjeta"><Cargando filas={8} /></div>}
         {data && (
           <>
+            {data.pasos && data.pasos.completos < data.pasos.total && <PrimerosPasos p={data.pasos} />}
             {data.atencion.length === 0 ? (
               <div className="tarjeta pad fila" style={{ gap: 10 }}>
                 <span className="estado ok"><Icon n="ok" className="" />Al día</span>
@@ -35,7 +36,7 @@ export function Inicio() {
                 <div>
                   {data.atencion.map((a: any, i: number) => (
                     <div key={i} className="atencion-fila">
-                      <Estado v={a.nivel === 'error' ? 'RECHAZADO' : a.nivel === 'warn' ? 'PENDIENTE' : 'ESCALADA'} texto={a.tipo === 'factura_rechazada' ? 'DIAN' : a.tipo === 'caso' ? 'Caso' : a.tipo === 'stock' ? 'Stock' : 'IA'} />
+                      <Estado v={a.nivel === 'error' ? 'RECHAZADO' : a.nivel === 'warn' ? 'PENDIENTE' : 'ESCALADA'} texto={a.tipo === 'factura_rechazada' ? 'DIAN' : a.tipo === 'caso' ? 'Caso' : a.tipo === 'stock' ? 'Stock' : a.tipo === 'entrega' ? 'WhatsApp' : 'IA'} />
                       <span style={{ minWidth: 0 }}><span className="lista-titulo">{a.titulo}</span><br /><span className="lista-detalle">{a.detalle}</span></span>
                       <Link className="btn peq" to={a.accion.ruta}>{a.accion.etiqueta}<Icon n="derecha" className="" size={14} /></Link>
                     </div>
@@ -48,7 +49,8 @@ export function Inicio() {
               <Cifra etiqueta="Ventas de hoy" valor={cop(data.cifras.ventas_hoy)} detalle={`${data.cifras.n_ventas_hoy} ${data.cifras.n_ventas_hoy === 1 ? 'venta' : 'ventas'} · semana ${cop(data.cifras.ventas_semana)}`} />
               <Cifra etiqueta="Citas de hoy" valor={data.cifras.citas_hoy} detalle={`${data.cifras.citas_hoy_ia} agendadas por el agente`} />
               <Cifra etiqueta="Conversaciones abiertas" valor={data.cifras.conversaciones_abiertas} detalle={`${data.cifras.escaladas} con una persona`} />
-              <Cifra etiqueta="Clientes nuevos (7 días)" valor={data.cifras.clientes_nuevos} detalle={`${data.cifras.resueltas_ia_semana} conversaciones resueltas por la IA`} />
+              {puede('order:read') ? <Cifra etiqueta="Por cobrar" valor={cop(data.cifras.por_cobrar)} detalle={<Link to="/ventas?pago=PENDIENTE">Ver ventas sin pagar</Link>} />
+                : <Cifra etiqueta="Clientes nuevos (7 días)" valor={data.cifras.clientes_nuevos} detalle={`${data.cifras.resueltas_ia_semana} conversaciones resueltas por la IA`} />}
             </div>
 
             <div className="grid g-main" style={{ alignItems: 'start' }}>
@@ -86,7 +88,7 @@ export function Inicio() {
               </div>
               <div className="col" style={{ gap: 16 }}>
                 {data.fiscal && <Tarjeta titulo="Ciclo fiscal de hoy" acciones={<Link to="/facturacion" className="btn sutil peq">Facturación</Link>}><CicloFiscal conteos={data.fiscal} /></Tarjeta>}
-                {data.ingresos.length > 0 && <Tarjeta titulo="Ingresos de la semana"><Barras datos={data.ingresos} /></Tarjeta>}
+                {data.ingresos.length > 0 && <Tarjeta titulo="Ingresos de los últimos 7 días">{data.ingresos.some((d: any) => d.total > 0) ? <Barras datos={data.ingresos} /> : <Vacio titulo="Sin ventas esta semana">Cuando registres ventas, aquí verás cuánto entra cada día.</Vacio>}</Tarjeta>}
                 {data.consumo && (
                   <Tarjeta titulo="Consumo del plan" acciones={<Link to="/suscripcion" className="btn sutil peq">Detalle</Link>}>
                     <div className="col" style={{ gap: 14 }}>
@@ -105,6 +107,29 @@ export function Inicio() {
   );
 }
 
+/** Configuración inicial: cada paso se marca solo cuando el dato existe en el servidor. */
+function PrimerosPasos({ p }: { p: { pasos: { clave: string; titulo: string; hecho: boolean; ruta: string; detalle: string }[]; completos: number; total: number } }) {
+  return (
+    <section className="tarjeta pasos-inicio" aria-labelledby="pasos-titulo">
+      <div className="cab">
+        <h2 className="titulo-tarjeta" id="pasos-titulo">Deja tu negocio listo para atender</h2>
+        <span className="tenue peq-txt" style={{ marginLeft: 'auto' }}>{p.completos} de {p.total} listos</span>
+        <div className="progreso" role="progressbar" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.completos} aria-label="Pasos completados"><i style={{ width: `${(p.completos / p.total) * 100}%` }} /></div>
+      </div>
+      <ol className="pasos-lista">
+        {p.pasos.map((x) => (
+          <li key={x.clave} className={x.hecho ? 'hecho' : ''}>
+            <span className="marca-paso" aria-hidden="true">{x.hecho ? <Icon n="ok" className="" size={13} /> : null}</span>
+            <span className="txt"><b>{x.titulo}</b><span className="tenue peq-txt">{x.detalle}</span></span>
+            {!x.hecho && <Link className="btn peq" to={x.ruta}>Hacerlo<Icon n="derecha" className="" size={14} /></Link>}
+            {x.hecho && <span className="sr">(listo)</span>}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 function Barras({ datos }: { datos: { dia: string; total: number }[] }) {
   const max = Math.max(...datos.map((d) => d.total), 1);
   const hoy = hoyLocal();
@@ -113,7 +138,7 @@ function Barras({ datos }: { datos: { dia: string; total: number }[] }) {
       <div className="barras" role="img" aria-label={`Ingresos por día: ${datos.map((d) => `${d.dia} ${cop(d.total)}`).join(', ')}`}>
         {datos.map((d) => (
           <div key={d.dia} className={`b ${d.dia === hoy ? 'hoy' : ''}`} title={`${d.dia}: ${cop(d.total)}`}>
-            <span>{Math.round(d.total / 1000)}k</span>
+            <span>{d.total ? `${Math.round(d.total / 1000)}k` : '0'}</span>
             <i style={{ height: `${(d.total / max) * 70}%` }} />
             <span>{d.dia === hoy ? 'hoy' : new Date(d.dia + 'T12:00:00Z').toLocaleDateString('es-CO', { weekday: 'short', timeZone: 'UTC' })}</span>
           </div>
@@ -126,15 +151,15 @@ function Barras({ datos }: { datos: { dia: string; total: number }[] }) {
 
 /** Consultar el negocio en lenguaje natural (CU-10). Cada respuesta muestra sus recibos. */
 function Asistente() {
-  const { puede } = useSesion();
+  const { puede, s } = useSesion();
   const [hist, setHist] = useState<{ role: 'user' | 'assistant'; text: string; recibos?: any[]; error?: boolean }[]>([]);
   const [q, setQ] = useState('');
   const [ocupado, setOcupado] = useState(false);
-  if (!puede('ai:assist')) return null;
+  if (!puede('ai:assist') || !s.modulos.includes('ia')) return null;
   const preguntar = async (e?: FormEvent, texto?: string) => {
     e?.preventDefault();
     const pregunta = (texto ?? q).trim();
-    if (!pregunta) return;
+    if (!pregunta || ocupado) return;
     setQ('');
     const nuevo = [...hist, { role: 'user' as const, text: pregunta }];
     setHist(nuevo);
@@ -143,6 +168,7 @@ function Asistente() {
       const r = await api.post('/api/t/asistente', { pregunta, historial: hist.map(({ role, text }) => ({ role, text })) });
       setHist([...nuevo, { role: 'assistant', text: r.texto, recibos: r.ejecuciones }]);
     } catch (err) {
+      setQ(pregunta);
       setHist([...nuevo, { role: 'assistant', text: (err as Error).message, error: true }]);
     } finally { setOcupado(false); }
   };
@@ -152,14 +178,19 @@ function Asistente() {
         {hist.length === 0 && (
           <div className="col" style={{ gap: 8 }}>
             <span className="tenue peq-txt">El asistente consulta tus datos con las mismas herramientas y permisos que verás en sus recibos.</span>
-            <div className="fila envolver" style={{ gap: 6 }}>{['¿Cuánto vendimos esta semana?', '¿Qué citas hay hoy?', '¿Qué productos están bajo mínimo?', '¿Cómo va el consumo del plan?'].map((s) => <button key={s} type="button" className="chip" onClick={() => preguntar(undefined, s)} disabled={ocupado}>{s}</button>)}</div>
+            <div className="fila envolver" style={{ gap: 6 }}>{[
+              { texto: '¿Cuánto vendimos esta semana?', permiso: 'order:read', modulo: 'ventas' },
+              { texto: '¿Qué citas hay hoy?', permiso: 'appointment:read', modulo: 'agenda' },
+              { texto: '¿Qué productos están bajo mínimo?', permiso: 'catalog:read', modulo: 'inventario' },
+              { texto: '¿Cómo va el consumo del plan?', permiso: 'subscription:manage', modulo: 'ia' },
+            ].filter(p => puede(p.permiso) && s.modulos.includes(p.modulo)).map(p => <button key={p.texto} type="button" className="chip" onClick={() => preguntar(undefined, p.texto)} disabled={ocupado}>{p.texto}</button>)}</div>
           </div>
         )}
         {hist.map((h, i) => h.role === 'user'
           ? <Mensaje key={i} tipo="cliente" rol="Tú">{h.text}</Mensaje>
           : h.error
             ? <div key={i} className="bloqueado"><Icon n="alerta" className="" size={16} />{h.text}</div>
-            : <div key={i} className="col" style={{ gap: 6, alignItems: 'flex-end' }}>
+            : <div key={i} className="col" style={{ gap: 6, alignItems: 'flex-end', minWidth: 0 }}>
                 <Mensaje tipo="ia" rol="Asistente">{h.text}</Mensaje>
                 {h.recibos?.map((r) => <Recibo key={r.id} e={{ ...r, nivel_riesgo: r.riesgo, motivo_denegacion: r.motivo }} compacto />)}
               </div>)}
@@ -169,6 +200,7 @@ function Asistente() {
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ej.: ¿qué citas tengo mañana?" aria-label="Pregunta al asistente" />
         <button className="btn primario" disabled={ocupado || !q.trim()}>Preguntar</button>
       </form>
+      <div className="assistant-support"><span>Si la respuesta no resuelve tu consulta, puedes pedir ayuda.</span><Link to="/soporte">Solicitar atención humana <Icon n="flecha" size={14} className="" /></Link></div>
     </Tarjeta>
   );
 }

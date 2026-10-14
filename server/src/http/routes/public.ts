@@ -1,53 +1,96 @@
-import { MODULE_CATALOG, quoteModules } from '../../onboarding/pricing.js';
 import type { FastifyInstance } from 'fastify';
+import { MODULE_CATALOG, quoteModules } from '../../onboarding/pricing.js';
 import type { Database } from '../../db/index.js';
-import { AppError, invalid } from '../../lib/errors.js';
+import { AppError, invalid, notFound } from '../../lib/errors.js';
 import { cop, token } from '../../lib/util.js';
-import { config } from '../../config.js';
-import { createSession, destroySession, memberships, SESSION_COOKIE } from '../context.js';
+import { config, integraciones } from '../../config.js';
+import { cookieSesion, memberships, SESSION_COOKIE, sessionToken } from '../context.js';
 import * as onboarding from '../../onboarding/service.js';
 import { catalogTemplate } from '../../onboarding/importer.js';
-import { signWebhook } from '../../adapters/payments.js';
+import { cuentaPlataforma, signWebhook, verificarEventoWompi } from '../../adapters/payments.js';
 import { parseWhatsAppWebhook, verifyMetaSignature } from '../../adapters/channel.js';
-import { receiveChannelMessages } from '../../modules/channelInbound.js';
+import { receiveChannelMessages, receiveDeliveryStatuses } from '../../modules/channelInbound.js';
 import { publicDocumentData } from '../../modules/fiscal.js';
+import { procesarEventoComercio, procesarEventoPago, verificarRetorno } from '../../modules/billing.js';
+import * as auth from '../../modules/auth.js';
+import * as team from '../../modules/team.js';
+import { FirmaInvalida, webhookResend } from '../../email/servicio.js';
 import { auditPlatform } from '../../core/audit.js';
 import { loadTemplates } from '../../templates/index.js';
+import { MARCA } from '../../brand.js';
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
 export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   app.get('/api/publico/modulos', async () => ({ modulos: MODULE_CATALOG, demostracion: true }));
   app.post('/api/publico/cotizacion', async (req) => quoteModules(req.body));
+  app.get('/api/publico/planes', async () =>
+    db.withPlatform(async (tx) => (await tx.query(`SELECT * FROM plan WHERE codigo IN ('esencial','negocio','pro') ORDER BY orden`)).rows.map((p) => ({ ...p, precio_mensual: Number(p.precio_mensual), precio_excedente_1k_tokens: Number(p.precio_excedente_1k_tokens) }))),
+  );
+  app.get('/api/publico/sectores', async () => loadTemplates().map((t) => ({ sector: t.sector, version: t.version, nombre: t.nombre, descripcion: t.descripcion, modulos: t.modulos })));
+  app.get('/api/publico/estado', async () => ({ contratacion: onboarding.puedeContratar(), simuladores: config.simuladores, integraciones: integraciones().map(({ clave, estado }) => ({ clave, estado })) }));
+
   // ------------------------------------------------------------------ sesión
   app.post('/api/auth/login', async (req: any, reply) => {
     const { email, password } = req.body ?? {};
     if (!email || !password) throw invalid('Escribe tu correo y contraseña.');
-    const s = await createSession(db, String(email), String(password));
-    reply.setCookie(SESSION_COOKIE, s.token, { path: '/', httpOnly: true, sameSite: 'lax', secure: !config.dev, maxAge: config.sessionDays * 86400 });
+    const s = await auth.login(db, String(email), String(password), { ip: req.ip, agente: String(req.headers['user-agent'] ?? ''), correlacion: req.correlacion });
+    // Operador de la plataforma: sin cookie hasta completar el segundo factor.
+    if (s.tipo === 'segundo_factor') return { segundo_factor: true, desafio: s.desafio, destino: s.destino, minutos: s.minutos };
+    reply.setCookie(SESSION_COOKIE, s.token, cookieSesion());
     const empresas = await db.withPlatform((tx) => memberships(tx, s.user.id));
-    return { usuario: { id: s.user.id, nombre: s.user.nombre, email: s.user.email, es_admin_plataforma: s.user.es_admin_plataforma }, empresas };
+    return { usuario: s.user, empresas };
+  });
+
+  app.post('/api/auth/login/codigo', async (req: any, reply) => {
+    const s = await auth.completarSegundoFactor(db, String(req.body?.desafio ?? ''), req.body?.codigo, { agente: String(req.headers['user-agent'] ?? ''), correlacion: req.correlacion });
+    reply.setCookie(SESSION_COOKIE, s.token, cookieSesion());
+    const empresas = await db.withPlatform((tx) => memberships(tx, s.user.id));
+    return { usuario: s.user, empresas };
+  });
+  app.post('/api/auth/login/codigo/reenviar', async (req: any) => auth.reenviarSegundoFactor(db, String(req.body?.desafio ?? ''), req.ip));
+
+  // Verificación del correo (código de seis dígitos).
+  app.post('/api/auth/verificacion/enviar', async (req: any) => {
+    if (!req.user) throw new AppError('UNAUTHENTICATED', 'Tu sesión terminó. Inicia sesión de nuevo.');
+    return auth.enviarVerificacion(db, req.user, req.ip);
+  });
+  app.post('/api/auth/verificacion/confirmar', async (req: any) => {
+    if (!req.user) throw new AppError('UNAUTHENTICATED', 'Tu sesión terminó. Inicia sesión de nuevo.');
+    return auth.confirmarVerificacion(db, req.user, req.body?.codigo, req.correlacion);
   });
 
   app.post('/api/auth/logout', async (req, reply) => {
-    await destroySession(db, req.cookies[SESSION_COOKIE]);
+    await auth.destroySession(db, sessionToken(req));
+    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    return { ok: true };
+  });
+
+  app.post('/api/auth/logout-todas', async (req, reply) => {
+    if (!req.user) throw new AppError('UNAUTHENTICATED', 'Sin sesión.');
+    await auth.logoutEverywhere(db, req.user);
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
     return { ok: true };
   });
 
   app.get('/api/auth/sesion', async (req) => {
-    if (!req.user) throw new AppError('UNAUTHENTICATED', 'Sin sesión.');
+    if (!req.user) throw new AppError('UNAUTHENTICATED', 'Tu sesión terminó. Inicia sesión de nuevo.');
     const empresas = await db.withPlatform((tx) => memberships(tx, req.user!.id));
     return { usuario: req.user, empresas };
   });
 
-  // ------------------------------------------------------------------ catálogo público
-  app.get('/api/publico/planes', async () =>
-    db.withPlatform(async (tx) => (await tx.query(`SELECT * FROM plan WHERE codigo IN ('esencial','negocio','pro') ORDER BY orden`)).rows.map((p) => ({ ...p, precio_mensual: Number(p.precio_mensual), precio_excedente_1k_tokens: Number(p.precio_excedente_1k_tokens) }))),
-  );
-  app.get('/api/publico/sectores', async () => loadTemplates().map((t) => ({ sector: t.sector, version: t.version, nombre: t.nombre, descripcion: t.descripcion, modulos: t.modulos })));
+  app.post('/api/auth/recuperar', async (req: any) => auth.requestPasswordReset(db, String(req.body?.email ?? ''), req.correlacion));
+  app.post('/api/auth/restablecer', async (req: any) => auth.resetPassword(db, String(req.body?.token ?? ''), String(req.body?.password ?? ''), req.correlacion));
+  app.post('/api/auth/cambiar-contrasena', async (req: any) => {
+    if (!req.user) throw new AppError('UNAUTHENTICATED', 'Tu sesión terminó. Inicia sesión de nuevo.');
+    return auth.changePassword(db, req.user, String(req.body?.actual ?? ''), String(req.body?.nueva ?? ''), sessionToken(req), req.correlacion);
+  });
 
-  // ------------------------------------------------------------------ onboarding (UF-01)
+  // ------------------------------------------------------------------ invitaciones
+  app.get('/api/invitaciones/:tk', async (req: any) => team.invitationInfo(db, String(req.params.tk)));
+  app.post('/api/invitaciones/:tk/aceptar', async (req: any) => team.acceptInvitation(db, String(req.params.tk), { password: req.body?.password }, req.correlacion));
+
+  // ------------------------------------------------------------------ onboarding
   app.post('/api/onboarding/borradores', async (req: any) => onboarding.createDraft(db, req.body?.descripcion));
   app.get('/api/onboarding/borradores/:tk', async (req: any) => onboarding.getDraft(db, req.params.tk));
   app.patch('/api/onboarding/borradores/:tk', async (req: any) => onboarding.updateDraft(db, req.params.tk, req.body));
@@ -60,27 +103,28 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   app.post('/api/onboarding/borradores/:tk/catalogo/confirmar', async (req: any) => onboarding.confirmCatalog(db, req.params.tk, req.body));
   app.post('/api/onboarding/borradores/:tk/pago', async (req: any) => onboarding.startCheckout(db, req.params.tk));
   app.get('/api/onboarding/borradores/:tk/estado', async (req: any) => onboarding.draftStatus(db, req.params.tk));
-  app.post('/api/onboarding/borradores/:tk/contrasena', async (req: any) => onboarding.setInitialPassword(db, req.params.tk, req.body?.password));
+  app.post('/api/onboarding/borradores/:tk/reintentar', async (req: any) => onboarding.retryProvisioning(db, req.params.tk, req.correlacion));
+  app.post('/api/onboarding/borradores/:tk/contrasena', async (req: any) => onboarding.setInitialPassword(db, req.params.tk, req.body?.password, req.ip));
   app.get('/api/onboarding/plantilla-catalogo.xlsx', async (_req, reply) => {
     reply.header('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     reply.header('content-disposition', 'attachment; filename="plantilla-catalogo.xlsx"');
     return reply.send(await catalogTemplate());
   });
 
-  // ------------------------------------------------------------------ pasarela simulada
-  // Simula el servidor de la pasarela: construye el evento, lo FIRMA con el secreto
-  // compartido y lo entrega por HTTP al webhook, igual que haría una pasarela real.
+  // ------------------------------------------------------------------ pasarela simulada (desarrollo y demostración)
+  // Representa al servidor de la pasarela: construye el evento, lo FIRMA con el secreto
+  // compartido y lo entrega al webhook por HTTP, como haría una pasarela real.
   app.post('/api/pasarela/simular', async (req: any) => {
-    if (!config.dev) throw new AppError('NOT_FOUND', 'No encontramos eso.');
+    if (!config.simuladores) throw notFound();
     const { ref, resultado = 'aprobado', monto, entregas = 1, firma_invalida = false } = req.body ?? {};
-    if (!ref) throw invalid('Falta la referencia.');
+    if (!ref || typeof ref !== 'string') throw invalid('Falta la referencia.');
     const montoReal = monto ?? (await db.withPlatform(async (tx) => {
       const p = (await tx.query(`SELECT monto FROM payment WHERE referencia=$1`, [ref])).rows[0];
       if (p) return Number(p.monto);
-      const l = (await tx.query(`SELECT o.total FROM payment_link l JOIN "order" o ON o.id=l.order_id WHERE l.referencia=$1`, [ref])).rows[0];
-      return l ? Number(l.total) : 0;
+      const l = (await tx.query(`SELECT monto FROM payment_link WHERE referencia=$1`, [ref])).rows[0];
+      return l ? Number(l.monto) : 0;
     }));
-    const body = JSON.stringify({ id: `evt_${token(12)}`, tipo: resultado === 'aprobado' ? 'pago.aprobado' : 'pago.rechazado', referencia: ref, monto: montoReal, moneda: 'COP', creado: new Date().toISOString() });
+    const body = JSON.stringify({ id: `evt_${token(12)}`, tipo: resultado === 'aprobado' ? 'pago.aprobado' : 'pago.rechazado', referencia: ref, monto: montoReal, moneda: 'COP', transaccion: `sim-${token(8)}`, creado: new Date().toISOString() });
     const firma = firma_invalida ? 't=1,v1=00' : signWebhook(body);
     const respuestas = [];
     for (let i = 0; i < Math.min(Number(entregas) || 1, 5); i++) {
@@ -90,12 +134,54 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
     return { entregas: respuestas };
   });
 
-  // ------------------------------------------------------------------ webhooks
+  // ------------------------------------------------------------------ webhooks de pagos
   app.post('/api/webhooks/pagos', async (req: any) => onboarding.handlePaymentWebhook(db, req.rawBody ?? '', req.headers['x-pasarela-firma'], req.correlacion));
 
+  // Wompi · cuenta de la plataforma (altas y renovaciones).
+  app.post('/api/webhooks/wompi', async (req: any, reply) => {
+    const cuenta = cuentaPlataforma();
+    const ev = cuenta?.proveedor === 'wompi' ? verificarEventoWompi(cuenta, req.body) : null;
+    if (!ev) {
+      await db.withPlatform((tx) => auditPlatform(tx, null, { tipo: 'ANONIMO', id: null, nombre: 'webhook' }, 'WEBHOOK', req.correlacion, { accion: 'webhook.wompi.firma_invalida', resultado: 'DENEGADO' }));
+      return reply.status(401).send({ error: { code: 'BAD_SIGNATURE', message: 'Firma inválida' } });
+    }
+    return procesarEventoPago(db, ev, req.correlacion, 'wompi');
+  });
+
+  // Wompi · cuenta propia de un comercio (la URL lleva el token que identifica la cuenta).
+  app.post('/api/webhooks/wompi/comercio/:tk', async (req: any, reply) => {
+    const tk = String(req.params.tk ?? '');
+    if (!/^[\w-]{20,64}$/.test(tk)) throw notFound();
+    const r = await procesarEventoComercio(db, tk, (c) => (c.proveedor === 'wompi' ? verificarEventoWompi(c, req.body) : null), req.correlacion);
+    if (r.firmaInvalida) return reply.status(401).send({ error: { code: 'BAD_SIGNATURE', message: 'Firma inválida' } });
+    return r;
+  });
+
+  // Retorno del checkout: el navegador solo trae el id; el servidor consulta a la pasarela.
+  app.get('/api/pagos/verificar', async (req: any) => {
+    const id = String(req.query?.id ?? '');
+    if (!/^[\w-]{3,80}$/.test(id)) throw invalid('Falta el identificador de la transacción.');
+    return verificarRetorno(db, id, req.correlacion);
+  });
+
+  // ------------------------------------------------------------------ webhook de Resend (estados de entrega del correo)
+  app.post('/api/webhooks/correo', async (req: any, reply) => {
+    if (!config.correo.resendWebhookSecret) return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Webhook de correo pendiente de configurar.' } });
+    try {
+      return await webhookResend(db, req.rawBody ?? '', req.headers);
+    } catch (e) {
+      if (e instanceof FirmaInvalida) {
+        await db.withPlatform((tx) => auditPlatform(tx, null, { tipo: 'ANONIMO', id: null, nombre: 'webhook' }, 'WEBHOOK', req.correlacion, { accion: 'webhook.correo.firma_invalida', resultado: 'DENEGADO' }));
+        return reply.status(401).send({ error: { code: 'BAD_SIGNATURE', message: 'Firma inválida' } });
+      }
+      throw e;
+    }
+  });
+
+  // ------------------------------------------------------------------ webhook de WhatsApp (Meta)
   app.get('/api/webhooks/whatsapp', async (req: any, reply) => {
     const q = req.query ?? {};
-    if (q['hub.mode'] === 'subscribe' && q['hub.verify_token'] === config.whatsapp.verifyToken) return reply.type('text/plain').send(q['hub.challenge']);
+    if (config.whatsapp.verifyToken && q['hub.mode'] === 'subscribe' && q['hub.verify_token'] === config.whatsapp.verifyToken) return reply.type('text/plain').send(String(q['hub.challenge'] ?? ''));
     return reply.status(403).send('forbidden');
   });
 
@@ -104,31 +190,37 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
       await db.withPlatform((tx) => auditPlatform(tx, null, { tipo: 'ANONIMO', id: null, nombre: 'webhook' }, 'WEBHOOK', req.correlacion, { accion: 'webhook.whatsapp.firma_invalida', resultado: 'DENEGADO' }));
       return reply.status(401).send({ error: { code: 'BAD_SIGNATURE', message: 'Firma inválida' } });
     }
-    const msgs = parseWhatsAppWebhook(req.body);
-    const r = await receiveChannelMessages(db, msgs, 'WHATSAPP', req.correlacion);
-    return { recibidos: r };
+    const { mensajes, estados } = parseWhatsAppWebhook(req.body);
+    const recibidos = await receiveChannelMessages(db, mensajes, 'WHATSAPP', req.correlacion);
+    const entregas = await receiveDeliveryStatuses(db, estados, req.correlacion);
+    return { recibidos, estados: entregas };
   });
 
   // ------------------------------------------------------------------ documento fiscal público
   app.get('/api/publico/documentos/:tk', async (req: any, reply) => {
     const data = await db.withPlatform((tx) => publicDocumentData(tx, String(req.params.tk)));
-    if (!data) return reply.status(404).type('text/html').send('<p>No encontramos ese documento.</p>');
-    const { d, t, o, items } = data;
-    const acento = t.tema?.acento ?? '#0E6B5E';
+    reply.header('x-robots-tag', 'noindex');
+    if (!data) return reply.status(404).type('text/html; charset=utf-8').send('<!doctype html><meta charset="utf-8"><p style="font-family:system-ui;padding:24px">No encontramos ese documento.</p>');
+    const { d, t, o, items, zona } = data;
+    const prueba = d.proveedor_fiscal === 'sandbox';
+    const acento = t.tema?.acento ?? MARCA.colorPrimario;
+    const estado = d.estado === 'RECHAZADO' ? 'Rechazado' : !d.cufe ? 'En trámite' : prueba ? 'Validado en entorno de pruebas' : 'Validado por la DIAN';
     reply.type('text/html; charset=utf-8');
     return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(d.tipo === 'FACTURA' ? 'Factura' : 'Nota crédito')} ${esc(d.numero)}</title>
+<title>${esc(d.tipo === 'FACTURA' ? 'Factura' : 'Nota crédito')} ${esc(d.numero)} · ${esc(t.nombre)}</title>
 <style>body{font-family:system-ui,sans-serif;background:#F1F3F6;margin:0;padding:24px;color:#14171C}main{max-width:720px;margin:auto;background:#fff;border:1px solid #dde1e7;border-radius:10px;padding:28px}
 h1{font-size:20px;margin:0 0 4px;color:${esc(acento)}}table{width:100%;border-collapse:collapse;margin:16px 0}td,th{padding:8px;border-bottom:1px solid #eee;text-align:left}td.n,th.n{text-align:right}
-code{font-family:ui-monospace,monospace;font-size:11px;word-break:break-all;background:#f5f6f8;padding:6px;display:block;border-radius:6px}.est{display:inline-block;padding:2px 8px;border-radius:99px;background:#E4F2EE;color:#13715E;font-size:12px;font-weight:600}</style></head>
-<body><main><h1>${esc(t.nombre)}</h1><div>NIT ${esc(t.nit)} · ${esc(t.ciudad)}</div>
-<p><b>${d.tipo === 'FACTURA' ? 'Factura electrónica de venta' : 'Nota crédito electrónica'} ${esc(d.numero)}</b> · <span class="est">${d.estado === 'RECHAZADO' ? 'Rechazada' : d.cufe ? 'Validada por la DIAN' : 'En trámite'}</span></p>
-<p>Adquirente: ${esc(o.nombre)} ${o.numero_documento ? `· ${esc(o.tipo_documento)} ${esc(o.numero_documento)}` : '· Consumidor final'}<br>Venta #${esc(o.numero)} · ${new Date(o.creado_en).toLocaleString('es-CO', { timeZone: 'America/Bogota' })}</p>
+code{font-family:ui-monospace,monospace;font-size:11px;word-break:break-all;background:#f5f6f8;padding:6px;display:block;border-radius:6px}.est{display:inline-block;padding:2px 8px;border-radius:99px;background:#E4F2EE;color:#13715E;font-size:12px;font-weight:600}
+.prueba{background:#FBF0D9;color:#7F5300;border:1px solid #E6C27A;border-radius:8px;padding:10px 12px;font-weight:600;margin:0 0 16px}@media print{body{background:#fff;padding:0}main{border:0}}</style></head>
+<body><main>${prueba ? '<p class="prueba">Documento de prueba: SIN validez fiscal. Generado en el entorno de pruebas; no fue transmitido a la DIAN.</p>' : ''}<h1>${esc(t.nombre)}</h1><div>NIT ${esc(t.nit)} · ${esc(t.ciudad)}</div>
+<p><b>${d.tipo === 'FACTURA' ? 'Factura electrónica de venta' : 'Nota crédito electrónica'} ${esc(d.numero)}</b> · <span class="est">${esc(estado)}</span></p>
+<p>Adquirente: ${esc(o.nombre)} ${o.numero_documento ? `· ${esc(o.tipo_documento)} ${esc(o.numero_documento)}` : '· Consumidor final'}<br>Venta #${esc(o.numero)} · ${esc(new Date(o.creado_en).toLocaleString('es-CO', { timeZone: zona }))}</p>
 <table><tr><th>Descripción</th><th class="n">Cant.</th><th class="n">Valor unit.</th><th class="n">Total</th></tr>
 ${items.map((i: any) => `<tr><td>${esc(i.descripcion)}</td><td class="n">${Number(i.cantidad)}</td><td class="n">${cop(Number(i.precio_unit))}</td><td class="n">${cop(Number(i.total))}</td></tr>`).join('')}
+${Number(o.descuento) > 0 ? `<tr><td colspan="3" class="n">Descuentos</td><td class="n">−${cop(Number(o.descuento))}</td></tr>` : ''}
 <tr><td colspan="3" class="n">Base</td><td class="n">${cop(Number(o.subtotal))}</td></tr><tr><td colspan="3" class="n">IVA</td><td class="n">${cop(Number(o.impuestos))}</td></tr>
 <tr><td colspan="3" class="n"><b>Total</b></td><td class="n"><b>${cop(Number(o.total))}</b></td></tr></table>
-${d.cufe ? `<div>CUFE</div><code>${esc(d.cufe)}</code>` : ''}
-<p style="font-size:12px;color:#5b6472">Documento emitido a través de proveedor tecnológico habilitado. Entorno de pruebas del piloto.</p></main></body></html>`;
+${d.cufe ? `<div>${prueba ? 'Código de prueba (no es un CUFE válido)' : 'CUFE'}</div><code>${esc(d.cufe)}</code>` : ''}
+<p style="font-size:12px;color:#5b6472">${prueba ? `Emitido con ${esc(MARCA.nombre)} en modo de pruebas.` : 'Documento emitido a través de proveedor tecnológico habilitado por la DIAN.'}</p></main></body></html>`;
   });
 }

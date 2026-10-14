@@ -160,7 +160,9 @@ export async function evaluateAndExecute(
   // 4 · Contexto y política
   if (t.limitePorConversacion && conversationId) {
     const n = Number((await tx.query(
-      `SELECT count(*)::int AS n FROM ai_execution WHERE conversation_id=$1 AND herramienta=$2 AND decision IN ('PERMITIDA','CONFIRMADA')`,
+      // El límite cuenta por episodio de atención: desde el último radicado cerrado de la conversación.
+      `SELECT count(*)::int AS n FROM ai_execution WHERE conversation_id=$1 AND herramienta=$2 AND decision IN ('PERMITIDA','CONFIRMADA')
+         AND creado_en > coalesce((SELECT max(cerrado_en) FROM support_case WHERE conversation_id=$1), '-infinity'::timestamptz)`,
       [conversationId, t.nombre],
     )).rows[0].n);
     if (n >= t.limitePorConversacion) return deny(4, 'limite_por_conversacion', { riesgo });
@@ -201,9 +203,13 @@ export async function evaluateAndExecute(
       return deny(4, 'recurso_no_encontrado', { riesgo });
     }
     const motivo = e instanceof AppError ? e.message : 'error_interno';
+    // Un conflicto de agenda trae alternativas: el agente las ofrece en lugar de rendirse.
+    const alternativas = e instanceof AppError ? (e.details as any)?.alternativas : undefined;
+    const resultado = Array.isArray(alternativas) ? { alternativas: alternativas.map((s: any) => ({ inicio: s.inicio, fecha: s.fecha, hora: s.hora, recurso_id: s.recurso_id, recurso: s.recurso })) } : undefined;
+    if (!(e instanceof AppError)) console.error(`[gateway ${ctx.correlacion}] ${t.nombre}:`, (e as Error).message);
     const executionId = await record(tx, ctx, agent, conversationId, t.nombre, parsed.data, {
-      decision: 'ERROR', motivo, riesgo, permiso: t.permiso, version: t.version, ms: Date.now() - t0,
+      decision: 'ERROR', motivo, riesgo, permiso: t.permiso, version: t.version, ms: Date.now() - t0, resultado,
     });
-    return { decision: 'ERROR', executionId, herramienta: t.nombre, motivo, riesgo };
+    return { decision: 'ERROR', executionId, herramienta: t.nombre, motivo, riesgo, resultado };
   }
 }

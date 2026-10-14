@@ -12,6 +12,7 @@ export type TipoEvento =
   | 'venta_anulada'
   | 'cita_creada'
   | 'cita_cancelada'
+  | 'cita_reprogramada'
   | 'stock_bajo_minimo'
   | 'documento_emitido'
   | 'documento_rechazado'

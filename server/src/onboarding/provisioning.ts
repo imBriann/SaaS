@@ -87,8 +87,8 @@ export async function createTenantFromTemplate(tx: Tx, d: NuevoTenant, etapa: (e
   const slug = await uniqueSlug(tx, d.slug || d.nombre);
   const tema = d.tema ?? deriveTheme(null, d.nombre);
   await tx.query(
-    `INSERT INTO tenant (id, slug, nombre, nit, ciudad, email_contacto, telefono, sector, sector_version, plan_codigo, tema, logo_data_url, whatsapp_phone_number_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    `INSERT INTO tenant (id, slug, nombre, nit, ciudad, email_contacto, telefono, sector, sector_version, plan_codigo, tema, logo_data_url, whatsapp_phone_number_id, whatsapp_estado)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, CASE WHEN $13::text IS NULL THEN 'SIN_CONFIGURAR' WHEN $13::text LIKE 'sim-%' THEN 'SIMULADO' ELSE 'PENDIENTE_VERIFICAR' END)`,
     [tenantId, slug, d.nombre, d.nit ?? null, d.ciudad ?? null, d.email, d.telefono ?? null, tpl.sector, tpl.version, d.plan, JSON.stringify(tema), d.logo_data_url ?? null, d.whatsapp_phone_number_id ?? null],
   );
   await etapa('empresa_creada');
@@ -118,7 +118,9 @@ export async function createTenantFromTemplate(tx: Tx, d: NuevoTenant, etapa: (e
     await tx.query(`INSERT INTO ai_agent (id, tenant_id, configuracion, role_id, prompt_base, herramientas) VALUES ($1,$2,$3,$4,$5,$6)`, [uuidv7(), tenantId, a.configuracion, roleIds[a.rol], a.prompt_base, a.herramientas]);
   }
   for (const m of tpl.plantillas_mensaje) {
-    await tx.query(`INSERT INTO message_template (tenant_id, clave, categoria, cuerpo) VALUES ($1,$2,$3,$4)`, [tenantId, m.clave, m.categoria, m.cuerpo]);
+    // Variables en el orden en que aparecen: así se envían como parámetros {{1}}, {{2}}… a Meta.
+    const variables = [...new Set([...m.cuerpo.matchAll(/\{\{(\w+)\}\}/g)].map((x) => x[1]))];
+    await tx.query(`INSERT INTO message_template (tenant_id, clave, categoria, cuerpo, variables) VALUES ($1,$2,$3,$4,$5)`, [tenantId, m.clave, m.categoria, m.cuerpo, variables]);
   }
   for (const r of tpl.reglas_automatizacion) {
     await tx.query(`INSERT INTO automation_rule (id, tenant_id, evento, condicion, accion, parametros) VALUES ($1,$2,$3,$4,$5,$6)`, [uuidv7(), tenantId, r.evento, JSON.stringify(r.condicion), r.accion, JSON.stringify(r.parametros)]);

@@ -23,6 +23,23 @@ export async function addUsage(tx: Tx, tenantId: string, metrica: Metrica, canti
   );
 }
 
+/**
+ * Consumo de IA: cuota del plan (usage_record) y registro técnico diario por modelo
+ * (ia_consumo) con llamadas, errores y tokens de entrada y salida. Sin prompts ni
+ * respuestas: solo cifras.
+ */
+export async function registrarIA(tx: Tx, tenantId: string, modelo: string, o: { tokens?: number; tokensEntrada?: number; tokensSalida?: number; error?: boolean }) {
+  const total = Math.round(o.tokens ?? 0);
+  if (total > 0) await addUsage(tx, tenantId, 'tokens_ia', total);
+  const entrada = Math.round(o.tokensEntrada ?? (o.tokensSalida === undefined ? total : Math.max(0, total - (o.tokensSalida ?? 0))));
+  const salida = Math.round(o.tokensSalida ?? 0);
+  await tx.query(
+    `INSERT INTO ia_consumo (tenant_id, dia, modelo, llamadas, errores, tokens_entrada, tokens_salida) VALUES ($1, current_date, $2, 1, $3, $4, $5)
+     ON CONFLICT (tenant_id, dia, modelo) DO UPDATE SET llamadas=ia_consumo.llamadas+1, errores=ia_consumo.errores+EXCLUDED.errores,
+       tokens_entrada=ia_consumo.tokens_entrada+EXCLUDED.tokens_entrada, tokens_salida=ia_consumo.tokens_salida+EXCLUDED.tokens_salida`,
+    [tenantId, modelo.slice(0, 60), o.error ? 1 : 0, entrada, salida]);
+}
+
 export interface EstadoCuota {
   metrica: Metrica;
   usado: number;
@@ -32,13 +49,14 @@ export interface EstadoCuota {
   proyeccionPorcentaje: number;
   politica: 'LIMITAR' | 'EXCEDENTE';
   agotada: boolean;
+  tope_propio?: number | null;
 }
 
 /** Consumo del periodo con proyección lineal al cierre del mes (medidor con proyección, PRO-SW-003 §7.5). */
 export async function quotaStatus(tx: Tx, tenantId: string, metrica: Metrica, now = new Date()): Promise<EstadoCuota> {
   const plan = (
     await tx.query(
-      `SELECT p.* FROM tenant t JOIN plan p ON p.codigo = t.plan_codigo WHERE t.id = $1`,
+      `SELECT p.*, t.ia_tope_mensual FROM tenant t JOIN plan p ON p.codigo = t.plan_codigo WHERE t.id = $1`,
       [tenantId],
     )
   ).rows[0];
@@ -47,7 +65,10 @@ export async function quotaStatus(tx: Tx, tenantId: string, metrica: Metrica, no
       .rows[0]?.cantidad,
   );
   const col = CUOTA_COLUMNA[metrica];
-  const cuota = col && plan ? num(plan[col]) : null;
+  let cuota = col && plan ? num(plan[col]) : null;
+  // Tope propio del negocio para la IA: puede bajar la cuota del plan, nunca subirla.
+  const tope = metrica === 'tokens_ia' && plan?.ia_tope_mensual != null ? num(plan.ia_tope_mensual) : null;
+  if (tope !== null && (cuota === null || tope < cuota)) cuota = tope;
   const diasMes = new Date(now.getUTCFullYear(), now.getUTCMonth() + 1, 0).getDate();
   const diaActual = Math.max(1, now.getUTCDate());
   const proyeccion = Math.round((usado / diaActual) * diasMes);
@@ -61,7 +82,8 @@ export async function quotaStatus(tx: Tx, tenantId: string, metrica: Metrica, no
     proyeccion,
     proyeccionPorcentaje: pct(proyeccion),
     politica,
-    agotada: cuota !== null && usado >= cuota && politica === 'LIMITAR',
+    agotada: cuota !== null && usado >= cuota && (politica === 'LIMITAR' || tope !== null),
+    tope_propio: tope,
   };
 }
 

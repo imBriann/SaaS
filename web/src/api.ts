@@ -36,14 +36,42 @@ async function request<T>(method: string, url: string, body?: unknown, extra: Re
   let payload: BodyInit | undefined;
   if (body instanceof FormData) payload = body;
   else if (body !== undefined) { headers['content-type'] = 'application/json'; payload = JSON.stringify(body); }
-  const res = await fetch(url, { method, headers, body: payload, credentials: 'include', ...extra });
+  let res: Response;
+  try {
+    res = await fetch(url, { method, headers, body: payload, credentials: 'include', ...extra });
+  } catch {
+    throw new ApiError(0, 'RED', 'No hay conexión con el servidor. Revisa tu internet e intenta de nuevo.');
+  }
   const texto = await res.text();
   const data = texto ? (() => { try { return JSON.parse(texto); } catch { return texto; } })() : null;
   if (!res.ok) {
     const e = data?.error ?? {};
-    throw new ApiError(res.status, e.code ?? 'ERROR', e.message ?? `Error ${res.status}`, e.details);
+    // Sesión vencida en mitad del trabajo: se vuelve a iniciar sesión y se regresa aquí.
+    if (res.status === 401 && url.startsWith('/api/t/') && !window.location.pathname.startsWith('/entrar')) {
+      window.location.assign(`/entrar?vencida=1&volver=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+    }
+    throw new ApiError(res.status, e.code ?? 'ERROR', e.message ?? (res.status >= 500 ? 'Algo falló de nuestro lado. Intenta de nuevo en un momento.' : `Error ${res.status}`), e.details ?? (e.correlacion ? { correlacion: e.correlacion } : undefined));
   }
   return data as T;
+}
+
+/** Descarga un archivo generado por el servidor (CSV, exportaciones) respetando la empresa activa. */
+export async function descargar(url: string, nombre: string) {
+  const headers: Record<string, string> = {};
+  const slug = tenantSlug();
+  if (slug) headers['x-tenant-slug'] = slug;
+  const res = await fetch(url, { headers, credentials: 'include' });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, d?.error?.code ?? 'ERROR', d?.error?.message ?? 'No se pudo descargar el archivo.');
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(await res.blob());
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
 
 export const api = {
@@ -57,9 +85,13 @@ export const api = {
 export const cop = (n: number | string | null | undefined) =>
   n === null || n === undefined ? '—' : '$' + Math.round(Number(n)).toLocaleString('es-CO').replace(/,/g, '.');
 export const num = (n: number) => Number(n).toLocaleString('es-CO');
-const TZ = 'America/Bogota';
+/** Zona horaria del negocio activo: todas las fechas del panel se muestran en ella. */
+let TZ = 'America/Bogota';
+export const setZona = (tz: string | null | undefined) => { if (tz) TZ = tz; };
+export const zona = () => TZ;
 export const hora = (d: string | Date) => new Date(d).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TZ });
 export const fecha = (d: string | Date) => new Date(d).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', timeZone: TZ });
+export const fechaCompleta = (d: string | Date) => new Date(d).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ });
 export const fechaHora = (d: string | Date) => `${fecha(d)} · ${hora(d)}`;
 export const fechaLarga = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
 export const hoyLocal = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });

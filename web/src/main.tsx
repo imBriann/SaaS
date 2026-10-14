@@ -1,16 +1,52 @@
-import { StrictMode, useEffect } from 'react';
+import { lazy, StrictMode, Suspense, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import './styles.css';
 import './studio.css';
+import './omnegia.css';
 import { ToastProvider } from './components/ui';
 import { PanelLayout } from './components/Layout';
 import { slugDelHost, tenantSlug } from './api';
-import { Aprovisionamiento, Catalogo, Datos, Describir, Empresas, Entrar, Landing, Pago, Pasarela, Plataforma } from './pages/public/Publico';
-import { Inicio } from './pages/app/Inicio';
-import { Conversaciones } from './pages/app/Conversaciones';
-import { Agenda, Clientes, Facturacion, Inventario, Ventas, VentaDetalle } from './pages/app/Negocio';
-import { Auditoria, CentroIA, Configuracion, Simulador, Suscripcion } from './pages/app/Gobierno';
+import { Aprovisionamiento, Catalogo, Datos, Describir, Empresas, Entrar, Invitacion, Landing, Pago, Pasarela, Recuperar, Restablecer, ResultadoPago } from './pages/public/Publico';
+import { Cargando } from './components/ui';
+
+// El panel se carga aparte: quien visita la página pública no descarga el panel.
+const Inicio = lazy(() => import('./pages/app/Inicio').then((m) => ({ default: m.Inicio })));
+const publico = () => import('./pages/public/Marketing');
+const Producto = lazy(() => publico().then(m => ({ default: m.Producto })));
+const Nosotros = lazy(() => publico().then(m => ({ default: m.Nosotros })));
+const Planes = lazy(() => publico().then(m => ({ default: m.Planes })));
+const Ayuda = lazy(() => publico().then(m => ({ default: m.Ayuda })));
+const Conversaciones = lazy(() => import('./pages/app/Conversaciones').then((m) => ({ default: m.Conversaciones })));
+const negocio = () => import('./pages/app/Negocio');
+const Agenda = lazy(() => negocio().then((m) => ({ default: m.Agenda })));
+const Clientes = lazy(() => negocio().then((m) => ({ default: m.Clientes })));
+const Facturacion = lazy(() => negocio().then((m) => ({ default: m.Facturacion })));
+const Inventario = lazy(() => negocio().then((m) => ({ default: m.Inventario })));
+const Ventas = lazy(() => negocio().then((m) => ({ default: m.Ventas })));
+const VentaDetalle = lazy(() => negocio().then((m) => ({ default: m.VentaDetalle })));
+const gobierno = () => import('./pages/app/Gobierno');
+const Auditoria = lazy(() => gobierno().then((m) => ({ default: m.Auditoria })));
+const CentroIA = lazy(() => gobierno().then((m) => ({ default: m.CentroIA })));
+const Configuracion = lazy(() => gobierno().then((m) => ({ default: m.Configuracion })));
+const Simulador = lazy(() => gobierno().then((m) => ({ default: m.Simulador })));
+const Suscripcion = lazy(() => gobierno().then((m) => ({ default: m.Suscripcion })));
+const soporte = () => import('./pages/app/Soporte');
+const Soporte = lazy(() => soporte().then((m) => ({ default: m.Soporte })));
+const SoporteDetalle = lazy(() => soporte().then((m) => ({ default: m.SoporteDetalle })));
+// Panel interno del operador de la plataforma: paquete aparte, no se descarga en el panel de las empresas.
+const op = () => import('./pages/operador/Operador');
+const OperadorLayout = lazy(() => op().then((m) => ({ default: m.OperadorLayout })));
+const OpResumen = lazy(() => op().then((m) => ({ default: m.OpResumen })));
+const OpEmpresas = lazy(() => op().then((m) => ({ default: m.OpEmpresas })));
+const OpEmpresa = lazy(() => op().then((m) => ({ default: m.OpEmpresa })));
+const OpSuscripciones = lazy(() => op().then((m) => ({ default: m.OpSuscripciones })));
+const OpSalud = lazy(() => op().then((m) => ({ default: m.OpSalud })));
+const OpIncidentes = lazy(() => op().then((m) => ({ default: m.OpIncidentes })));
+const OpIntegraciones = lazy(() => op().then((m) => ({ default: m.OpIntegraciones })));
+const OpSoporte = lazy(() => op().then((m) => ({ default: m.OpSoporte })));
+const OpTicket = lazy(() => op().then((m) => ({ default: m.OpTicket })));
+const OpAuditoria = lazy(() => op().then((m) => ({ default: m.OpAuditoria })));
 
 /** En el dominio raíz sin empresa elegida se muestra la landing; con subdominio o empresa, el panel. */
 function Raiz() {
@@ -20,11 +56,29 @@ function Raiz() {
 
 function App() {
   const location = useLocation();
-  useEffect(() => { if (!location.hash) window.scrollTo({ top: 0, behavior: 'instant' }); }, [location.pathname]);
+  useEffect(() => {
+    if (!location.hash) { window.scrollTo({ top: 0, behavior: 'instant' }); return; }
+    const id = decodeURIComponent(location.hash.slice(1));
+    const scroll = () => { const el = document.getElementById(id); if (el) { el.scrollIntoView({ behavior: 'instant' }); return true; } return false; };
+    if (scroll()) return;
+    const observer = new MutationObserver(() => { if (scroll()) observer.disconnect(); });
+    observer.observe(document.getElementById('root')!, { childList: true, subtree: true });
+    const timer = setTimeout(() => observer.disconnect(), 6000);
+    return () => { observer.disconnect(); clearTimeout(timer); };
+  }, [location.pathname, location.hash]);
+  useEffect(() => {
+    const titulos: Record<string, string> = { '/bienvenida': 'Todo tu negocio. Un solo lugar.', '/producto': 'Producto y módulos', '/nosotros': 'Nosotros', '/planes': 'Planes y configuración', '/ayuda': 'Centro de ayuda', '/empezar': 'Configura tu negocio', '/entrar': 'Entrar' };
+    if (titulos[location.pathname]) document.title = `${titulos[location.pathname]} · Omnegia`;
+  }, [location.pathname]);
   const sinEmpresa = !slugDelHost() && !tenantSlug();
   return (
+      <Suspense fallback={<div className="pagina"><Cargando filas={6} /></div>}>
         <Routes>
           <Route path="/bienvenida" element={<Landing />} />
+          <Route path="/producto" element={<Producto />} />
+          <Route path="/nosotros" element={<Nosotros />} />
+          <Route path="/planes" element={<Planes />} />
+          <Route path="/ayuda" element={<Ayuda />} />
           <Route path="/empezar" element={<Describir />} />
           <Route path="/empezar/datos" element={<Datos />} />
           <Route path="/empezar/catalogo" element={<Catalogo />} />
@@ -32,8 +86,24 @@ function App() {
           <Route path="/empezar/listo" element={<Aprovisionamiento />} />
           <Route path="/pasarela/checkout" element={<Pasarela />} />
           <Route path="/entrar" element={<Entrar />} />
+          <Route path="/recuperar" element={<Recuperar />} />
+          <Route path="/restablecer" element={<Restablecer />} />
+          <Route path="/invitacion" element={<Invitacion />} />
+          <Route path="/pago/resultado" element={<ResultadoPago />} />
           <Route path="/empresas" element={<Empresas />} />
-          <Route path="/plataforma" element={<Plataforma />} />
+          <Route path="/plataforma" element={<Navigate to="/operador" replace />} />
+          <Route path="/operador" element={<OperadorLayout />}>
+            <Route index element={<OpResumen />} />
+            <Route path="empresas" element={<OpEmpresas />} />
+            <Route path="empresas/:id" element={<OpEmpresa />} />
+            <Route path="suscripciones" element={<OpSuscripciones />} />
+            <Route path="salud" element={<OpSalud />} />
+            <Route path="incidentes" element={<OpIncidentes />} />
+            <Route path="integraciones" element={<OpIntegraciones />} />
+            <Route path="soporte" element={<OpSoporte />} />
+            <Route path="soporte/:id" element={<OpTicket />} />
+            <Route path="auditoria" element={<OpAuditoria />} />
+          </Route>
           {sinEmpresa && <Route path="/" element={<Raiz />} />}
           <Route element={<PanelLayout />}>
             <Route path="/" element={<Inicio />} />
@@ -51,9 +121,12 @@ function App() {
             <Route path="/suscripcion" element={<Suscripcion />} />
             <Route path="/auditoria" element={<Auditoria />} />
             <Route path="/simulador" element={<Simulador />} />
+            <Route path="/soporte" element={<Soporte />} />
+            <Route path="/soporte/:id" element={<SoporteDetalle />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+      </Suspense>
   );
 }
 

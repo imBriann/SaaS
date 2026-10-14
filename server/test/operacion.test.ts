@@ -36,7 +36,8 @@ describe('Hilo completo por WhatsApp', () => {
     expect(Number(orden.total)).toBe(64000);
     expect(orden.estado).toBe('ENTREGADO');
     expect(orden.cufe).toMatch(/^[0-9a-f]{96}$/);
-    expect(orden.entrega_whatsapp).toBe('ENVIADO');
+    // El canal del demo es un simulador: la entrega se registra como simulada, nunca como real.
+    expect(orden.entrega_whatsapp).toBe('SIMULADO');
     const hilo = await E.db.withTenant(E.A, async (tx) => (await tx.query(
       `SELECT m.remitente, m.contenido FROM message m JOIN conversation v ON v.id=m.conversation_id JOIN customer c ON c.id=v.customer_id WHERE c.telefono=$1 ORDER BY m.creado_en`, [`+${from}`])).rows);
     expect(hilo.at(-1).contenido).toMatch(/factura electrónica FE-\d+/);
@@ -48,7 +49,7 @@ describe('Hilo completo por WhatsApp', () => {
 
   it('factura rechazada (#1042) → corregir NIT → reintentar → validada', async () => {
     const v = await admin.get('/ventas?estado_fiscal=RECHAZADO');
-    const o = v.body.find((x: any) => x.numero === 1042);
+    const o = v.body.ventas.find((x: any) => x.numero === 1042);
     expect(o).toBeTruthy();
     const d = await admin.get(`/ventas/${o.id}`);
     const doc = d.body.documentos[0];
@@ -61,7 +62,7 @@ describe('Hilo completo por WhatsApp', () => {
   });
 
   it('anular una venta facturada emite nota crédito (nunca se borra un documento validado)', async () => {
-    const v = (await admin.get('/ventas')).body.find((x: any) => x.estado_fiscal === 'ENTREGADO' && x.estado === 'CONFIRMADA');
+    const v = (await admin.get('/ventas?por_pagina=200')).body.ventas.find((x: any) => x.estado_fiscal === 'ENTREGADO' && x.estado === 'CONFIRMADA');
     expect((await admin.post(`/ventas/${v.id}/anular`, { motivo: 'x' })).status).toBe(400);
     const r = await admin.post(`/ventas/${v.id}/anular`, { motivo: 'Cliente devolvió el producto' });
     expect(r.status).toBe(200);
@@ -74,7 +75,7 @@ describe('Hilo completo por WhatsApp', () => {
 
   it('recepción (sin invoice:void) no puede anular ventas facturadas', async () => {
     const laura = api(E.app, await login(E.app, ...CRED.laura), 'elparche');
-    const v = (await admin.get('/ventas')).body.find((x: any) => x.estado === 'CONFIRMADA');
+    const v = (await admin.get('/ventas?por_pagina=200')).body.ventas.find((x: any) => x.estado === 'CONFIRMADA');
     expect((await laura.post(`/ventas/${v.id}/anular`, { motivo: 'intento de anulación' })).status).toBe(403);
   });
 });

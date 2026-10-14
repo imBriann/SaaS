@@ -6,6 +6,7 @@ import { addUsage } from '../core/usage.js';
 import { AppError, notFound } from '../lib/errors.js';
 import { isUuid, token, uuidv7 } from '../lib/util.js';
 import { fiscalProvider, type DocumentoFiscalSolicitud } from '../adapters/fiscal.js';
+import { zonaValida } from '../lib/time.js';
 
 /**
  * Documentos fiscales: entidad con estado propio (PENDIENTE → ENVIADO → VALIDADO →
@@ -27,7 +28,9 @@ async function nextNumber(tx: Tx, tenantId: string): Promise<string> {
 export async function createInvoiceForOrder(tx: Tx, ctx: Ctx, orderId: string) {
   requirePerm(ctx, 'invoice:issue');
   requireWritable(ctx);
-  const o = (await tx.query(`SELECT id, total, estado FROM "order" WHERE id=$1`, [orderId])).rows[0];
+  if (fiscalProvider().nombre === 'ninguno') throw new AppError('CONFLICT', 'La facturación electrónica está pendiente de conectar con un proveedor habilitado por la DIAN.');
+  if (!isUuid(orderId)) throw notFound();
+  const o = (await tx.query(`SELECT id, total, estado FROM "order" WHERE id=$1 FOR UPDATE`, [orderId])).rows[0];
   if (!o) throw notFound();
   if (o.estado !== 'CONFIRMADA') throw new AppError('CONFLICT', 'Solo se facturan ventas confirmadas.');
   const existente = (await tx.query(`SELECT id FROM fiscal_document WHERE order_id=$1 AND tipo='FACTURA'`, [orderId])).rows[0];
@@ -35,8 +38,8 @@ export async function createInvoiceForOrder(tx: Tx, ctx: Ctx, orderId: string) {
   const id = uuidv7();
   const numero = await nextNumber(tx, ctx.tenantId);
   await tx.query(
-    `INSERT INTO fiscal_document (id, tenant_id, tipo, numero, order_id, estado, total, token_publico) VALUES ($1,$2,'FACTURA',$3,$4,'PENDIENTE',$5,$6)`,
-    [id, ctx.tenantId, numero, orderId, Number(o.total), token(18)],
+    `INSERT INTO fiscal_document (id, tenant_id, tipo, numero, order_id, estado, total, token_publico, proveedor_fiscal) VALUES ($1,$2,'FACTURA',$3,$4,'PENDIENTE',$5,$6,$7)`,
+    [id, ctx.tenantId, numero, orderId, Number(o.total), token(24), fiscalProvider().nombre],
   );
   await enqueue(tx, ctx.tenantId, 'emitir_documento', { fiscal_document_id: id }, { claveUnica: `emitir:${id}:0` });
   await audit(tx, ctx, { accion: 'factura.solicitar', recurso: 'fiscal_document', recursoId: id, resultado: 'EXITO', detalle: { numero, order_id: orderId } });
@@ -56,9 +59,9 @@ export async function createCreditNote(tx: Tx, ctx: Ctx, facturaId: string, moti
   const id = uuidv7();
   const numero = await nextNumber(tx, ctx.tenantId);
   await tx.query(
-    `INSERT INTO fiscal_document (id, tenant_id, tipo, numero, order_id, documento_ref_id, estado, total, token_publico, motivo_rechazo)
-     VALUES ($1,$2,'NOTA_CREDITO',$3,$4,$5,'PENDIENTE',$6,$7,NULL)`,
-    [id, ctx.tenantId, numero, f.order_id, facturaId, Number(f.total), token(18)],
+    `INSERT INTO fiscal_document (id, tenant_id, tipo, numero, order_id, documento_ref_id, estado, total, token_publico, motivo_rechazo, proveedor_fiscal)
+     VALUES ($1,$2,'NOTA_CREDITO',$3,$4,$5,'PENDIENTE',$6,$7,NULL,$8)`,
+    [id, ctx.tenantId, numero, f.order_id, facturaId, Number(f.total), token(24), fiscalProvider().nombre],
   );
   await enqueue(tx, ctx.tenantId, 'emitir_documento', { fiscal_document_id: id, motivo }, { claveUnica: `emitir:${id}:0` });
   await audit(tx, ctx, { accion: 'nota_credito.solicitar', recurso: 'fiscal_document', recursoId: id, resultado: 'EXITO', detalle: { factura: facturaId, motivo } });
@@ -103,9 +106,10 @@ export async function emitDocument(tx: Tx, ctx: Ctx, id: string, motivo?: string
     adquirente: { nombre: o.nombre, tipoDocumento: o.tipo_documento, numeroDocumento: o.numero_documento, email: o.email },
     items: items.map((i: any) => ({ descripcion: i.descripcion, cantidad: Number(i.cantidad), precioUnitario: Number(i.precio_unit), ivaPct: Number(i.iva_pct), total: Number(i.total) })),
     subtotal: Number(o.subtotal), impuestos: Number(o.impuestos), total: Number(o.total), moneda: o.moneda,
+    descuento: Number(o.descuento ?? 0),
     documentoReferencia: ref,
   };
-  await tx.query(`UPDATE fiscal_document SET estado='ENVIADO', intentos = intentos + 1 WHERE id=$1`, [id]);
+  await tx.query(`UPDATE fiscal_document SET estado='ENVIADO', intentos = intentos + 1, proveedor_fiscal=$2 WHERE id=$1`, [id, fiscalProvider().nombre]);
   const resp = await fiscalProvider().emitir(solicitud);
   await tx.query(
     `INSERT INTO provider_transaction (id, tenant_id, fiscal_document_id, operacion, solicitud, respuesta, exito) VALUES ($1,$2,$3,'emitir',$4,$5,$6)`,
@@ -132,24 +136,24 @@ export async function emitDocument(tx: Tx, ctx: Ctx, id: string, motivo?: string
 export async function listDocuments(tx: Tx, ctx: Ctx) {
   requirePerm(ctx, 'invoice:read');
   const rows = (await tx.query(
-    `SELECT f.id, f.tipo, f.numero, f.estado, f.cufe, f.motivo_rechazo, f.total, f.entrega_whatsapp, f.entrega_email,
+    `SELECT f.id, f.tipo, f.numero, f.estado, f.cufe, f.motivo_rechazo, f.total, f.entrega_whatsapp, f.entrega_email, f.proveedor_fiscal,
             f.creado_en, f.validado_en, f.token_publico, o.id AS order_id, o.numero AS orden, c.nombre AS cliente
      FROM fiscal_document f JOIN "order" o ON o.id=f.order_id JOIN customer c ON c.id=o.customer_id
-     ORDER BY f.creado_en DESC LIMIT 300`,
+     ORDER BY f.creado_en DESC LIMIT 500`,
   )).rows.map((r) => ({ ...r, total: Number(r.total) }));
   const resumen = (await tx.query(`SELECT estado, count(*)::int AS n FROM fiscal_document GROUP BY estado`)).rows;
   const resolucion = (await tx.query(`SELECT prefijo, numero_desde, numero_hasta, siguiente, resolucion FROM fiscal_resolution`)).rows[0] ?? null;
-  return { documentos: rows, resumen, resolucion };
+  return { documentos: rows, resumen, resolucion, proveedor: fiscalProvider().nombre, validez_fiscal: fiscalProvider().nombre !== 'sandbox' && fiscalProvider().nombre !== 'ninguno' };
 }
 
 /** Vista pública de un documento por token (enlace enviado por WhatsApp y correo). */
 export async function publicDocumentData(tx: Tx, tokenPublico: string) {
   const d = (await tx.query(`SELECT * FROM fiscal_document WHERE token_publico=$1`, [tokenPublico])).rows[0];
   if (!d) return null;
-  const t = (await tx.query(`SELECT nombre, nit, ciudad, tema FROM tenant WHERE id=$1`, [d.tenant_id])).rows[0];
+  const t = (await tx.query(`SELECT nombre, nit, ciudad, tema, zona_horaria FROM tenant WHERE id=$1`, [d.tenant_id])).rows[0];
   const o = (await tx.query(
-    `SELECT o.numero, o.subtotal, o.impuestos, o.total, o.creado_en, c.nombre, c.tipo_documento, c.numero_documento
+    `SELECT o.numero, o.subtotal, o.impuestos, o.total, o.descuento, o.creado_en, c.nombre, c.tipo_documento, c.numero_documento
      FROM "order" o JOIN customer c ON c.id=o.customer_id WHERE o.id=$1`, [d.order_id])).rows[0];
   const items = (await tx.query(`SELECT descripcion, cantidad, precio_unit, total FROM order_item WHERE order_id=$1`, [d.order_id])).rows;
-  return { d, t, o, items };
+  return { d, t, o, items, zona: zonaValida(t.zona_horaria) };
 }

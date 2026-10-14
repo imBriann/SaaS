@@ -3,19 +3,19 @@ import type { Database, Tx } from '../db/index.js';
 import type { Ctx } from '../core/context.js';
 import { auditPlatform } from '../core/audit.js';
 import { AppError, MSG_NO_ENCONTRADO } from '../lib/errors.js';
-import { sha256, token, uuidv7, verifyPassword } from '../lib/util.js';
+import { uuidv7 } from '../lib/util.js';
 import { config } from '../config.js';
+import { loadUserByToken, type SessionUser } from '../modules/auth.js';
 
 /**
- * Identidad y resolución de tenant del panel (PRO-SW-001 §11.2, PRO-SW-002 fig. 04).
+ * Identidad y resolución de tenant del panel.
  *
- * El subdominio (o la cabecera X-Tenant-Slug en desarrollo) RESUELVE el tenant;
- * no lo AUTORIZA. La autorización exige que la sesión tenga pertenencia activa en
- * ese tenant; un conflicto termina en rechazo explícito («no encontramos eso»)
+ * El subdominio (o la cabecera X-Tenant-Slug cuando el panel corre sin subdominio)
+ * RESUELVE el tenant; no lo AUTORIZA. La autorización exige una sesión con
+ * pertenencia activa en ese tenant; un conflicto termina en «no encontramos eso»
  * y en un evento de auditoría en el tenant atacado, nunca en reinterpretación.
  */
-
-export interface SessionUser { id: string; email: string; nombre: string; es_admin_plataforma: boolean }
+export type { SessionUser };
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -28,34 +28,23 @@ declare module 'fastify' {
 
 export const SESSION_COOKIE = 'sid';
 
-export async function createSession(db: Database, email: string, password: string) {
-  const u = await db.withPlatform(async (tx) => (await tx.query(`SELECT * FROM users WHERE email=$1`, [email.trim().toLowerCase()])).rows[0]);
-  // Mismo tiempo de respuesta y mismo mensaje exista o no el usuario.
-  const ok = verifyPassword(password ?? '', u?.password_hash ?? 'scrypt$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
-  if (!u || !ok) throw new AppError('UNAUTHENTICATED', 'Correo o contraseña incorrectos.');
-  const t = token(32);
-  await db.withPlatform((tx) => tx.query(`INSERT INTO session (id, user_id, expira_en) VALUES ($1,$2, now() + ($3 || ' days')::interval)`, [sha256(t), u.id, String(config.sessionDays)]));
-  return { token: t, user: u };
-}
-
-export async function destroySession(db: Database, t: string | undefined) {
-  if (t) await db.withPlatform((tx) => tx.query(`DELETE FROM session WHERE id=$1`, [sha256(t)]));
+export function sessionToken(req: FastifyRequest): string | undefined {
+  return req.cookies?.[SESSION_COOKIE] ?? (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : undefined);
 }
 
 export async function loadUser(db: Database, req: FastifyRequest): Promise<SessionUser | null> {
-  const t = req.cookies?.[SESSION_COOKIE] ?? (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : undefined);
-  if (!t) return null;
-  return db.withPlatform(async (tx) =>
-    (await tx.query(
-      `SELECT u.id, u.email, u.nombre, u.es_admin_plataforma FROM session s JOIN users u ON u.id=s.user_id WHERE s.id=$1 AND s.expira_en > now()`,
-      [sha256(t)],
-    )).rows[0] ?? null,
-  );
+  const t = sessionToken(req);
+  if (!t || t.length > 200) return null;
+  return loadUserByToken(db, t);
+}
+
+export function cookieSesion() {
+  return { path: '/', httpOnly: true, sameSite: 'lax' as const, secure: config.cookieSegura, maxAge: config.sesion.dias * 86400 };
 }
 
 export function slugFromRequest(req: FastifyRequest): string | null {
-  const host = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '').split(':')[0].toLowerCase();
-  const base = config.baseDomain.toLowerCase();
+  const host = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '').split(',')[0].trim().split(':')[0].toLowerCase();
+  const base = config.baseDomain;
   if (host.endsWith('.' + base)) {
     const sub = host.slice(0, -(base.length + 1));
     if (sub && !['www', 'app', 'api'].includes(sub) && /^[a-z0-9-]+$/.test(sub)) return sub;
@@ -66,7 +55,8 @@ export function slugFromRequest(req: FastifyRequest): string | null {
 
 export async function memberships(tx: Tx, userId: string) {
   return (await tx.query(
-    `SELECT t.id, t.slug, t.nombre, t.tema, r.nombre AS rol FROM user_tenant ut JOIN tenant t ON t.id=ut.tenant_id JOIN role r ON r.id=ut.role_id
+    `SELECT t.id, t.slug, t.nombre, t.tema, r.nombre AS rol, s.estado AS suscripcion FROM user_tenant ut JOIN tenant t ON t.id=ut.tenant_id JOIN role r ON r.id=ut.role_id
+     LEFT JOIN subscription s ON s.tenant_id=t.id
      WHERE ut.user_id=$1 AND ut.activo ORDER BY t.nombre`,
     [userId],
   )).rows;
@@ -76,7 +66,7 @@ export async function memberships(tx: Tx, userId: string) {
 export function tenantGuard(db: Database) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     const user = req.user ?? (await loadUser(db, req));
-    if (!user) throw new AppError('UNAUTHENTICATED', 'Inicia sesión para continuar.');
+    if (!user) throw new AppError('UNAUTHENTICATED', 'Tu sesión terminó. Inicia sesión de nuevo.');
     const slug = slugFromRequest(req);
     if (!slug) throw new AppError('NOT_FOUND', MSG_NO_ENCONTRADO);
     const data = await db.withPlatform(async (tx) => {

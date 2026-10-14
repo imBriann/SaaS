@@ -1,0 +1,46 @@
+OMNEGIA · Identidad visual
+Todo tu negocio. Un solo lugar.
+
+CARPETAS
+1-logos            Isologo + nombre (con y sin lema), vertical, isologo solo,
+                   monocromático, una sola tinta. Versiones para fondo claro
+                   y "negativo"/"blanco" para fondo oscuro. PNG de 2000 px en /png.
+2-iconos           Íconos de app (oscuro, morado, claro) y favicon.
+                   PNG en 1024, 512, 192, 180 (Apple) y 32 px en /png.
+3-fondos           El logo aplicado sobre fondo claro, oscuro y morado.
+4-elementos-graficos  Hoja violeta, hoja coral y línea de conexión.
+5-paleta           Paleta en SVG + colores listos para código (CSS y JSON).
+6-animaciones      Intro y loader en SVG animado (se abren en cualquier navegador)
+                   + vistas previas en MP4 y GIF.
+7-manual           Manual de identidad en PDF, SVG y PNG.
+
+COLORES
+Primario        #6D5EF8   Tecnología · Confianza
+Secundario      #22D3EE   Conexión · Innovación
+Acento          #F97316   Energía · Crecimiento
+Complementario  #EC4899   Cercanía · Impulso
+Neutro oscuro   #0F172A   Solidez · Profesional
+Neutro claro    #F8FAFC   Limpieza · Equilibrio
+
+TIPOGRAFÍA
+Outfit SemiBold (nombre y títulos) · Outfit Medium (lema e interfaz).
+Gratis en Google Fonts. En los archivos el texto ya está convertido a trazos.
+
+CAPAS PARA ANIMAR (mismo nombre en todos los SVG a color)
+isologo
+ ├─ anillo
+ │   ├─ cinta-a   (izquierda + arriba): cara-1 exterior, cara-2 interior
+ │   └─ cinta-b   (derecha + abajo): cara-3 exterior, cara-4 y cara-5 interiores
+ └─ hoja          (su punto de giro ya está en la base de la hoja)
+logotipo  → letra-1 … letra-7 (cada letra por separado)
+lema
+El anillo gira alrededor del centro del "o" sin ajustes extra.
+
+ANIMACIONES
+Intro (unos 3 s): las dos cintas se desenrollan desde esquinas opuestas y se
+cierran con un pequeño rebote, brota la hoja, un brillo recorre el isologo,
+las letras suben desde la línea base y el lema aparece de izquierda a derecha.
+Después la hoja se mece suavemente.
+Loader (2,6 s en bucle): las cintas se dibujan sobre una pista tenue, brota
+la hoja y todo se recoge para volver a empezar.
+Ambas respetan la opción "reducir movimiento" del sistema.

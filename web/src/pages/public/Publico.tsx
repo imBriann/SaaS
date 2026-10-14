@@ -1,49 +1,46 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError, cop, guardar, leer, slugDelHost } from '../../api';
 import { debeConsultar, faseCierre, pasosCumplidos, type FaseCierre } from './cierre';
-import { Campo, Cargando, Estado, CicloFiscal, useAccion, Vacio } from '../../components/ui';
+import { Campo, Cargando, ErrorCarga, Estado, CicloFiscal, useAccion, Vacio, CodigoOtp, useCuentaAtras } from '../../components/ui';
 import { Quote } from '../../components/Quote';
-import { Experience, FeatureBuilder } from '../../components/Experience';
+import { MarketingExperience } from '../../components/MarketingExperience';
+import { SiteHeader, SiteFooter } from '../../components/SiteChrome';
+import { WorkspaceAssembly } from '../../components/SystemScene';
 import { Icon } from '../../components/icons';
+import { MARCA } from '../../brand';
 
 /** Estado del alta visible en la cabecera: borrador, pago verificado y aprovisionamiento no se confunden. */
 export type EstadoAlta = { tono: 'neutro' | 'warn' | 'ok' | 'err'; icono: string; texto: string };
 const BORRADOR: EstadoAlta = { tono: 'neutro', icono: 'reloj', texto: 'Borrador guardado · tu panel aún no existe' };
 
 /** `hechos`: pasos realmente cumplidos; por defecto, los anteriores al actual. */
-export function PublicoLayout({ children, paso, hechos, transparente, estado }: { children: ReactNode; paso?: number; hechos?: number; transparente?: boolean; estado?: EstadoAlta }) {
+export function PublicoLayout({ children, paso, hechos, transparente, estado, notaAlta }: { children: ReactNode; paso?: number; hechos?: number; transparente?: boolean; estado?: EstadoAlta; notaAlta?: string }) {
   const pasos = ['Tu negocio', 'Funciones', 'Datos', 'Catálogo', 'Propuesta y pago', 'Tu panel'];
   const n = hechos ?? paso ?? 0;
-  const e = estado ?? BORRADOR;
+  const e = estado ?? (paso === 0 ? { tono: 'neutro', icono: 'nota', texto: 'Empieza con una descripción de tu negocio' } : BORRADOR);
+  const pasosRef = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    const actual = pasosRef.current?.querySelector<HTMLElement>('[aria-current="step"]');
+    if (actual && pasosRef.current) pasosRef.current.scrollLeft = Math.max(0, actual.offsetLeft - pasosRef.current.offsetLeft - 15);
+  }, [paso]);
   return (
-    <div className="publico">
-      <header className={`nav ${transparente ? 'transparente' : ''}`}>
-        <Link to="/bienvenida" className="marca-logo"><i aria-hidden="true" />Plataforma</Link>
-        {paso === undefined ? (
-          <>
-            <nav className="enlaces" aria-label="Sitio">
-              <a className="nav-item" href="/bienvenida#como">Cómo funciona</a>
-              <a className="nav-item" href="/bienvenida#confianza">Control</a>
-              <a className="nav-item" href="/bienvenida#funciones">Funciones</a>
-            </nav>
-            <div className="fila nav-acciones">
-              <Link to="/entrar" className="btn sutil">Entrar</Link>
-              <Link to="/empezar" className="btn primario">Crear mi plataforma</Link>
-            </div>
-          </>
-        ) : (
-          <span className={`estado ${e.tono} borrador`} role="status"><Icon n={e.icono} className="" />{e.texto}</span>
-        )}
-      </header>
+    <div className={`publico ${transparente ? 'marketing' : ''} ${paso !== undefined ? 'onboarding' : ''}`}>
+      <a className="saltar" href="#public-content">Saltar al contenido</a>
+      {paso === undefined ? <SiteHeader oscuro={transparente} /> : <header className="nav onboarding-nav">
+        <Link to="/bienvenida" className="marca-logo" aria-label={`${MARCA.nombre}, inicio`}><img src={MARCA.logo} alt={MARCA.nombre} width={132} height={40} /></Link>
+        <span className={`estado ${e.tono} borrador`} role="status"><Icon n={e.icono} className="" />{e.texto}</span>
+      </header>}
       {paso !== undefined && (
         <div className="centro" style={{ paddingBottom: 0, paddingTop: 8 }}>
-          <ol className="pasos-onb" aria-label={n >= pasos.length ? 'Alta completada' : `Paso ${paso + 1} de ${pasos.length}`}>
+          <ol ref={pasosRef} className="pasos-onb" aria-label={n >= pasos.length ? 'Alta completada' : `Paso ${paso + 1} de ${pasos.length}`}>
             {pasos.map((p, i) => <li key={p} className={`p ${i < n ? 'hecho' : i === paso ? 'on' : ''}`} aria-current={i === paso && i >= n ? 'step' : undefined}><b>{i < n ? <Icon n="ok" className="" size={12} /> : i + 1}</b>{p}{i < n && <span className="sr"> (hecho)</span>}</li>)}
           </ol>
         </div>
       )}
-      {transparente ? children : <div className="centro">{children}</div>}
+      <main id="public-content" tabIndex={-1}>{transparente ? children : <div className="centro">{children}</div>}</main>
+      {transparente && <SiteFooter />}
+      {paso !== undefined && <div className="onboarding-help"><Link to="/ayuda"><Icon n="soporte" size={16} className="" />Ayuda con la configuración</Link><span>{notaAlta ?? 'Tu información se guarda como borrador al continuar.'}</span></div>}
     </div>
   );
 }
@@ -52,9 +49,7 @@ export function PublicoLayout({ children, paso, hechos, transparente, estado }: 
 export function Landing() {
   return (
     <PublicoLayout transparente>
-      <Experience />
-      <FeatureBuilder />
-      <footer className="pie-legal">Facturación electrónica a través de proveedor tecnológico habilitado por la DIAN. Tratamiento de datos personales conforme a la Ley 1581 de 2012. Entorno de pruebas del piloto.</footer>
+      <MarketingExperience />
     </PublicoLayout>
   );
 }
@@ -68,18 +63,29 @@ const MODULOS = ['clientes', 'catalogo', 'ventas', 'agenda', 'inventario', 'fact
 export function useBorrador() {
   const [tk] = useState(() => sessionStorage.getItem('descripcion_inicial') ? null : leer('borrador'));
   const [d, setD] = useState<any>(null);
-  // Solo un borrador inexistente se olvida; un fallo de red no borra la referencia.
-  useEffect(() => { if (tk) api.get(`/api/onboarding/borradores/${tk}`).then(setD).catch((e) => { if ((e as ApiError).status === 404) guardar('borrador', null); }); }, [tk]);
-  return { tk, d, setD };
+  const [cargando, setCargando] = useState(!!tk);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [intento, setIntento] = useState(0);
+  // Un fallo de red conserva el borrador y permite reintentar la consulta.
+  useEffect(() => {
+    if (!tk) return;
+    let activo = true; setCargando(true); setError(null);
+    api.get(`/api/onboarding/borradores/${tk}`).then(r => { if (activo) setD(r); }).catch((e: ApiError) => {
+      if (!activo) return;
+      if (e.status === 404) guardar('borrador', null); else setError(e);
+    }).finally(() => { if (activo) setCargando(false); });
+    return () => { activo = false; };
+  }, [tk, intento]);
+  return { tk, d, setD, cargando, error, recargar: () => setIntento(n => n + 1) };
 }
 
 export function Describir() {
   const nav = useNavigate();
-  const { d, setD } = useBorrador();
+  const { d, setD, error: errorBorrador, recargar: recargarBorrador } = useBorrador();
   const [texto, setTexto] = useState('');
   const [planes, setPlanes] = useState<any[]>([]);
   const { run, ocupado } = useAccion();
-  useEffect(() => { api.get('/api/publico/planes').then(setPlanes); }, []);
+  useEffect(() => { api.get('/api/publico/planes').then(setPlanes).catch(() => setPlanes([])); }, []);
   useEffect(() => { if (d?.descripcion && !texto) setTexto(d.descripcion); }, [d]); // eslint-disable-line
 
   const analizar = async (descripcion: string) => {
@@ -109,6 +115,7 @@ export function Describir() {
 
   return (
     <PublicoLayout paso={d ? 1 : 0}>
+      {errorBorrador && <ErrorCarga error={errorBorrador} reintentar={recargarBorrador} />}
       <div className="grid g-main onboarding-layout" style={{ alignItems: 'start', marginTop: 32, gap: 24 }}>
         <form className="tarjeta col" style={{ gap: 16, padding: 28 }} onSubmit={enviar}>
           <h1 className="onb-titulo">Primero, hablemos de tu negocio.</h1>
@@ -119,7 +126,7 @@ export function Describir() {
           <div className="fila entre envolver"><span className="tenue peq-txt" id="desc-ayuda">{texto.trim().length < 15 ? `Escribe al menos 15 caracteres (${texto.trim().length}/15).` : `${texto.length}/2000`}</span><button className="btn primario" disabled={ocupado || texto.trim().length < 15}>{ocupado ? 'Analizando…' : d ? 'Volver a analizar' : 'Analizar mi negocio'}</button></div>
         </form>
         {!c ? (
-          <div className="contenedor"><Vacio titulo="Aquí verás la propuesta">Describe lo que haces. Te recomendaremos funciones y verás cuánto suman antes de continuar.</Vacio></div>
+          <aside className="onboarding-intro"><img src={MARCA.isologo} width={70} height={70} alt="" /><h2>Empieza con tu negocio.<br />El resto toma forma.</h2><p>Una descripción es suficiente para empezar a organizar tu espacio.</p><ol><li>Revisa las funciones sugeridas</li><li>Añade tu identidad y catálogo</li><li>Confirma la propuesta antes de pagar</li></ol><span>El panel se crea después de confirmar el pago.</span></aside>
         ) : (
           <div className="col" style={{ gap: 20 }}>
             <section className="tarjeta">
@@ -176,12 +183,14 @@ async function coloresDominantes(src: string): Promise<string[]> {
 
 export function Datos() {
   const nav = useNavigate();
-  const { d, setD } = useBorrador();
+  const { d, setD, cargando, error, recargar } = useBorrador();
   const [f, setF] = useState<any>({});
   const [faltan, setFaltan] = useState<string[]>([]);
   const [errLogo, setErrLogo] = useState('');
   const { run, ocupado } = useAccion();
   useEffect(() => { if (d) setF({ ...d.negocio, recursos: (d.negocio.recursos ?? []).join(', ') }); }, [d?.token]); // eslint-disable-line
+  if (error) return <PublicoLayout paso={2}><ErrorCarga error={error} reintentar={recargar} /></PublicoLayout>;
+  if (cargando) return <PublicoLayout paso={2}><Cargando filas={6} /></PublicoLayout>;
   if (!d) return <PublicoLayout paso={2}><Vacio titulo="No hay un borrador activo" accion={<Link className="btn primario" to="/empezar">Empezar</Link>} /></PublicoLayout>;
   const factura = d.clasificacion.factura_electronica;
 
@@ -207,13 +216,13 @@ export function Datos() {
     if (!req.length) nav('/empezar/catalogo');
   };
   const inp = (k: string, ph = '', type = 'text') => (
-    <input className={`input ${faltan.includes(k) ? 'falta' : ''}`} type={type} value={f[k] ?? ''} placeholder={ph} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+    <input className={`input ${faltan.includes(k) ? 'falta' : ''}`} type={type} required={['nombre', 'email'].includes(k) || (factura && k === 'nit')} aria-invalid={faltan.includes(k) || undefined} value={f[k] ?? ''} placeholder={ph} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
   );
   const tema = d.tema;
   return (
     <PublicoLayout paso={2}>
       <div className="grid g-main onboarding-layout" style={{ alignItems: 'start', marginTop: 32, gap: 24 }}>
-        <div className="tarjeta col" style={{ gap: 20, padding: 28 }}>
+        <form className="tarjeta col" style={{ gap: 20, padding: 28 }} onSubmit={e => { e.preventDefault(); seguir(); }}>
           <h1 className="onb-titulo">Datos del negocio</h1>
           {faltan.length > 0 && <div className="aviso" role="alert"><Icon n="alerta" className="" size={16} />Completa los campos marcados para continuar: {faltan.map((k) => ({ nombre: 'nombre del negocio', email: 'correo del administrador', nit: 'NIT' }[k] ?? k)).join(', ')}.</div>}
           <div className="grid g2">
@@ -226,12 +235,12 @@ export function Datos() {
             <Campo etiqueta="Teléfono">{inp('telefono', '+57…')}</Campo>
             <Campo etiqueta="Personas que atienden" ayuda="separadas por coma">{inp('recursos', 'Andrés, Camilo, Julián')}</Campo>
           </div>
-          <div className="fila entre"><Link to="/empezar" className="btn sutil">Atrás</Link><button className="btn primario" disabled={ocupado} onClick={seguir}>Continuar <Icon n="flecha" className="" size={14} /></button></div>
+          <div className="fila entre"><Link to="/empezar" className="btn sutil">Atrás</Link><button type="submit" className="btn primario" disabled={ocupado}>Continuar <Icon n="flecha" className="" size={14} /></button></div>
           <p className="tenue peq-txt">Nada de esto ha creado aún tu empresa: se guarda como borrador hasta el pago.</p>
-        </div>
+        </form>
         <div className="tarjeta col" style={{ gap: 16, padding: 28 }}>
           <h2 className="titulo-tarjeta">Identidad visual</h2>
-          <label className="btn" style={{ alignSelf: 'flex-start' }}><Icon n="subir" className="" size={16} /> Subir logotipo<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden onChange={(e) => e.target.files?.[0] && subirLogo(e.target.files[0])} /></label>
+          <label className="btn upload-brand" style={{ alignSelf: 'flex-start' }}><Icon n="subir" className="" size={16} /> Subir logotipo<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="sr" onChange={(e) => e.target.files?.[0] && subirLogo(e.target.files[0])} /></label>
           {errLogo && <span className="campo"><span className="error" role="alert">{errLogo}</span></span>}
           {tema ? (
             <div className="col">
@@ -257,11 +266,13 @@ export function Datos() {
 // ---------------------------------------------------------------- SCR-005 / SCR-006
 export function Catalogo() {
   const nav = useNavigate();
-  const { d, setD } = useBorrador();
+  const { d, setD, cargando, error, recargar } = useBorrador();
   const [prev, setPrev] = useState<any>(null);
   const [filas, setFilas] = useState<any[]>([]);
   const [manual, setManual] = useState<any[] | null>(null);
   const { run, ocupado } = useAccion();
+  if (cargando) return <PublicoLayout paso={3}><Cargando /></PublicoLayout>;
+  if (error) return <PublicoLayout paso={3}><ErrorCarga error={error} reintentar={recargar} /></PublicoLayout>;
   if (!d) return <PublicoLayout paso={3}><Vacio titulo="No hay un borrador activo" accion={<Link className="btn primario" to="/empezar">Empezar</Link>} /></PublicoLayout>;
 
   const subir = async (file: File) => {
@@ -314,7 +325,7 @@ export function Catalogo() {
                   <label key={m.columna} className="campo" style={{ minWidth: 150 }}>
                     <span>«{m.columna}» <span className="ayuda">{Math.round(m.confianza * 100)}%</span></span>
                     <select className={`input ${m.confianza < 0.8 && m.campo !== 'ignorar' ? 'falta' : ''}`} value={m.campo} onChange={(e) => cambiarMapeo(m.columna, e.target.value)}>
-                      {['nombre', 'precio', 'categoria', 'tipo', 'duracion_min', 'stock', 'iva_pct', 'sku', 'ignorar'].map((c) => <option key={c} value={c}>{c}</option>)}
+                      {Object.entries({ nombre: 'Nombre', precio: 'Precio', categoria: 'Categoría', tipo: 'Tipo', duracion_min: 'Duración en minutos', stock: 'Existencias', iva_pct: 'IVA (%)', sku: 'Código del producto', ignorar: 'No importar' }).map(([c, etiqueta]) => <option key={c} value={c}>{etiqueta}</option>)}
                     </select>
                   </label>
                 ))}
@@ -378,24 +389,34 @@ export function Catalogo() {
 
 // ---------------------------------------------------------------- SCR-007
 export function Pago() {
-  const { d } = useBorrador();
+  const { d, cargando, error, recargar } = useBorrador();
   const { run, ocupado } = useAccion();
   const activate = async () => {
     const r = await run(() => api.post(`/api/onboarding/borradores/${d.token}/pago`));
-    if (r) window.location.href = r.url.replace(/^https?:\/\/[^/]+/, '');
+    if (r) irA(r.url);
   };
+  if (error) return <PublicoLayout paso={4}><ErrorCarga error={error} reintentar={recargar} /></PublicoLayout>;
+  if (cargando) return <PublicoLayout paso={4}><Cargando filas={5} /></PublicoLayout>;
   if (!d) return <PublicoLayout paso={4}><Vacio titulo="Primero configura tu negocio" accion={<Link className="btn primario" to="/empezar">Empezar</Link>} /></PublicoLayout>;
   return <PublicoLayout paso={4}><section className="proposal-summary">
     <h1 className="onb-titulo">Revisa tu propuesta</h1>
     <p className="sec">Esta es la plataforma de {d.negocio?.nombre ?? 'tu negocio'}. Revisa las funciones y el desglose antes de continuar.</p>
     <Quote quote={d.cotizacion} />
-    <div className="aviso peq-txt"><Icon n="info" className="" size={16} />Estás en una demostración. La activación usa una pasarela simulada, sin tarjeta ni cobros reales.</div>
+    {d.pasarela === 'simulada' && <div className="aviso peq-txt"><Icon n="info" className="" size={16} />Estás en una demostración: la activación usa una pasarela simulada, sin tarjeta ni cobros reales.</div>}
+    {!d.pago_disponible && <div className="aviso peq-txt"><Icon n="info" className="" size={16} />La contratación en línea todavía no está habilitada. Escríbenos y activamos tu espacio contigo.</div>}
     <div className="fila envolver" style={{ gap: 8 }}>
-      {d.demo_checkout_disponible && <button className="btn primario grande" disabled={ocupado} onClick={activate}>{ocupado ? 'Preparando…' : 'Ir al pago de prueba'}</button>}
+      {d.pago_disponible && <button className="btn primario grande" disabled={ocupado} onClick={activate}>{ocupado ? 'Preparando…' : d.pasarela === 'simulada' ? 'Ir al pago de prueba' : 'Pagar con Wompi'}</button>}
       {d.estado === 'BORRADOR' && <Link className="btn grande" to="/empezar">Ajustar funciones</Link>}
     </div>
-    <p className="tenue peq-txt">Tu panel se crea solo después de que la pasarela confirme el pago.</p>
+    <p className="tenue peq-txt">Tu panel se crea solo después de que la pasarela confirme el pago. Si cierras la página, no pasa nada: la confirmación llega igual.</p>
   </section></PublicoLayout>;
+}
+
+/** Va a una URL de pago: interna (pasarela simulada) o externa (checkout de Wompi). */
+export function irA(url: string) {
+  const u = new URL(url, window.location.origin);
+  if (u.origin === window.location.origin || /localhost(:\d+)?$/.test(u.host)) window.location.assign(u.pathname + u.search);
+  else window.location.assign(url);
 }
 
 /** Pasarela simulada: representa el checkout alojado del proveedor de pagos. */
@@ -412,12 +433,13 @@ export function Pasarela() {
     const x = await run(() => api.post('/api/pasarela/simular', { ref, resultado: r, entregas }));
     if (!x) return;
     setRes(x); setResultado(r);
-    // La respuesta de la pasarela no prueba el alta: el cierre consulta el estado real en el servidor.
+    // La respuesta de la pasarela no prueba nada: la página de destino consulta el estado real en el servidor.
     if (r === 'aprobado' && alta) nav('/empezar/listo', { replace: true });
+    else if (r === 'aprobado' && q.get('volver')) { const v = new URL(q.get('volver')!, window.location.origin); nav(`${v.pathname}?ref=${encodeURIComponent(ref)}`, { replace: true }); }
   };
   const reintentar = async () => {
     const x = await run(() => api.post(`/api/onboarding/borradores/${leer('borrador')}/pago`));
-    if (x) window.location.assign(x.url.replace(/^https?:\/\/[^/]+/, ''));
+    if (x) irA(x.url);
   };
   return (
     <div className="publico" style={{ display: 'grid', placeItems: 'center', padding: 16, background: 'var(--lienzo)' }}>
@@ -472,7 +494,7 @@ const CABECERA: Record<FaseCierre, EstadoAlta> = {
 };
 
 /** Representación del panel con los datos reales del alta: nombre, logotipo o monograma, colores, módulos y catálogo. */
-function PanelPersonalizado({ d, st, real }: { d: any; st: any; real: boolean }) {
+function PanelPersonalizado({ d, st, real, fase }: { d: any; st: any; real: boolean; fase: FaseCierre }) {
   const p = real ? st.panel : null;
   const nombre: string = real ? st.tenant.nombre : d?.negocio?.nombre ?? 'Tu negocio';
   const tema = real ? p.tema : d?.tema;
@@ -502,7 +524,7 @@ function PanelPersonalizado({ d, st, real }: { d: any; st: any; real: boolean })
         </div>
       </div>
       <figcaption className="cp-leyenda">
-        <span className="cp-nota">{real ? 'Tu panel, con los datos que guardó el servidor al crearlo.' : 'Vista previa con los datos de tu borrador. El panel se crea cuando la pasarela confirme el pago.'}</span>
+        <span className="cp-nota">{real ? 'Tu panel, con los datos confirmados al crear tu espacio.' : fase === 'confirmando' ? st?.error_aprovisionamiento ? 'Vista previa de tu configuración. El pago está confirmado; reintenta la creación para preparar tu panel.' : 'Vista previa de tu configuración. El pago está confirmado y estamos preparando tu panel.' : fase === 'error' ? 'Vista previa de tu configuración guardada. Reintenta la consulta para conocer el estado actual de tu panel.' : 'Vista previa con los datos de tu borrador. El panel se crea cuando la pasarela confirme el pago.'}</span>
         <ul>
           <li><Icon n="persona" className="" size={15} /><span><b>{nombre}</b>{logo ? 'Con tu logotipo' : `Monograma «${monograma}»: no subiste logotipo`}</span></li>
           <li><span className="cp-muestra" style={{ background: acento }} /><span><b className="mono">{tema?.acento ?? 'Sin color aún'}</b>{tema ? (tema.origen === 'logotipo' ? 'Color tomado de tu logotipo' : 'Color derivado de tu monograma') : 'Escribe el nombre en Datos para generarlo'}</span></li>
@@ -535,7 +557,7 @@ export function Aprovisionamiento() {
         const s = await api.get(`/api/onboarding/borradores/${tk}/estado`);
         if (!vivo) return;
         setSt(s); setError(null);
-        if (debeConsultar(faseCierre(tk, s, null))) t = window.setTimeout(tick, 1500);
+        if (debeConsultar(faseCierre(tk, s, null)) && !s.error_aprovisionamiento) t = window.setTimeout(tick, 1500);
       } catch (e) { if (vivo) setError(e as ApiError); }
     };
     tick();
@@ -543,13 +565,18 @@ export function Aprovisionamiento() {
   }, [tk, consulta]);
 
   const fase = faseCierre(tk, st, error);
+  const falloCreacion = fase === 'confirmando' && !!st?.error_aprovisionamiento;
   const listo = fase === 'listo';
   const pago = st?.pago;
   const necesitaCrear = listo && st.requiere_contrasena && !creada;
 
   const irAPagar = async () => {
     const r = await run(() => api.post(`/api/onboarding/borradores/${tk}/pago`));
-    if (r) window.location.assign(r.url.replace(/^https?:\/\/[^/]+/, ''));
+    if (r) irA(r.url);
+  };
+  const reintentarAlta = async () => {
+    const r = await run(() => api.post(`/api/onboarding/borradores/${tk}/reintentar`));
+    if (r) setConsulta((n) => n + 1);
   };
   const entrar = async (e: FormEvent) => {
     e.preventDefault();
@@ -589,10 +616,11 @@ export function Aprovisionamiento() {
   const hechos = pasosCumplidos(fase, d);
 
   return (
-    <PublicoLayout paso={Math.min(hechos, 5)} hechos={hechos} estado={CABECERA[fase]}>
+    <PublicoLayout paso={Math.min(hechos, 5)} hechos={hechos} estado={falloCreacion ? { tono: 'err', icono: 'alerta', texto: 'Creación detenida · tu pago está confirmado' } : CABECERA[fase]} notaAlta={listo ? 'Tu espacio está creado. Puedes continuar desde tu panel.' : falloCreacion ? 'Tu pago está confirmado. Reintenta la creación con tu configuración guardada.' : fase === 'confirmando' ? 'Tu pago está confirmado. Estamos preparando tu espacio.' : fase === 'error' ? 'Tu configuración se conserva. Reintenta la consulta del estado.' : fase === 'sin_borrador' ? 'Describe tu negocio para empezar a configurar tu espacio.' : fase === 'cargando' ? 'Estamos consultando el estado de tu configuración.' : 'Tu borrador se conserva mientras se confirma el pago.'}>
+      {(fase === 'confirmando' || fase === 'listo') && <WorkspaceAssembly nombre={st?.tenant?.nombre ?? d?.negocio?.nombre ?? 'Tu negocio'} modulos={listo ? st?.panel?.modulos ?? [] : d?.cotizacion?.modulos ?? []} listo={listo} error={!!st?.error_aprovisionamiento} />}
       <div className={`cierre ${fase === 'sin_borrador' ? 'solo' : ''}`}>
         <section className="tarjeta col cierre-estado" aria-live="polite">
-          <h1 className="onb-titulo">{titulo[fase]}</h1>
+          <h1 className="onb-titulo">{falloCreacion ? 'Tu pago está confirmado. La creación necesita un reintento.' : titulo[fase]}</h1>
           {fase === 'sin_borrador' && <><p className="sec">{error ? 'No encontramos el borrador guardado en este navegador.' : 'Describe tu negocio para preparar una propuesta.'}</p><Link className="btn primario" style={{ alignSelf: 'flex-start' }} to="/empezar">Empezar</Link></>}
           {fase === 'cargando' && <Cargando filas={3} />}
           {fase === 'error' && <>
@@ -614,9 +642,9 @@ export function Aprovisionamiento() {
               <Link className="btn" to="/empezar/pago">Revisar la propuesta</Link>
             </div>
           </>}
-          {fase === 'confirmando' && <p className="sec">La pasarela confirmó el pago. Volvemos a consultar cada pocos segundos hasta que el panel figure como creado.</p>}
+          {(fase === 'confirmando' || fase === 'listo') && <CreacionEspacio etapas={st?.etapas ?? []} listo={listo} error={st?.error_aprovisionamiento ?? null} onReintentar={reintentarAlta} ocupado={ocupado} />}
           {listo && <>
-            <p className="sec">Tu espacio de trabajo está en <span className="mono">{st.tenant.slug}.localhost</span>. Entra para empezar a atender.</p>
+            <p className="sec">Tu espacio de trabajo <b>{st.tenant.nombre}</b> está creado. Entra para revisar tus módulos y completar las conexiones pendientes.</p>
             <form className="decision col" style={{ gap: 14, padding: 20 }} onSubmit={entrar}>
               {necesitaCrear
                 ? <Campo etiqueta={`Crea tu contraseña para ${st.email}`} ayuda="mínimo 10 caracteres"><input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" /></Campo>
@@ -624,12 +652,11 @@ export function Aprovisionamiento() {
               {errAcceso && <p className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{errAcceso}</p>}
               <button className="btn primario" disabled={entrando || (necesitaCrear ? pw.length < 10 : !pw)}>{entrando ? 'Entrando…' : errAcceso && creada ? 'Volver a intentar entrar' : 'Entrar a mi panel'}</button>
             </form>
-            {Array.isArray(st.etapas) && st.etapas.length > 0 && <details className="cierre-etapas"><summary>Qué quedó registrado al crear el panel</summary>
-              <ul>{st.etapas.map((e: any) => <li key={e.etapa}><Icon n="ok" className="" size={14} />{ETAPAS[e.etapa] ?? e.etapa}</li>)}</ul></details>}
+
           </>}
           {fase !== 'sin_borrador' && <p className="tenue peq-txt">Si la pasarela repite la notificación del pago, no se crea un segundo panel: cada pago se procesa una sola vez.</p>}
         </section>
-        {fase !== 'sin_borrador' && (listo ? st.panel : d) && <PanelPersonalizado d={d} st={st} real={listo && !!st.panel} />}
+        {fase !== 'sin_borrador' && (listo ? st.panel : d) && <PanelPersonalizado d={d} st={st} real={listo && !!st.panel} fase={fase} />}
       </div>
     </PublicoLayout>
   );
@@ -644,34 +671,71 @@ export function Entrar() {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [demo, setDemo] = useState(false);
+  // Segundo paso (solo cuentas del operador de la plataforma): código enviado al correo.
+  const [paso2, setPaso2] = useState<{ desafio: string; destino: string; minutos: number } | null>(null);
+  const [codigo, setCodigo] = useState('');
+  const espera = useCuentaAtras();
+  useEffect(() => { api.get('/api/publico/estado').then((r) => setDemo(!!r.simuladores)).catch(() => {}); }, []);
+  const entrar = (r: any) => {
+    const next = q.get('volver');
+    if (slugDelHost()) return nav(next?.startsWith('/') && !next.startsWith('//') ? next : '/');
+    if (r.usuario.rol_plataforma && r.usuario.segundo_factor && !r.empresas.length) return nav('/operador');
+    if (r.empresas.length === 1 && !r.usuario.rol_plataforma) { guardar('empresa', r.empresas[0].slug); return nav(next?.startsWith('/') && !next.startsWith('//') ? next : '/'); }
+    nav(next?.startsWith('/') && !next.startsWith('//') ? `/empresas?volver=${encodeURIComponent(next)}` : '/empresas');
+  };
   const enviar = async (e: FormEvent) => {
     e.preventDefault(); if (busy) return; setBusy(true); setErr('');
     try {
       const r = await api.post('/api/auth/login', { email, password: pw });
-      const next = q.get('volver');
-      if (slugDelHost()) return nav(next?.startsWith('/') && !next.startsWith('//') ? next : '/');
-      if (r.empresas.length === 1) { guardar('empresa', r.empresas[0].slug); return nav('/'); }
-      if (!r.empresas.length && r.usuario.es_admin_plataforma) return nav('/plataforma');
-      nav('/empresas');
+      if (r.segundo_factor) { setPaso2({ desafio: r.desafio, destino: r.destino, minutos: r.minutos }); setCodigo(''); espera.iniciar(60); return; }
+      entrar(r);
     } catch (e2) { setErr((e2 as Error).message); } finally { setBusy(false); }
   };
+  const verificar = async (e: FormEvent) => {
+    e.preventDefault(); if (busy || !paso2) return; setBusy(true); setErr('');
+    try { entrar(await api.post('/api/auth/login/codigo', { desafio: paso2.desafio, codigo })); }
+    catch (e2) { setErr((e2 as Error).message); if ((e2 as ApiError).status === 409) setCodigo(''); } finally { setBusy(false); }
+  };
+  const reenviar = async () => {
+    if (!paso2 || espera.restante > 0) return;
+    setErr('');
+    try { const r = await api.post('/api/auth/login/codigo/reenviar', { desafio: paso2.desafio }); setPaso2({ ...paso2, destino: r.destino, minutos: r.minutos }); espera.iniciar(60); }
+    catch (e2) { setErr((e2 as Error).message); const s = ((e2 as ApiError).details as any)?.espera_segundos; if (s) espera.iniciar(s); }
+  };
+  if (paso2) return <PublicoLayout><div className="auth-layout solo">
+    <form className="auth-form col" onSubmit={verificar} aria-labelledby="titulo-codigo">
+      <h1 id="titulo-codigo">Revisa tu correo</h1>
+      <p className="sec">Tu cuenta administra la plataforma, así que pedimos un segundo paso. Escribe el código que enviamos a <b>{paso2.destino}</b>. Vence en {paso2.minutos} minutos.</p>
+      <CodigoOtp valor={codigo} onCambio={setCodigo} autoFocus />
+      {err && <p role="alert" className="bloqueado"><Icon n="alerta" className="" size={16} />{err}</p>}
+      <button className="btn primario grande" disabled={busy || codigo.length !== 6}>{busy ? 'Comprobando…' : 'Entrar'}</button>
+      <div className="fila" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <button type="button" className="btn sutil peq" disabled={espera.restante > 0} onClick={reenviar}>{espera.restante > 0 ? `Reenviar código en ${espera.restante} s` : 'Reenviar código'}</button>
+        <button type="button" className="btn sutil peq" onClick={() => { setPaso2(null); setPw(''); setErr(''); }}>Usar otra cuenta</button>
+      </div>
+      <p className="tenue peq-txt">Nunca te pediremos este código por teléfono ni por chat.</p>
+    </form>
+  </div></PublicoLayout>;
   return <PublicoLayout><div className="auth-layout">
     <form className="auth-form col" onSubmit={enviar} aria-labelledby="titulo-entrar">
       <h1 id="titulo-entrar">Entra a tu negocio</h1>
       {slugDelHost() ? <span className="estado neutro" style={{ alignSelf: 'flex-start' }}><Icon n="plataforma" className="" />Negocio: {slugDelHost()}</span> : <p className="sec">Si trabajas en varias empresas, eliges una después de entrar.</p>}
       <Campo etiqueta="Correo"><input className="input" type="email" placeholder="tu@negocio.com" value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" required /></Campo>
-      <Campo etiqueta="Contraseña"><div className="password-field"><input className="input" type={show ? 'text' : 'password'} value={pw} onChange={e => setPw(e.target.value)} autoComplete="current-password" required /><button type="button" className="btn sutil peq" aria-label={show ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-pressed={show} onClick={() => setShow(v => !v)}>{show ? 'Ocultar' : 'Mostrar'}</button></div></Campo>
+      <Campo etiqueta="Contraseña"><div className="password-field"><input className="input" aria-label="Contraseña" type={show ? 'text' : 'password'} value={pw} onChange={e => setPw(e.target.value)} autoComplete="current-password" required /><button type="button" className="btn sutil peq" aria-label={show ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-pressed={show} onClick={() => setShow(v => !v)}>{show ? 'Ocultar' : 'Mostrar'}</button></div></Campo>
+      {q.get('vencida') && !err && <p role="status" className="aviso peq-txt"><Icon n="reloj" className="" size={16} />Tu sesión terminó por seguridad. Entra de nuevo para seguir donde ibas.</p>}
       {err && <p role="alert" className="bloqueado"><Icon n="alerta" className="" size={16} />{err}</p>}
       <button className="btn primario grande" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
-      <p className="auth-register">¿Tu negocio aún no tiene su espacio? <Link to="/empezar">Crear mi plataforma</Link></p>
-      <details className="demo-accounts"><summary>Usar una cuenta de demostración</summary><p>Correo <span className="mono">admin@elparche.test</span><br />Contraseña <span className="mono">demo-parche-2026</span></p></details>
+      <p className="auth-register"><Link to="/recuperar">¿Olvidaste tu contraseña?</Link></p>
+      <p className="auth-register">¿Tu negocio aún no tiene su espacio? <Link to="/empezar">Crear mi espacio</Link></p>
+      {demo && <details className="demo-accounts"><summary>Usar una cuenta de demostración</summary><p>Correo <span className="mono">admin@elparche.test</span><br />Contraseña <span className="mono">demo-parche-2026</span></p></details>}
     </form>
     <section className="auth-story" aria-label="Qué encontrarás en tu panel">
       <h2>Lo que te espera en tu panel</h2>
       <ul>
         <li><Icon n="conversaciones" className="" size={20} /><span><b>Conversaciones de WhatsApp</b>La IA atiende y una persona del equipo entra al mismo hilo cuando hace falta.</span></li>
         <li><Icon n="agenda" className="" size={20} /><span><b>Agenda y ventas</b>Cada cita y cada venta quedan conectadas con su cliente.</span></li>
-        <li><Icon n="facturacion" className="" size={20} /><span><b>Facturación electrónica</b>Sigues cada factura hasta su validación y entrega.</span></li>
+        <li><Icon n="facturacion" className="" size={20} /><span><b>Documentos y seguimiento</b>Consulta tus documentos y sus estados. La facturación actual opera en pruebas, sin validez fiscal.</span></li>
       </ul>
     </section>
   </div></PublicoLayout>;
@@ -679,6 +743,8 @@ export function Entrar() {
 
 export function Empresas() {
   const nav = useNavigate();
+  const [q] = useSearchParams();
+  const volver = q.get('volver');
   const [s, setS] = useState<any>(null);
   useEffect(() => { api.get('/api/auth/sesion').then(setS).catch(() => nav('/entrar')); }, [nav]);
   if (!s) return null;
@@ -687,33 +753,192 @@ export function Empresas() {
       <div className="tarjeta col" style={{ maxWidth: 480, margin: '48px auto', gap: 12, padding: 28 }}>
         <h1 className="onb-titulo" style={{ fontSize: 24 }}>Hola, {s.usuario.nombre.split(' ')[0]}. ¿En qué empresa vas a trabajar?</h1>
         <p className="tenue">Tu rol puede ser distinto en cada una. Elegir una empresa solo cambia lo que ves: el servidor valida tu acceso.</p>
-        {s.empresas.length === 0 && <Vacio titulo="Tu cuenta no pertenece a ninguna empresa">Pide a un administrador que te invite, o crea tu plataforma.</Vacio>}
+        {s.empresas.length === 0 && !s.usuario.rol_plataforma && <Vacio titulo="Tu cuenta no pertenece a ninguna empresa">Pide a un administrador que te invite, o crea tu plataforma.</Vacio>}
         {s.empresas.map((e: any) => (
-          <button key={e.id} className="btn fila" style={{ justifyContent: 'flex-start', height: 'auto', padding: '10px 14px', gap: 12 }} onClick={() => { guardar('empresa', e.slug); nav('/'); }}>
+          <button key={e.id} className="btn fila" style={{ justifyContent: 'flex-start', height: 'auto', padding: '10px 14px', gap: 12 }} onClick={() => { guardar('empresa', e.slug); nav(volver?.startsWith('/') && !volver.startsWith('//') ? volver : '/'); }}>
             <span style={{ width: 32, height: 32, borderRadius: 8, background: e.tema?.acento ?? 'var(--tinta-3)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 600, fontSize: 13, flex: 'none' }} aria-hidden="true">{e.tema?.monograma}</span>
             <span style={{ textAlign: 'left', minWidth: 0 }}><b>{e.nombre}</b><br /><span className="tenue peq-txt">{e.rol} · {e.slug}.localhost</span></span>
             <Icon n="derecha" className="" size={16} />
           </button>
         ))}
-        {s.usuario.es_admin_plataforma && <Link className="btn" to="/plataforma">Administración de la plataforma</Link>}
+        {s.usuario.rol_plataforma && s.usuario.segundo_factor && <Link className="btn" to="/operador">Panel del operador de {MARCA.nombre}</Link>}
       </div>
     </PublicoLayout>
   );
 }
 
-export function Plataforma() {
-  const [t, setT] = useState<any[] | null>(null);
-  const [err, setErr] = useState('');
-  useEffect(() => { api.get('/api/plataforma/tenants').then(setT).catch((e) => setErr(e.message)); }, []);
+// ---------------------------------------------------------------- creación del espacio
+const ORDEN_ETAPAS = ['pago_verificado', 'empresa_creada', 'plantilla_aplicada', 'catalogo_importado', 'administrador_creado', 'tema_generado', 'subdominio_asignado'];
+const DETALLE_ETAPA: Record<string, string> = {
+  pago_verificado: 'La pasarela confirmó el pago con su firma',
+  empresa_creada: 'Tu empresa y su suscripción',
+  plantilla_aplicada: 'Roles, permisos, agentes y reglas de tu sector',
+  catalogo_importado: 'Tus productos y servicios',
+  administrador_creado: 'Tu acceso como administrador',
+  tema_generado: 'Los colores de tu marca en el panel',
+  subdominio_asignado: 'La dirección de tu panel',
+};
+
+/**
+ * Creación del espacio con las etapas que registró el servidor. Una etapa se marca
+ * como hecha solo si figura en el registro; mientras el servidor trabaja, la
+ * siguiente se muestra «en curso» y las demás pendientes. Si el alta falló, se
+ * muestra dónde y se ofrece reintentar (el pago ya está confirmado).
+ */
+function CreacionEspacio({ etapas, listo, error, onReintentar, ocupado }: { etapas: { etapa: string; en: string }[]; listo: boolean; error: string | null; onReintentar: () => void; ocupado: boolean }) {
+  const hechas = new Set(etapas.map((e) => e.etapa));
+  if (!hechas.has('pago_verificado')) hechas.add('pago_verificado'); // fase «confirmando»: el pago ya está aprobado
+  // La animación acompaña el registro, sin retrasar ni inventar el estado visible.
+  const terminado = listo;
   return (
-    <PublicoLayout>
-      <section className="tarjeta" style={{ marginTop: 32 }}>
-        <div className="cab"><h1 className="titulo" style={{ fontSize: 20 }}>Empresas de la plataforma</h1><span className="tenue peq-txt">El administrador del SaaS gobierna; no opera datos de los negocios.</span></div>
-        {err ? <div className="cuerpo"><div className="bloqueado"><Icon n="candado" className="" size={16} />No encontramos eso.</div></div> : !t ? <Cargando /> : (
-          <div className="tabla-wrap"><table className="tabla"><thead><tr><th>Empresa</th><th>Subdominio</th><th>Sector</th><th>Plan</th><th>Suscripción</th><th className="num">Tokens IA del mes</th><th>Alta</th></tr></thead>
-            <tbody>{t.map((x) => <tr key={x.id}><td>{x.nombre}</td><td className="mono">{x.slug}</td><td>{x.sector}</td><td>{x.plan_codigo}</td><td><Estado v={x.estado} /></td><td className="num">{Number(x.tokens_mes).toLocaleString('es-CO')}</td><td>{new Date(x.creado_en).toLocaleDateString('es-CO')}</td></tr>)}</tbody></table></div>
-        )}
-      </section>
-    </PublicoLayout>
+    <div className={`creacion ${terminado ? 'terminada' : ''}`} aria-live="polite">
+      <div className="creacion-cab">
+        {!terminado && !error ? <img src={MARCA.cargando} alt="" width={44} height={48} className="creacion-loader" /> : <span className={`creacion-sello ${error ? 'error' : ''}`}><Icon n={error ? 'alerta' : 'ok'} className="" size={22} /></span>}
+        <span className="col" style={{ gap: 2 }}>
+          <b>{error ? 'La creación se detuvo' : terminado ? 'Tu espacio está listo' : 'Creando tu espacio de trabajo'}</b>
+          <span className="tenue peq-txt">{error ? 'Tu pago está confirmado y no se cobrará otra vez.' : terminado ? 'Todo quedó registrado.' : 'Esperando la confirmación de los siguientes pasos.'}</span>
+        </span>
+      </div>
+      <ol className="creacion-etapas">
+        {ORDEN_ETAPAS.map((e, i) => {
+          const hecha = hechas.has(e);
+          const fallo = !!error && !hechas.has(e) && ORDEN_ETAPAS.find((x) => !hechas.has(x)) === e;
+          const curso = false; // El servidor no publica una etapa activa; las restantes siguen pendientes.
+          return (
+            <li key={e} className={hecha ? 'hecha' : fallo ? 'fallo' : curso ? 'curso' : ''}>
+              <span className="punto" aria-hidden="true">{hecha ? <Icon n="ok" className="" size={12} /> : fallo ? <Icon n="x" className="" size={12} /> : null}</span>
+              <span className="col" style={{ gap: 0 }}><b>{ETAPAS[e]}</b><span className="tenue peq-txt">{DETALLE_ETAPA[e]}</span></span>
+              <span className="sr">{hecha ? '(hecho)' : fallo ? '(falló)' : curso ? '(en curso)' : '(pendiente)'}</span>
+            </li>
+          );
+        })}
+      </ol>
+      {error && <div className="col" style={{ gap: 8 }}><p className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error}</p><button className="btn primario" style={{ alignSelf: 'flex-start' }} disabled={ocupado} onClick={onReintentar}>{ocupado ? 'Reintentando…' : 'Reintentar la creación'}</button></div>}
+    </div>
   );
+}
+
+// ---------------------------------------------------------------- recuperación de acceso
+export function Recuperar() {
+  const [email, setEmail] = useState('');
+  const [enviado, setEnviado] = useState(false);
+  const { run, ocupado } = useAccion();
+  return <PublicoLayout><div className="auth-layout solo">
+    <form className="auth-form col" onSubmit={async (e) => { e.preventDefault(); const r = await run(() => api.post('/api/auth/recuperar', { email })); if (r) setEnviado(true); }}>
+      <h1>Recupera tu acceso</h1>
+      {enviado ? <>
+        <p className="aviso exito" role="status"><Icon n="ok" className="" size={16} />Si <b>{email}</b> tiene una cuenta, le enviamos un enlace para crear una contraseña nueva. Vence en 60 minutos.</p>
+        <p className="sec peq-txt">¿No llega? Revisa el correo no deseado o espera unos minutos antes de pedirlo otra vez.</p>
+        <Link className="btn" to="/entrar">Volver a entrar</Link>
+      </> : <>
+        <p className="sec">Escribe el correo con el que entras. Te enviaremos un enlace de un solo uso.</p>
+        <Campo etiqueta="Correo"><input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required /></Campo>
+        <button className="btn primario grande" disabled={ocupado || !email}>{ocupado ? 'Enviando…' : 'Enviar enlace'}</button>
+        <p className="auth-register"><Link to="/entrar">Volver a entrar</Link></p>
+      </>}
+    </form>
+  </div></PublicoLayout>;
+}
+
+export function Restablecer() {
+  const [q] = useSearchParams();
+  const tk = q.get('token') ?? '';
+  const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');
+  const [listo, setListo] = useState(false);
+  const { run, ocupado, error } = useAccion();
+  return <PublicoLayout><div className="auth-layout solo">
+    <form className="auth-form col" onSubmit={async (e) => { e.preventDefault(); const r = await run(() => api.post('/api/auth/restablecer', { token: tk, password: pw }), undefined, { silencioso: true }); if (r) setListo(true); }}>
+      <h1>Crea una contraseña nueva</h1>
+      {!tk ? <p className="bloqueado"><Icon n="alerta" className="" size={16} />El enlace está incompleto. Pide uno nuevo.</p> : listo ? <>
+        <p className="aviso exito" role="status"><Icon n="ok" className="" size={16} />Contraseña actualizada. Cerramos tus sesiones abiertas en otros dispositivos.</p>
+        <Link className="btn primario grande" to="/entrar">Entrar</Link>
+      </> : <>
+        {error && <p className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}{error.status === 409 && <> <Link to="/recuperar">Pedir otro enlace</Link></>}</p>}
+        <Campo etiqueta="Nueva contraseña" ayuda="mínimo 10 caracteres"><input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" /></Campo>
+        <Campo etiqueta="Repítela" error={pw2 && pw !== pw2 ? 'No coincide.' : undefined}><input className="input" type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" /></Campo>
+        <button className="btn primario grande" disabled={ocupado || pw.length < 10 || pw !== pw2}>{ocupado ? 'Guardando…' : 'Guardar contraseña'}</button>
+      </>}
+    </form>
+  </div></PublicoLayout>;
+}
+
+// ---------------------------------------------------------------- invitación al equipo
+export function Invitacion() {
+  const [q] = useSearchParams();
+  const nav = useNavigate();
+  const tk = q.get('token') ?? '';
+  const [info, setInfo] = useState<any>(null);
+  const [errInfo, setErrInfo] = useState('');
+  const [pw, setPw] = useState('');
+  const { run, ocupado, error } = useAccion();
+  useEffect(() => { if (tk) api.get(`/api/invitaciones/${tk}`).then(setInfo).catch((e) => setErrInfo(e.status === 404 ? 'Este enlace de invitación no es válido.' : e.message)); }, [tk]);
+  const aceptar = async (e: FormEvent) => {
+    e.preventDefault();
+    const r = await run(() => api.post(`/api/invitaciones/${tk}/aceptar`, { password: pw }), undefined, { silencioso: true });
+    if (!r) return;
+    const s = await run(() => api.post('/api/auth/login', { email: r.email, password: pw }));
+    if (s) { guardar('empresa', r.slug); nav('/'); }
+  };
+  return <PublicoLayout><div className="auth-layout solo">
+    <div className="auth-form col">
+      {!tk || errInfo ? <><h1>Invitación</h1><p className="bloqueado"><Icon n="alerta" className="" size={16} />{errInfo || 'El enlace está incompleto.'}</p></>
+        : !info ? <Cargando filas={3} />
+        : info.estado !== 'PENDIENTE' ? <>
+          <h1>Invitación a {info.empresa}</h1>
+          <p className="bloqueado"><Icon n="alerta" className="" size={16} />{info.estado === 'ACEPTADA' ? 'Esta invitación ya se usó.' : info.estado === 'EXPIRADA' ? 'La invitación venció. Pide a quien te invitó que la reenvíe.' : 'La invitación fue retirada.'}</p>
+          <Link className="btn" to="/entrar">Ir a entrar</Link>
+        </> : <form className="col" style={{ gap: 16 }} onSubmit={aceptar}>
+          <h1>Únete a {info.empresa}</h1>
+          <p className="sec">Hola, {info.nombre.split(' ')[0]}. Te invitaron con el rol <b>{info.rol}</b>, usando el correo <span className="mono">{info.email}</span>.</p>
+          {error && <p className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</p>}
+          <Campo etiqueta={info.cuenta_existente ? 'Tu contraseña actual' : 'Crea tu contraseña'} ayuda={info.cuenta_existente ? 'ya tienes cuenta: confirma que eres tú' : 'mínimo 10 caracteres'}><input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete={info.cuenta_existente ? 'current-password' : 'new-password'} /></Campo>
+          <button className="btn primario grande" disabled={ocupado || (info.cuenta_existente ? !pw : pw.length < 10)}>{ocupado ? 'Entrando…' : 'Aceptar y entrar'}</button>
+        </form>}
+    </div>
+  </div></PublicoLayout>;
+}
+
+// ---------------------------------------------------------------- retorno del pago
+/**
+ * Resultado de un pago. La URL trae el id de la transacción (Wompi) o la referencia
+ * (pasarela simulada); el servidor confirma con la pasarela. Nada se da por pagado
+ * por haber llegado a esta página.
+ */
+export function ResultadoPago() {
+  const [q] = useSearchParams();
+  const id = q.get('id');
+  const ref = q.get('ref');
+  const [r, setR] = useState<any>(null);
+  const [err, setErr] = useState('');
+  const [intento, setIntento] = useState(0);
+  useEffect(() => {
+    if (!id) return;
+    let vivo = true;
+    api.get(`/api/pagos/verificar?id=${encodeURIComponent(id)}`).then((x) => { if (vivo) setR(x); }).catch((e) => { if (vivo) setErr(e.message); });
+    return () => { vivo = false; };
+  }, [id, intento]);
+  const pendiente = r && ['DESCONOCIDO', 'PENDIENTE'].includes(r.estado);
+  useEffect(() => { if (!pendiente || intento > 10) return; const t = setTimeout(() => setIntento((n) => n + 1), 4000); return () => clearTimeout(t); }, [pendiente, intento]);
+  const textos: Record<string, [string, string, string]> = {
+    APROBADO: ['ok', 'Pago confirmado', 'La pasarela confirmó el pago. Ya quedó registrado.'],
+    RECHAZADO: ['err', 'El pago no se aprobó', 'No se hizo ningún cobro. Puedes intentarlo de nuevo con otro medio de pago.'],
+    ANULADO: ['err', 'El pago fue anulado', 'No quedó ningún cobro activo.'],
+    ERROR: ['err', 'La pasarela reportó un error', 'No se hizo ningún cobro. Intenta de nuevo en unos minutos.'],
+    PENDIENTE: ['warn', 'Pago en proceso', 'Tu banco aún no confirma el pago. Te avisaremos cuando llegue la confirmación; puedes cerrar esta página.'],
+    DESCONOCIDO: ['warn', 'Esperando la confirmación', 'Aún no recibimos la confirmación de la pasarela. Puedes cerrar esta página: el pago se registra solo cuando la pasarela lo confirma.'],
+  };
+  const [tono, titulo, texto] = ref && !id ? ['warn', 'Volviste de la pasarela', 'Estamos esperando la confirmación del pago. Se registrará en cuanto la pasarela la envíe.'] : r ? textos[r.estado] ?? textos.DESCONOCIDO : ['neutro', 'Consultando el pago…', ''];
+  return <PublicoLayout><div className="auth-layout solo">
+    <div className="auth-form col" aria-live="polite">
+      <h1>{titulo}</h1>
+      {!id && !ref ? <p className="bloqueado"><Icon n="alerta" className="" size={16} />No recibimos los datos del pago.</p> : err ? <p className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{err}</p>
+        : !r && id ? <Cargando filas={2} /> : <p className={tono === 'ok' ? 'aviso exito' : tono === 'err' ? 'bloqueado' : 'aviso'}><Icon n={tono === 'ok' ? 'ok' : tono === 'err' ? 'x' : 'reloj'} className="" size={16} />{texto}</p>}
+      {r?.referencia && <span className="tenue peq-txt mono">Referencia {r.referencia}</span>}
+      <div className="fila envolver" style={{ gap: 8 }}>
+        {leer('borrador') && <Link className="btn primario" to="/empezar/listo">Ver mi alta</Link>}
+        <Link className="btn" to="/">Ir al panel</Link>
+      </div>
+    </div>
+  </div></PublicoLayout>;
 }

@@ -41,3 +41,39 @@ jobs:
           npm run build
       - name: Ejecutar pruebas (Vitest, suite completa)
         run: npm test
+
+  # Archivos críticos (aislamiento, acceso, correo, panel del operador, negocio, canal)
+  # contra un PostgreSQL real: privilegios por columna, RLS forzada y concurrencia.
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: server
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: omnegia
+          POSTGRES_PASSWORD: omnegia-ci
+          POSTGRES_DB: omnegia_pruebas
+          POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U omnegia -d omnegia_pruebas"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      LLM_PROVIDER: mock
+      TZ: America/Bogota
+      DATABASE_URL_PRUEBAS: postgres://omnegia:omnegia-ci@localhost:5432/omnegia_pruebas
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Instalar dependencias del servidor
+        run: npm ci
+      - name: Pruebas críticas sobre PostgreSQL 17
+        run: npm run test:postgres

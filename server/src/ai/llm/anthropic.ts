@@ -12,8 +12,13 @@ import type { LlmClient, LoopInput, LoopOutput, StructuredInput, ToolCallOutcome
  */
 export class AnthropicLlm implements LlmClient {
   nombre = 'anthropic';
-  private client = new Anthropic();
-  constructor(private model: string) {}
+  private client: Anthropic;
+  constructor(private model: string, opts: { apiKey?: string; timeoutMs?: number; maxRetries?: number; maxIteraciones?: number } = {}) {
+    // Tiempo de espera por intento (ms) y reintentos automáticos ante 408/409/429/5xx y errores de red.
+    this.client = new Anthropic({ apiKey: opts.apiKey, timeout: opts.timeoutMs ?? 45_000, maxRetries: opts.maxRetries ?? 2 });
+    this.maxIteraciones = opts.maxIteraciones ?? 6;
+  }
+  private maxIteraciones: number;
 
   async runLoop(input: LoopInput, onToolCall: (name: string, args: unknown) => Promise<ToolCallOutcome>): Promise<LoopOutput> {
     const messages: Anthropic.Beta.BetaMessageParam[] = [];
@@ -31,8 +36,10 @@ export class AnthropicLlm implements LlmClient {
     }));
 
     let tokens = 0;
+    let entrada = 0;
+    let salida = 0;
     let toolCalls = 0;
-    const maxIt = input.maxIterations ?? 6;
+    const maxIt = input.maxIterations ?? this.maxIteraciones;
     for (let i = 0; i < maxIt; i++) {
       const response = await this.client.beta.messages.create({
         model: this.model,
@@ -45,15 +52,17 @@ export class AnthropicLlm implements LlmClient {
         fallbacks: 'default',
       } as Anthropic.Beta.MessageCreateParamsNonStreaming);
       tokens += (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0) + (response.usage.cache_read_input_tokens ?? 0);
+      entrada += (response.usage.input_tokens ?? 0) + (response.usage.cache_read_input_tokens ?? 0);
+      salida += response.usage.output_tokens ?? 0;
 
       if (response.stop_reason === 'refusal') {
-        return { text: 'Disculpa, no puedo ayudarte con eso por aquí. Si quieres, te comunico con una persona del equipo.', tokens, toolCalls, stopReason: 'refusal' };
+        return { text: 'Disculpa, no puedo ayudarte con eso por aquí. Si quieres, te comunico con una persona del equipo.', tokens, toolCalls, stopReason: 'refusal', tokensEntrada: entrada, tokensSalida: salida };
       }
       messages.push({ role: 'assistant', content: response.content });
       const uses = response.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use');
       const text = response.content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text').map((b) => b.text).join('\n').trim();
       if (response.stop_reason !== 'tool_use' || !uses.length) {
-        return { text, tokens, toolCalls, stopReason: response.stop_reason ?? 'end_turn' };
+        return { text, tokens, toolCalls, stopReason: response.stop_reason ?? 'end_turn', tokensEntrada: entrada, tokensSalida: salida };
       }
       const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
       let stop = false;
@@ -66,10 +75,10 @@ export class AnthropicLlm implements LlmClient {
       messages.push({ role: 'user', content: results });
       if (stop) {
         // Una persona toma el control: el agente se despide y no sigue actuando.
-        return { text, tokens, toolCalls, stopReason: 'handoff' };
+        return { text, tokens, toolCalls, stopReason: 'handoff', tokensEntrada: entrada, tokensSalida: salida };
       }
     }
-    return { text: 'Estoy teniendo problemas para resolver esto. Te comunico con una persona del equipo.', tokens, toolCalls, stopReason: 'max_iterations' };
+    return { text: 'Estoy teniendo problemas para resolver esto. Te comunico con una persona del equipo.', tokens, toolCalls, stopReason: 'max_iterations', tokensEntrada: entrada, tokensSalida: salida };
   }
 
   async structured<T>(input: StructuredInput<T>): Promise<{ data: T | null; raw: unknown; tokens: number }> {

@@ -1,6 +1,6 @@
 {
   "sector": "barberia",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "nombre": "Barbería",
   "descripcion": "Barberías y peluquerías masculinas con atención por turnos.",
   "modulos": ["clientes", "catalogo", "ventas", "agenda", "inventario", "facturacion", "conversaciones", "ia", "comisiones"],
@@ -112,6 +112,8 @@
   "widgets_panel": ["citas_hoy", "ocupacion_por_recurso", "ingresos_semana", "clientes_nuevos"],
   "reglas_automatizacion": [
     { "evento": "cita_creada", "accion": "enviar_plantilla", "parametros": { "plantilla": "confirmacion_cita" }, "condicion": { "origen": "PANEL" } },
+    { "evento": "cita_reprogramada", "accion": "enviar_plantilla", "parametros": { "plantilla": "reprogramacion" } },
+    { "evento": "cita_reprogramada", "accion": "programar_recordatorio", "parametros": { "plantilla": "recordatorio_24h", "horas_antes": 24 } },
     { "evento": "cita_creada", "accion": "programar_recordatorio", "parametros": { "plantilla": "recordatorio_24h", "horas_antes": 24 } },
     { "evento": "venta_registrada", "accion": "emitir_factura", "parametros": {} },
     { "evento": "stock_bajo_minimo", "accion": "notificar_admin", "parametros": { "asunto": "Producto por debajo del mínimo" } },

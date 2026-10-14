@@ -1,4 +1,8 @@
 import { config } from '../config.js';
+import { encolarCorreo } from '../email/servicio.js';
+import * as plantillas from '../email/plantillas.js';
+import { emitirOtp } from '../modules/otp.js';
+import { validarContrasena } from '../modules/auth.js';
 import { quoteClassification } from './pricing.js';
 import { z } from 'zod';
 import type { Database } from '../db/index.js';
@@ -9,11 +13,10 @@ import { classifyBusiness, sanitizeClassification, type Clasificacion } from './
 import { recommendPlan } from './planRules.js';
 import { applyMapping, inferMapping, readSheet, CAMPOS_DESTINO, type Hoja, type Mapeo } from './importer.js';
 import { deriveTheme } from './theme.js';
-import { checkoutUrl, verifyWebhook, type EventoPago } from '../adapters/payments.js';
-import { provisionDraft } from './provisioning.js';
+import { checkoutUrl, cuentaPlataforma, normalizarEventoSimulado, verifyWebhook } from '../adapters/payments.js';
+import { aprovisionarConReintento, procesarEventoPago } from '../modules/billing.js';
+import { aCentavos } from '../lib/money.js';
 import { nitValido } from '../adapters/fiscal.js';
-import { reconcilePaymentLink } from '../modules/payments.js';
-import { systemCtx } from '../core/context.js';
 
 /**
  * Onboarding inteligente (PRO-SW-001 §13). Todo se persiste como BORRADOR con
@@ -21,10 +24,20 @@ import { systemCtx } from '../core/context.js';
  * Principio rector: la IA propone, el código decide, el humano corrige.
  */
 
+/**
+ * Las tarifas de la cotización son de demostración hasta que el operador confirme
+ * las comerciales (TARIFAS_CONFIRMADAS=1). Sin pasarela no se puede contratar.
+ */
+export function puedeContratar(): boolean {
+  return !!cuentaPlataforma() && (config.simuladores || process.env.TARIFAS_CONFIRMADAS === '1');
+}
+
 function publicDraft(d: any) {
   return {
     cotizacion: d.recomendacion?.cotizacion ?? quoteClassification(d.clasificacion),
-    demo_checkout_disponible: config.dev,
+    pago_disponible: puedeContratar(),
+    pasarela: cuentaPlataforma()?.proveedor ?? null,
+    error_aprovisionamiento: d.error_aprovisionamiento ?? null,
     token: d.token, estado: d.estado, descripcion: d.descripcion, clasificacion: d.clasificacion, recomendacion: d.recomendacion,
     plan_codigo: d.plan_codigo, negocio: d.negocio, tema: d.tema, logo_data_url: d.logo_data_url,
     catalogo: d.catalogo, import_mapping: d.import_mapping,
@@ -181,7 +194,8 @@ export async function confirmCatalog(db: Database, tk: string, body: unknown) {
 // ---------------------------------------------------------------------------
 export async function startCheckout(db: Database, tk: string) {
   const d = await loadDraft(db, tk);
-  if (!config.dev) throw new AppError('CONFLICT', 'Las tarifas de demostración no permiten contratar en producción.');
+  const cuenta = cuentaPlataforma();
+  if (!cuenta || !puedeContratar()) throw new AppError('CONFLICT', 'La contratación en línea todavía no está habilitada. Escríbenos y te ayudamos a activar tu espacio.');
   if (d.estado === 'APROVISIONADO') throw new AppError('CONFLICT', 'Esta empresa ya fue creada.');
   const n = d.negocio ?? {};
   const faltan: string[] = [];
@@ -197,7 +211,8 @@ export async function startCheckout(db: Database, tk: string) {
     const locked = (await tx.query(`SELECT * FROM onboarding_draft WHERE token=$1 FOR UPDATE`, [tk])).rows[0];
     if (locked.estado === 'APROVISIONADO') throw new AppError('CONFLICT', 'Esta empresa ya fue creada.');
     const previous = (await tx.query(`SELECT referencia, monto FROM payment WHERE draft_token=$1 AND estado='PENDIENTE' ORDER BY creado_en DESC LIMIT 1`, [tk])).rows[0];
-    if (previous) return { referencia: previous.referencia, monto: Number(previous.monto), url: checkoutUrl(previous.referencia, Number(previous.monto), 'Plataforma a medida · demostración') };
+    const urlDe = (referencia: string, monto: number) => checkoutUrl(cuenta, { referencia, montoCentavos: aCentavos(monto), redirectUrl: `${config.publicUrl}/empezar/listo`, concepto: 'Omnegia · primer mes', cliente: { email: n.email, nombre: n.nombre } });
+    if (previous) return { referencia: previous.referencia, monto: Number(previous.monto), url: urlDe(previous.referencia, Number(previous.monto)) };
     const quote = quoteClassification(locked.clasificacion);
     const code = `modular-${uuidv7()}`;
     // Snapshot the price and entitlements. Existing plans and other tenants stay intact.
@@ -209,11 +224,11 @@ export async function startCheckout(db: Database, tk: string) {
     );
     const referencia = `SUB-${token(9)}`;
     await tx.query(
-      `INSERT INTO payment (id,draft_token,referencia,concepto,monto,estado) VALUES ($1,$2,$3,$4,$5,'PENDIENTE')`,
-      [uuidv7(),tk,referencia,'Plataforma a medida · primer mes (demo)',quote.total],
+      `INSERT INTO payment (id,draft_token,referencia,concepto,monto,estado,proveedor) VALUES ($1,$2,$3,$4,$5,'PENDIENTE',$6)`,
+      [uuidv7(),tk,referencia,'Omnegia · primer mes',quote.total,cuenta.proveedor],
     );
     await tx.query(`UPDATE onboarding_draft SET estado='PAGO_INICIADO', plan_codigo=$2, recomendacion=$3, actualizado_en=now() WHERE token=$1`, [tk,code,JSON.stringify({ ...locked.recomendacion, cotizacion: quote })]);
-    return { referencia, monto: quote.total, url: checkoutUrl(referencia,quote.total,'Plataforma a medida · demostración') };
+    return { referencia, monto: quote.total, url: urlDe(referencia, quote.total) };
   });
 }
 
@@ -229,84 +244,58 @@ export async function draftStatus(db: Database, tk: string) {
   const panel = c ? { tema: c.tema, logo_data_url: c.logo_data_url, modulos: c.modulos, catalogo: c.catalogo } : null;
   return {
     estado: d.estado, etapas: d.etapas, pago: pago ? { ...pago, monto: Number(pago.monto) } : null,
+    error_aprovisionamiento: d.estado === 'APROVISIONADO' ? null : d.error_aprovisionamiento ?? null,
     tenant: t, panel, email: d.negocio?.email ?? null,
     // El portador del token de borrador es quien pagó: puede fijar la contraseña una vez.
     requiere_contrasena: !!d.password_token,
   };
 }
 
-export async function setInitialPassword(db: Database, tk: string, password: string) {
-  if (!password || password.length < 10) throw invalid('La contraseña debe tener al menos 10 caracteres.');
+export async function setInitialPassword(db: Database, tk: string, password: string, ip = 'desconocida') {
+  const pw = validarContrasena(password);
   const d = await loadDraft(db, tk);
   if (d.estado !== 'APROVISIONADO' || !d.password_token) throw new AppError('CONFLICT', 'La contraseña ya fue definida. Inicia sesión.');
   await db.withPlatform(async (tx) => {
-    await tx.query(`UPDATE users SET password_hash=$2 WHERE email=$1`, [String(d.negocio.email).toLowerCase(), hashPassword(password)]);
+    const u = (await tx.query(`UPDATE users SET password_hash=$2 WHERE email=$1 RETURNING id, email, nombre, email_verificado_en`, [String(d.negocio.email).toLowerCase(), hashPassword(pw)])).rows[0];
     await tx.query(`UPDATE onboarding_draft SET password_token=NULL WHERE token=$1`, [tk]);
+    if (!u) return;
+    const t = (await tx.query(`SELECT nombre FROM tenant WHERE id=$1`, [d.tenant_id])).rows[0];
+    // Bienvenida y código para confirmar el correo con el que se registró el negocio.
+    await encolarCorreo(tx, { tenantId: null, userId: u.id, para: u.email, clave: `bienvenida:${u.id}:${d.tenant_id}`,
+      correo: plantillas.bienvenida({ nombre: u.nombre, empresa: t?.nombre ?? d.negocio.nombre ?? '', urlPanel: config.publicUrl }) });
+    if (!u.email_verificado_en) {
+      const otp = await emitirOtp(tx, { userId: u.id, proposito: 'VERIFICAR_CORREO', ip });
+      await encolarCorreo(tx, { tenantId: null, userId: u.id, para: u.email, sensible: true, caducaEn: new Date(Date.now() + otp.minutos * 60_000),
+        correo: plantillas.codigoVerificacion({ nombre: u.nombre, codigo: otp.codigo, minutos: otp.minutos }) });
+    }
   });
   return { ok: true };
 }
 
 /**
- * Webhook de la pasarela. Resiste los tres casos de PRO-SW-002 §10:
- * duplicado (clave única sobre event_id), falsificado (HMAC antes de cualquier
- * efecto) y adelantado al navegador (el aprovisionamiento no depende de la redirección).
+ * Webhook de la pasarela simulada (desarrollo y demostración). Resiste duplicados
+ * (event_id único), falsificaciones (HMAC antes de cualquier efecto) y llegadas
+ * antes que el navegador (el alta no depende de la redirección).
  */
 export async function handlePaymentWebhook(db: Database, rawBody: string, firma: string | undefined, correlacion: string) {
-  if (!verifyWebhook(rawBody, firma)) {
+  if (!config.simuladores || !verifyWebhook(rawBody, firma)) {
     await db.withPlatform((tx) => auditPlatform(tx, null, { tipo: 'ANONIMO', id: null, nombre: 'webhook' }, 'WEBHOOK', correlacion, {
       accion: 'webhook.pago.firma_invalida', resultado: 'DENEGADO', detalle: { longitud: rawBody.length },
     }));
     throw new AppError('BAD_SIGNATURE', 'Firma inválida');
   }
-  let ev: EventoPago;
-  try { ev = JSON.parse(rawBody); } catch { throw invalid('Cuerpo inválido'); }
-  if (!ev?.id || !ev?.referencia || !['pago.aprobado', 'pago.rechazado'].includes(ev.tipo)) throw invalid('Evento incompleto');
+  let crudo: unknown;
+  try { crudo = JSON.parse(rawBody); } catch { throw invalid('Cuerpo inválido'); }
+  const ev = normalizarEventoSimulado(crudo);
+  if (!ev) throw invalid('Evento incompleto');
+  return procesarEventoPago(db, ev, correlacion, 'simulada');
+}
 
-  // Pagos a comercios (enlace de cobro): conciliación en el tenant dueño del enlace.
-  if (ev.referencia.startsWith('PL-')) {
-    const tenantId = await db.withPlatform(async (tx) => {
-      const ins = await tx.query(`INSERT INTO provisioning_event (event_id, tipo, referencia, payload, resultado) VALUES ($1,$2,$3,$4,'conciliacion') ON CONFLICT DO NOTHING RETURNING event_id`, [ev.id, ev.tipo, ev.referencia, rawBody]);
-      if (!ins.rows[0]) return null;
-      return (await tx.query(`SELECT tenant_id FROM payment_link WHERE referencia=$1`, [ev.referencia])).rows[0]?.tenant_id ?? null;
-    });
-    if (!tenantId) return { duplicado: true };
-    await db.withTenant(tenantId, (tx) => reconcilePaymentLink(tx, systemCtx(tenantId, correlacion, 'Pasarela del comercio'), ev.referencia, ev.tipo === 'pago.aprobado'));
-    return { ok: true };
-  }
-
-  return db.withPlatform(async (tx) => {
-    const ins = await tx.query(
-      `INSERT INTO provisioning_event (event_id, tipo, referencia, payload, resultado) VALUES ($1,$2,$3,$4,'recibido') ON CONFLICT DO NOTHING RETURNING event_id`,
-      [ev.id, ev.tipo, ev.referencia, rawBody],
-    );
-    if (!ins.rows[0]) return { duplicado: true };
-    const pago = (await tx.query(`SELECT * FROM payment WHERE referencia=$1 FOR UPDATE`, [ev.referencia])).rows[0];
-    if (!pago) return { ignorado: 'referencia desconocida' };
-    if (Number(ev.monto) !== Number(pago.monto)) {
-      await tx.query(`UPDATE payment SET estado='RECHAZADO' WHERE id=$1`, [pago.id]);
-      return { ignorado: 'monto no coincide' };
-    }
-    if (ev.tipo === 'pago.rechazado') {
-      await tx.query(`UPDATE payment SET estado='RECHAZADO' WHERE id=$1`, [pago.id]);
-      if (pago.draft_token) await tx.query(`UPDATE onboarding_draft SET estado='BORRADOR' WHERE token=$1 AND estado='PAGO_INICIADO'`, [pago.draft_token]);
-      if (pago.tenant_id) {
-        await tx.query(`UPDATE subscription SET estado='PAGO_PENDIENTE', actualizado_en=now() WHERE tenant_id=$1 AND estado='ACTIVA'`, [pago.tenant_id]);
-      }
-      return { ok: true, estado: 'RECHAZADO' };
-    }
-    await tx.query(`UPDATE payment SET estado='APROBADO' WHERE id=$1`, [pago.id]);
-    if (pago.draft_token) {
-      const r = await provisionDraft(tx, pago.draft_token, correlacion);
-      return { ok: true, tenant_id: r.tenantId, ya_existia: r.yaExistia };
-    }
-    if (pago.tenant_id) {
-      // Renovación: vuelve a ACTIVA y extiende el periodo.
-      await tx.query(
-        `UPDATE subscription SET estado='ACTIVA', gracia_hasta=NULL, periodo_inicio=now(), periodo_fin=now() + interval '1 month', actualizado_en=now() WHERE tenant_id=$1`,
-        [pago.tenant_id],
-      );
-      await auditPlatform(tx, pago.tenant_id, { tipo: 'SISTEMA', id: null, nombre: 'Pasarela' }, 'WEBHOOK', correlacion, { accion: 'suscripcion.renovada', resultado: 'EXITO', detalle: { referencia: ev.referencia } });
-    }
-    return { ok: true };
-  });
+/** Reintento manual del alta cuando el pago está aprobado y el aprovisionamiento falló. */
+export async function retryProvisioning(db: Database, tk: string, correlacion: string) {
+  const d = await loadDraft(db, tk);
+  if (d.estado === 'APROVISIONADO') return { ok: true, ya_existia: true };
+  const r = await aprovisionarConReintento(db, tk, correlacion);
+  if (!r.tenantId) throw new AppError('CONFLICT', r.error ?? 'No pudimos crear el espacio todavía.');
+  return { ok: true };
 }

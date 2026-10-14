@@ -1,0 +1,11 @@
+:root {
+  --omnegia-primario: #6D5EF8;
+  --omnegia-secundario: #22D3EE;
+  --omnegia-acento: #F97316;
+  --omnegia-complementario: #EC4899;
+  --omnegia-neutro-oscuro: #0F172A;
+  --omnegia-neutro-claro: #F8FAFC;
+  --omnegia-degradado-marca: linear-gradient(135deg, #8B5CF6 0%, #6D5EF8 35%, #22D3EE 100%);
+  --omnegia-degradado-hoja: linear-gradient(45deg, #EC4899 0%, #F97316 100%);
+  --omnegia-fuente: "Outfit", system-ui, sans-serif;
+}
