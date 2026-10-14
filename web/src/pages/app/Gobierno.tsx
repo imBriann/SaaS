@@ -28,7 +28,7 @@ export function CentroIA() {
   const toggle = async (t: any, v: boolean) => { await run(() => api.patch(`/api/t/ia/herramientas/${t.nombre}`, { habilitada: v }), `${accionIA(t.nombre)}: ${v ? 'activada' : 'desactivada'}`); recargar(); };
   return (
     <>
-      <Cabecera titulo="Centro de IA" sub="Qué puede y qué no puede hacer la IA con los datos de tu negocio" />
+      <Cabecera titulo="Centro de IA" sub="Elige qué puede hacer tu asistente y revisa sus acciones y su consumo." />
       <div className="contenido">
         {data.modelo === 'mock' && <div className="aviso peq-txt"><Icon n="info" className="" size={16} /><span>La IA funciona con un simulador de demostración: responde con reglas fijas, no con un modelo de lenguaje.</span></div>}
         {data.modelo === 'ninguno' && <div className="bloqueado"><Icon n="alerta" className="" size={16} /><span>La IA está pendiente de conectar: las conversaciones pasan directamente a tu equipo.</span></div>}
@@ -122,7 +122,7 @@ export function Configuracion() {
   const campo = (k: string, l: string, extra: any = {}) => <Campo key={k} etiqueta={l} ayuda={extra.ayuda}><input className="input" value={empresa[k] ?? ''} onChange={(e) => setEmpresa({ ...empresa, [k]: e.target.value })} {...extra.input} /></Campo>;
   return (
     <>
-      <Cabecera titulo="Configuración" sub={data.tenant.nombre} />
+      <Cabecera titulo="Configuración" sub={`Ajusta los datos, el equipo y las conexiones de ${data.tenant.nombre}.`} />
       <div className="contenido">
         <div className="tabs tabs-config" role="tablist" aria-label="Secciones de configuración">{TABS.map(([k, v]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setParams({ tab: k })}>{v}</button>)}</div>
 
@@ -521,7 +521,7 @@ export function Simulador() {
   if (!s.simuladores) return <><Cabecera titulo="Simulador de WhatsApp" /><div className="contenido"><Vacio titulo="No disponible">El simulador solo existe en el entorno de demostración.</Vacio></div></>;
   return (
     <>
-      <Cabecera titulo="Simulador de WhatsApp" sub="Escribe como un cliente: el mensaje entra por el mismo webhook firmado que usa Meta" />
+      <Cabecera titulo="Simulador de WhatsApp" sub="Prueba cómo responde tu negocio a un cliente. Estos mensajes no se envían a WhatsApp." />
       <div className="contenido">
         {!s.tenant.whatsapp_phone_number_id && <div className="bloqueado"><Icon n="candado" className="" size={16} /><span>Vincula primero un número en <Link to="/configuracion?tab=canal">Configuración › WhatsApp</Link> (en demostración: sim-{s.tenant.slug}).</span></div>}
         <div className="aviso peq-txt"><Icon n="info" className="" size={16} />Herramienta de pruebas: lo que escribas aquí entra como si fuera de un cliente real y queda en Conversaciones y Auditoría. Las respuestas no salen a WhatsApp.</div>

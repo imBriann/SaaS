@@ -51,6 +51,7 @@ try {
     await page.evaluate(() => document.fonts.ready);
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     await page.screenshot({ path: `${outputDir}/${name}.png`, fullPage: true, animations: 'disabled' });
+    await page.screenshot({ path: `${outputDir}/${name}-viewport.png`, animations: 'disabled' });
     report.captures.push(name);
   };
   const check = (condition, text) => { assert(condition, text); report.assertions.push(text); };
@@ -59,11 +60,11 @@ try {
     report.viewports.push({ route, ...result });
     check(result.scroll <= result.width + 1, `Sin desbordamiento: ${route} a ${result.width}px`);
   };
-  for (const width of [1440, 768, 390]) {
+  for (const width of [1440, 768, 390, 320]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
     await page.goto('http://localhost:5174/bienvenida');
     await page.getByRole('heading', { name: /Tu negocio,/ }).waitFor();
-    await capture(width === 1440 ? 'desktop' : width === 390 ? 'mobile' : 'tablet');
+    await capture(width === 1440 ? 'desktop' : width === 390 ? 'mobile' : `viewport-${width}`);
     await overflow('/bienvenida');
     if (width === 1440) {
       await page.getByRole('button', { name: 'Operación' }).click();
@@ -79,7 +80,7 @@ try {
       check(await page.getByRole('button', { name: 'Abrir menú' }).evaluate(el => el === document.activeElement), 'Escape devuelve el foco al menú');
     }
   }
-  for (const width of [1440, 390]) {
+  for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
     for (const route of ['producto', 'planes', 'nosotros', 'ayuda', 'empezar', 'entrar']) {
       await page.goto(`http://localhost:5174/${route}`);
@@ -157,14 +158,14 @@ try {
   await page.getByLabel('Contraseña', { exact: true }).fill('demo-parche-2026');
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
   await page.getByRole('heading', { name: /Hola,/ }).waitFor();
-  for (const width of [1440, 768, 390]) {
+  for (const width of [1440, 768, 390, 320]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
-    for (const route of ['', 'conversaciones', 'agenda', 'ventas', 'clientes', 'inventario', 'configuracion', 'soporte']) {
+    for (const route of ['', 'conversaciones', 'agenda', 'ventas', 'clientes', 'inventario', 'facturacion', 'ia', 'suscripcion', 'auditoria', 'simulador', 'configuracion', 'soporte']) {
       await page.goto(`http://localhost:5174/${route}`);
       await page.locator('.app').waitFor();
       await page.locator('.pagina h1').waitFor();
       await overflow(`/${route || 'panel'}`);
-      if (['', 'soporte', 'ventas'].includes(route) && width !== 768) await capture(`${route || 'panel'}-${width}`);
+      if (width !== 768) await capture(`${route || 'panel'}-${width}`);
     }
   }
   await page.getByRole('button', { name: 'Nueva solicitud' }).click();
@@ -177,6 +178,16 @@ try {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('http://localhost:5174/bienvenida');
+  await page.locator('.system-piece').first().waitFor();
+  check(await page.locator('.system-piece').first().evaluate(el => getComputedStyle(el).animationIterationCount === 'infinite'), 'Escena: movimiento continuo en bucle');
+  await page.getByRole('button', { name: 'Pausar movimiento' }).click();
+  check(await page.locator('.system-piece').first().evaluate(el => getComputedStyle(el).animationPlayState === 'paused'), 'Escena: pausa el movimiento');
+  await page.getByRole('button', { name: 'Reanudar movimiento' }).click();
+  check(await page.locator('.system-piece').first().evaluate(el => getComputedStyle(el).animationPlayState === 'running'), 'Escena: reanuda el movimiento');
+  await page.setViewportSize({ width: 390, height: 844 });
+  check(await page.locator('.system-piece').first().evaluate(el => getComputedStyle(el).animationIterationCount === 'infinite'), 'Escena: bucle también en móvil');
+  await capture('scene-mobile-motion');
+  await page.setViewportSize({ width: 1440, height: 1000 });
   check(await page.getByRole('link', { name: 'Crear mi espacio' }).last().isVisible(), 'CTA visible mientras se anima la escena');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   check(await page.locator('.system-piece').first().evaluate(el => getComputedStyle(el).animationName === 'none'), 'Movimiento reducido desactiva el ensamblaje');

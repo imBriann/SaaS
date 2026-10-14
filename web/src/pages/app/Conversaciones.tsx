@@ -21,7 +21,7 @@ export function Conversaciones() {
   const buscador = <label className="buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Nombre, teléfono o radicado" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar conversaciones" /></label>;
   return (
     <>
-      {!id && <Cabecera titulo="Conversaciones" sub="Un solo hilo por cliente: la IA, tu equipo y el sistema">{buscador}</Cabecera>}
+      {!id && <Cabecera titulo="Conversaciones" sub="Lee los mensajes de tus clientes y responde desde aquí.">{buscador}</Cabecera>}
       <div className="contenido">
         {error && <ErrorCarga error={error} reintentar={recargar} />}
         {!id ? (

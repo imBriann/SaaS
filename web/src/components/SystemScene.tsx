@@ -21,7 +21,8 @@ const VISTAS = [
 export function SystemScene() {
   const [vista, setVista] = useState(0);
   const [plana, setPlana] = useState(false);
-  return <figure className={`system-scene ${plana ? 'is-flat' : ''}`}>
+  const [pausada, setPausada] = useState(false);
+  return <figure className={`system-scene ${plana ? 'is-flat' : ''} ${pausada ? 'is-paused' : ''}`}>
     <div className="system-stage" aria-hidden="true">
       <div className="system-orbit"><span /><span /><span /></div>
       <div className="system-platform">
@@ -37,7 +38,7 @@ export function SystemScene() {
         {VISTAS.map((v, i) => <button key={v.nombre} type="button" aria-pressed={vista === i} onClick={() => setVista(i)}>{v.nombre}<Icon n="flecha" size={14} className="scene-arrow" /></button>)}
       </div>
       <div className="system-description" aria-live="polite"><strong>{VISTAS[vista].titulo}</strong><p>{VISTAS[vista].texto}</p></div>
-      <div className="system-foot"><span>Representación de los módulos</span><button type="button" aria-pressed={plana} onClick={() => setPlana(!plana)}>{plana ? 'Vista con profundidad' : 'Vista simple'}</button></div>
+      <div className="system-foot"><button type="button" aria-pressed={pausada} onClick={() => setPausada(!pausada)}>{pausada ? 'Reanudar movimiento' : 'Pausar movimiento'}</button><button type="button" aria-pressed={plana} onClick={() => setPlana(!plana)}>{plana ? 'Vista con profundidad' : 'Vista simple'}</button></div>
     </figcaption>
   </figure>;
 }

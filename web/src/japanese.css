@@ -1,0 +1,145 @@
+/* Ma: espacio entre tareas. Una misma retícula para público y operación. */
+:root {
+  --lienzo: #f6f5f1;
+  --superficie-2: #f2f1ed;
+  --superficie-3: #e9e8e2;
+  --borde: #ddded7;
+  --borde-2: #b9beb7;
+  --tinta: #242e31;
+  --tinta-2: #465451;
+  --tinta-3: #5b6865;
+  --tinta-4: #64716e;
+}
+body { background: var(--lienzo); }
+button, a, input, select, textarea { touch-action: manipulation; }
+.publico, .publico.marketing { background: #faf9f6; }
+.publico :is(.om-section, .public-intro, .feature-builder) { min-width: 0; }
+.public-intro { border-bottom: 1px solid var(--borde); }
+.public-intro h1 { letter-spacing: -.035em; }
+.om-modules { background: #efeee8; }
+.module-story { border-radius: 3px; border: 1px solid var(--borde); }
+.module-story-copy { padding: 30px; }
+.om-section h2, .public-intro h1 { text-wrap: balance; }
+.publico :is(.help-human, .pricing-disclosure, .auth-story, .onboarding-intro) { border-radius: 4px; }
+.product-row { padding-block: 36px; }
+.help-faq details { padding-block: 6px; }
+.help-faq summary { min-height: 54px; }
+.institutional article { border-top: 1px solid var(--borde); padding-top: 24px; }
+.app .pagina { max-width: 1400px; padding: 40px 40px 72px; }
+.app .lateral { background: #eeeee7; border-color: #d7d9d0; }
+.app .nav-titulo { font-size: 12px; letter-spacing: 0; text-transform: none; color: #59675f; }
+.app .nav-item { min-height: 46px; font-size: 14px; border-radius: 3px; color: #46544e; }
+.app .nav-item.activo { background: color-mix(in srgb, var(--acento) 9%, #eeeee7); }
+.app .cabecera { align-items: center; padding-bottom: 28px; margin-bottom: 28px; }
+.app .cabecera h1 { font-size: clamp(28px, 3vw, 38px); font-weight: 450; }
+.app .cabecera .sub { line-height: 1.65; max-width: 68ch; }
+.app .tarjeta, .app .kpis, .app .contenedor { border-radius: 4px; box-shadow: none; }
+.app .tarjeta > .cab { padding-block: 20px; }
+.app .titulo-tarjeta { font-size: 17px; }
+.app .contenido { gap: 24px; }
+.app .tabla th { background: #efefe9; color: #4e5c54; font-size: 13px; padding-block: 14px; }
+.app .tabla td { padding-block: 18px; }
+.app .tabla tbody tr:hover { background: #f6f7f2; }
+.app .cuerpo { padding: 22px; }
+.app .btn, .app .input { border-radius: 5px; min-height: 44px; }
+.app .tabs { gap: 8px; }
+.app :is(.agenda-item, .conv-fila, .agente-fila) { padding-block: 18px; }
+.app :is(.panel-hilo, .support-guide) { border-radius: 4px; }
+.app .support-guide { background: #edf0e8; border-color: #d5dccb; }
+.app .barra-movil, .app .tabbar { background: #fafaf6; }
+.app .tabbar { padding-bottom: env(safe-area-inset-bottom); }
+.app :is(.grid, .fila, .col, .acciones, .cabecera, .sub) > * { min-width: 0; }
+.app :is(.sub, .msg-texto, .detalle-celda, .contexto-txt, .hilo-soporte) { overflow-wrap: anywhere; }
+.app .tabla-wrap { max-width: 100%; overscroll-behavior-x: contain; }
+.app .input { max-width: 100%; }
+.system-scene .system-piece { --lift: 12px; animation: module-breathe 7s ease-in-out infinite; animation-delay: calc(var(--i) * -1.1s); }
+.system-piece.is-lit { --lift: 42px; }
+@keyframes module-breathe {
+  0%, 100% { transform: translateZ(var(--lift)); }
+  50% { transform: translateZ(calc(var(--lift) + 16px)); }
+}
+.system-scene.is-paused .system-piece { animation-play-state: paused; }
+.system-scene.is-flat .system-piece { animation: none; }
+.system-foot { align-items: center; flex-wrap: wrap; font-size: 13px; gap: 8px 20px; }
+.system-foot button { min-height: 44px; display: inline-block; }
+.system-description p { font-size: 15px; }
+@media (max-width: 1000px) {
+  .app .pagina { padding: 28px 24px 100px; }
+  .app .barra-movil { height: 64px; }
+  .app .panel-hilo { height: calc(100dvh - 180px); min-height: 380px; }
+}
+@media (max-width: 760px) {
+  .om-hero-inner { grid-template-columns: minmax(0, 1fr); margin-inline: 24px; gap: 8px; }
+  .om-hero-copy { padding-bottom: 0; }
+  .om-hero-copy h1 { font-size: clamp(42px, 10.7vw, 64px); max-width: 12ch; }
+  .om-hero-copy > p { max-width: 42ch; margin-block: 20px; }
+  .system-scene { width: 100%; }
+  .system-stage { height: 320px; margin-top: 0; perspective: 900px; overflow: hidden; }
+  .system-platform, .is-flat .system-platform { display: block; position: absolute; width: 408px; height: 408px; left: 50%; top: 50%; transform: translate(-50%, -50%) rotateX(48deg) rotateZ(-34deg) scale(.57); }
+  .system-piece, .system-piece.is-lit, .is-flat .system-piece { position: absolute; left: calc(var(--x) * 144px); top: calc(var(--y) * 144px); width: 120px; height: 120px; }
+  .system-piece::before, .system-piece::after, .piece-edge, .system-foundation { display: block; }
+  .system-core { display: flex; }
+  .piece-face { padding: 18px 12px; }
+  .piece-face > span { font-size: 17px; }
+  .piece-face > svg { width: 30px; height: 30px; }
+  .system-caption { margin: 0; }
+  .system-controls button { font-size: 15px; min-height: 48px; }
+  .system-controls .scene-arrow { margin-right: 4px; }
+  .system-description { min-height: 120px; padding-top: 20px; }
+  .system-description strong { font-size: 19px; }
+  .system-description p { font-size: 15px; line-height: 1.65; }
+  .is-flat .system-platform { transform: translate(-50%, -50%) scale(.64); }
+  .is-flat .system-piece::before, .is-flat .system-piece::after, .is-flat .piece-edge { display: none; }
+  .hero-assurance { font-size: 13px; }
+  .app .pagina { padding: 24px 16px calc(100px + env(safe-area-inset-bottom)); }
+  .app .cabecera { gap: 18px; padding-bottom: 22px; margin-bottom: 22px; }
+  .app .cabecera > div:first-child { width: 100%; }
+  .app .cabecera .acciones { gap: 10px; }
+  .app .cabecera .acciones > .btn { flex: 1 1 auto; }
+  .app .cabecera .sub { font-size: 15px; }
+  .app .cuerpo { padding: 18px 16px; }
+  .app .contenido { gap: 20px; }
+  .app :is(.btn, .input) { min-height: 48px; }
+  .input, select, textarea { font-size: 16px; }
+  .app .tabla-movil tr { padding: 20px 16px; }
+  .app .tabla-movil td { grid-template-columns: minmax(80px, .7fr) minmax(0, 1.3fr); gap: 12px; padding-block: 6px !important; overflow-wrap: anywhere; }
+  .app .tabla-movil td::before { font-size: 13px; }
+  .app .tabla-movil td.principal { font-size: 17px; margin-bottom: 6px; }
+  .app .tabs { max-width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+  .app .tabs > * { flex-shrink: 0; min-height: 44px; }
+  .app .linea-venta { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .app .linea-venta > :first-child { grid-column: 1 / -1; }
+  .app .agente-fila { flex-wrap: wrap; gap: 16px; }
+  .app .tab { min-height: 60px; font-size: 12px; }
+  .app .support-guide { padding: 22px 18px; }
+  .app .support-guide p { font-size: 15px; }
+  .module-story { display: flex; }
+  .module-art { height: 170px; min-height: 170px; }
+  .module-story-copy { padding: 24px; }
+  .module-story h3 { font-size: 26px; max-width: none; }
+  .module-story p { font-size: 16px; padding-bottom: 20px; }
+  .module-story-copy > span { font-size: 13px; }
+  .art-message { left: 20px; top: 28px; font-size: 16px; }
+  .art-message.second { right: 20px; top: 96px; font-size: 15px; }
+  .art-calendar, .art-order { width: 175px; }
+  .section-heading, .om-trust, .support-inner, .help-content, .about-purpose, .plan-conditions { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .public-intro { grid-template-columns: minmax(0, 1fr); padding: 40px 24px; }
+  .public-intro h1 { font-size: clamp(36px, 9vw, 48px); }
+  .om-section h2 { font-size: 30px; }
+  .om-closing h2 { font-size: 38px; }
+  .site-menu { width: 44px; height: 44px; }
+  .site-footer p, .footer-bottom, .footer-bottom a { font-size: 13px; }
+  .onboarding .onboarding-layout > form.tarjeta { padding: 20px !important; }
+}
+@media (max-width: 360px) {
+  .om-hero-inner, .hero-baseline, .om-section, .marketing .feature-builder { margin-inline: 18px; }
+  .system-platform { transform: translate(-50%, -50%) rotateX(48deg) rotateZ(-34deg) scale(.49); }
+  .system-stage { height: 285px; }
+  .site-header { gap: 10px; padding-inline: 16px; }
+  .site-brand img { width: 108px; }
+  .site-actions { gap: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .system-scene .system-piece { animation: none; }
+  .system-foot button:first-child { display: none; }
+}

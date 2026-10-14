@@ -18,7 +18,7 @@ export function Clientes() {
   const { data, error, recargar } = useApi<any>(() => api.get(`/api/t/clientes?pagina=${pagina}&por_pagina=50${qr ? `&q=${encodeURIComponent(qr)}` : ''}`), [qr, pagina]);
   return (
     <>
-      <Cabecera titulo="Clientes" sub="Contactos, historial y autorización de datos personales">
+      <Cabecera titulo="Clientes" sub="Encuentra sus datos, consulta su historial o añade un contacto.">
         <label className="buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Nombre, teléfono, correo o documento" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar clientes" /></label>
         <button className="btn" onClick={() => run(() => descargar('/api/t/clientes.csv', 'clientes.csv'), 'Exportación lista')}>Exportar</button>
         <Escritura permiso="customer:write"><button className="btn primario" onClick={() => setNuevo(true)}><Icon n="mas" className="" size={16} />Nuevo cliente</button></Escritura>
@@ -146,7 +146,7 @@ export function Ventas() {
   const { data, error, recargar } = useApi<any>(() => api.get(`/api/t/ventas?pagina=${pagina}&por_pagina=50&${consulta}${qr ? `&q=${encodeURIComponent(qr)}` : ''}`), [consulta, qr, pagina]);
   return (
     <>
-      <Cabecera titulo="Ventas" sub="Cada venta con su cobro y su factura">
+      <Cabecera titulo="Ventas" sub="Registra lo que vendes y revisa qué está pagado y qué falta por cobrar.">
         <label className="buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Número, cliente o factura" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar ventas" /></label>
         <button className="btn" onClick={() => run(() => descargar(`/api/t/ventas.csv`, `ventas-${hoyLocal()}.csv`), 'Exportación lista')}>Exportar</button>
         <Escritura permiso="order:create" modulo="ventas"><button className="btn primario" onClick={() => setNueva(true)}><Icon n="mas" className="" size={16} />Registrar venta</button></Escritura>
@@ -355,7 +355,7 @@ export function Inventario() {
   };
   return (
     <>
-      <Cabecera titulo="Catálogo e inventario" sub="Precios con IVA incluido">
+      <Cabecera titulo="Catálogo e inventario" sub="Organiza tus productos y servicios. Revisa precios y existencias. Los precios incluyen IVA.">
         <label className="buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Buscar producto o categoría" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar en el catálogo" /></label>
         <Escritura permiso="catalog:write"><button className="btn" onClick={() => setImportar(true)}><Icon n="subir" className="" size={16} />Importar</button></Escritura>
         <Escritura permiso="catalog:write"><button className="btn primario" onClick={() => setEditar({ tipo: 'PRODUCTO', nombre: '', precio: '', iva_pct: 19, controla_stock: true, stock: 0, stock_minimo: 0, activo: true })}><Icon n="mas" className="" size={16} />Nuevo ítem</button></Escritura>

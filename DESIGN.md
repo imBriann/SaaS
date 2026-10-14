@@ -122,6 +122,16 @@ components:
 
 # Design System: Omnegia
 
+## Adaptación japonesa y móvil
+
+`web/src/japanese.css`, cargado después de `omnegia.css`, define la adaptación transversal vigente: fondo papel `#f6f5f1`, tinta `#242e31`, superficies neutras cálidas, bordes finos y radios de 3–5 px. Se conservan Outfit, los archivos de marca y el acento de cada empresa. Esta capa se aplica a todas las páginas públicas y a los paneles de empresa y operador mediante sus componentes compartidos.
+
+En móvil las tarjetas de producto se apilan con ilustración superior, las tablas etiquetadas se leen como registros y los controles principales tienen un mínimo de 48 px. La navegación inferior respeta el área segura. Las comprobaciones de anchura incluyen 320, 390, 768 y 1440 px.
+
+La escena de módulos mantiene el relieve en móvil. Sus piezas recorren un bucle suave de siete segundos con desfase; el usuario puede pausarlo o elegir una vista plana. La preferencia de movimiento reducido desactiva el bucle. El contenido no cambia automáticamente ni se anuncian ciclos a lectores de pantalla.
+
+Las medidas y colores del registro anterior que contradigan esta sección quedan sustituidos por esta adaptación.
+
 ## Overview
 
 **Creative North Star: "Planos, espacio y luz"**

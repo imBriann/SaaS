@@ -29,7 +29,7 @@ export function Soporte() {
       <Cabecera titulo="Soporte" sub={`Escribe al equipo de ${MARCA.nombre}. Te respondemos aquí y por correo.`}>
         <button className="btn primario" onClick={() => setNuevo(true)}><Icon n="mas" className="" size={16} />Nueva solicitud</button>
       </Cabecera>
-      <section className="support-guide"><div><h2>Una persona, con el contexto que compartas.</h2><p>Describe qué intentabas hacer y qué ocurrió. Recibirás un radicado; el estado y las respuestas aparecen aquí. Tu conversación con la IA no se adjunta automáticamente.</p></div><Link to="/ayuda" className="btn">Ver guías de ayuda <Icon n="flecha" size={16} className="" /></Link></section>
+      <section className="support-guide"><div><h2>Cuéntanos en qué necesitas ayuda.</h2><p>Abre una solicitud y explica qué ocurrió. Aquí podrás seguir su estado y leer nuestras respuestas. Si hablaste con el asistente, incluye los detalles que quieras compartir.</p></div><Link to="/ayuda" className="btn">Ver guías de ayuda <Icon n="flecha" size={16} className="" /></Link></section>
       {error ? <ErrorCarga error={error} reintentar={recargar} /> : cargando && !data ? <Cargando /> : (
         <Tarjeta sinCuerpo>
           {!data.tickets.length ? <div className="cuerpo"><Vacio titulo="Aún no tienes solicitudes">Cuando abras una, verás aquí su estado y las respuestas del equipo.</Vacio></div> : (
