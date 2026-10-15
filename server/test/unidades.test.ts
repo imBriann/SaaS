@@ -86,7 +86,7 @@ describe('Validación de configuración', () => {
     expect(errores.join('\n')).toMatch(/PAGOS_PROVEEDOR=simulada/);
   });
   it('Wompi en producción exige llaves de producción completas', () => {
-    const c = { ...config, pagos: { ...config.pagos, proveedor: 'wompi' as const, wompi: { entorno: 'produccion' as const, llavePublica: 'pub_test_abc', secretoIntegridad: 'x', secretoEventos: undefined } } };
+    const c = { ...config, pagos: { ...config.pagos, proveedor: 'wompi' as const, wompi: { entorno: 'produccion' as const, llavePublica: 'pub_test_abc', llavePrivada: undefined, secretoIntegridad: 'x', secretoEventos: undefined } } };
     const e = validarConfiguracion(c).errores.join('\n');
     expect(e).toMatch(/WOMPI_SECRETO_EVENTOS/);
     expect(e).toMatch(/pub_prod_/);

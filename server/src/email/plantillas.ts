@@ -238,10 +238,72 @@ export const suscripcion = (o: { empresa: string; estado: string; graciaHasta?: 
   });
 };
 
-export const pagoRecibido = (o: { empresa: string; monto: string; referencia: string; periodoFin: string; url: string }) => render({
+export const pagoRecibido = (o: { empresa: string; monto: string; referencia: string; periodoFin: string; url: string; modalidad?: 'COMERCIAL' | 'INSTITUCIONAL'; documentos?: DocumentosCorreo | null }) => render({
   tipo: 'pago_recibido', asunto: `Recibimos tu pago — ${o.empresa}`, previa: 'Confirmación de pago de tu suscripción.',
-  titulo: 'Pago recibido', parrafos: ['Gracias. Registramos el pago de tu suscripción.'],
-  detalles: [['Empresa', o.empresa], ['Valor', o.monto], ['Referencia', o.referencia], ['Activa hasta', o.periodoFin]],
+  titulo: 'Pago recibido', parrafos: ['Gracias. Registramos el pago de tu suscripción.', ...(o.modalidad === 'INSTITUCIONAL' ? ['Es un pago único de la modalidad institucional: no hay cobros automáticos.'] : []), ...parrafosDocumentos(o.documentos)],
+  detalles: [['Empresa', o.empresa], ...(o.modalidad ? [['Modalidad', o.modalidad === 'INSTITUCIONAL' ? 'Institucional' : 'Comercial'] as [string, string]] : []), ['Valor', o.monto], ['Referencia', o.referencia], ['Activa hasta', o.periodoFin]],
+  boton: { texto: 'Ver la suscripción', url: o.url },
+});
+
+/** Información de los documentos del pago para el correo. Nunca incluye la contraseña. */
+export interface DocumentosCorreo { numero: string; adjunto: boolean; disponible: boolean; estadoFiscal: string; urlPanel: string }
+
+const parrafosDocumentos = (d: DocumentosCorreo | null | undefined): string[] => {
+  if (!d) return [];
+  return [
+    d.adjunto
+      ? `Adjuntamos un archivo .zip con tus documentos (${d.numero}). El .zip se abre sin contraseña; cada documento que contiene está protegido de forma individual.`
+      : d.disponible
+        ? `Tus documentos (${d.numero}) están disponibles para descargar desde tu panel, en Suscripción.`
+        : 'Tus documentos se están preparando; podrás descargarlos desde tu panel, en Suscripción.',
+    'Para abrir cada documento usa tu número de documento registrado para la facturación, solo con números y letras: sin puntos, espacios ni guiones (si es un NIT, sin el dígito de verificación). Por seguridad no lo escribimos en este correo.',
+    `Estado fiscal: ${d.estadoFiscal}. El comprobante acredita el pago; solo una factura electrónica validada por la DIAN tiene validez fiscal.`,
+  ];
+};
+
+/** Confirmación del alta pagada: monto real, modalidad, vigencia, acceso al subdominio y documentos. */
+export const altaConfirmada = (o: { empresa: string; modalidad: 'COMERCIAL' | 'INSTITUCIONAL'; monto: string; referencia: string; vigenteHasta: string; urlEmpresa: string; documentos?: DocumentosCorreo | null }) => render({
+  tipo: 'alta_confirmada', asunto: `Tu espacio en Omnegia está listo — ${o.empresa}`, previa: 'Confirmamos tu pago y creamos tu espacio de trabajo.',
+  titulo: 'Pago confirmado y espacio creado',
+  parrafos: [
+    `Wompi confirmó tu pago de ${o.monto} COP y creamos el espacio de ${o.empresa}.`,
+    o.modalidad === 'INSTITUCIONAL'
+      ? 'Contrataste la modalidad institucional: fue un pago único. No guardamos datos de tu tarjeta ni hacemos cobros automáticos; antes del vencimiento te contaremos cómo continuar.'
+      : 'Tu plan es mensual. Te avisaremos antes de cada vencimiento.',
+    ...parrafosDocumentos(o.documentos),
+    'Si es tu primera vez, define tu contraseña de acceso desde la página de tu alta para entrar.',
+  ],
+  detalles: [['Empresa', o.empresa], ['Modalidad', o.modalidad === 'INSTITUCIONAL' ? 'Institucional' : 'Comercial'], ['Valor pagado', `${o.monto} COP`], ['Referencia', o.referencia], ['Acceso hasta', o.vigenteHasta], ['Dirección', o.urlEmpresa], ...(o.documentos ? [['Comprobante', o.documentos.numero] as [string, string]] : [])],
+  boton: { texto: 'Abrir mi espacio', url: o.urlEmpresa },
+});
+
+/** Factura electrónica validada por la DIAN (solo cuando existe una de verdad). */
+export const facturaDisponible = (o: { empresa: string; numero: string; referencia: string; adjunto: boolean; url: string }) => render({
+  tipo: 'factura_electronica', asunto: `Tu factura electrónica ${o.numero} — ${o.empresa}`, previa: 'La DIAN validó la factura electrónica de tu pago.',
+  titulo: 'Factura electrónica disponible',
+  parrafos: [
+    `La DIAN validó la factura electrónica ${o.numero} correspondiente a tu pago ${o.referencia}.`,
+    o.adjunto ? 'Adjuntamos un .zip (se abre sin contraseña) con su representación en PDF y el XML cifrado; las instrucciones están en el archivo LEEME.txt.' : 'Puedes descargarla desde tu panel, en Suscripción.',
+    'Para abrir cada documento usa tu número de documento registrado para la facturación, sin puntos, espacios ni guiones (si es un NIT, sin el dígito de verificación).',
+  ],
+  detalles: [['Empresa', o.empresa], ['Factura', o.numero], ['Referencia de pago', o.referencia]],
+  boton: { texto: 'Ver mis documentos', url: o.url },
+});
+
+/** Aviso previo al vencimiento de un acceso institucional: condiciones de continuidad, sin cobros automáticos. */
+export const vencimientoInstitucional = (o: { empresa: string; venceEl: string; renovacion: { modalidad: 'COMERCIAL' | 'INSTITUCIONAL'; monto: string; dias: number | null; disponible: boolean }; url: string }) => render({
+  tipo: 'vencimiento_institucional', asunto: `Tu acceso institucional vence el ${o.venceEl} — ${o.empresa}`, previa: 'Condiciones para continuar. No hacemos cobros automáticos.',
+  titulo: 'Tu acceso institucional está por vencer',
+  parrafos: [
+    `El acceso institucional de ${o.empresa} vence el ${o.venceEl}. No haremos ningún cobro automático.`,
+    !o.renovacion.disponible
+      ? 'Por ahora no hay una modalidad de pago en línea disponible para continuar. Escríbenos y te ayudamos.'
+      : o.renovacion.modalidad === 'INSTITUCIONAL'
+        ? `Si quieres continuar, puedes renovar ${o.renovacion.dias} días más por ${o.renovacion.monto} (precio institucional vigente) desde la sección Suscripción de tu panel.`
+        : `La modalidad institucional terminó. Si quieres continuar, puedes aceptar el plan comercial de ${o.renovacion.monto} al mes desde la sección Suscripción. Nada se cobra sin tu aceptación expresa.`,
+    'Si no renuevas, tu información se conserva: la cuenta pasa a solo lectura y exportación tras el periodo de gracia.',
+  ],
+  detalles: [['Empresa', o.empresa], ['Vence', o.venceEl]],
   boton: { texto: 'Ver la suscripción', url: o.url },
 });
 

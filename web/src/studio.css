@@ -172,6 +172,20 @@
 .quote-lines small { display: block; font-size: 12px; color: var(--tinta-3); }
 .quote-lines b { white-space: nowrap; font-weight: 500; font-variant-numeric: tabular-nums; }
 .quote-note { font-size: 13px; line-height: 1.55; color: var(--tinta-3); margin-top: 12px; }
+/* Modalidad institucional: el precio real va primero; el comercial queda como referencia. */
+.quote-inst { margin: 12px 0 14px; padding: 14px 16px; border-radius: var(--r); background: var(--acento-tinte); border: 1px solid var(--acento-tinte-2); }
+.quote-inst .quote-total { margin-top: 6px; }
+.quote-inst-chip { display: inline-flex; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: var(--r-sm); background: var(--superficie); color: var(--acento-texto); }
+.quote-inst-txt { font-size: 13.5px; line-height: 1.5; color: var(--tinta-2); margin-top: 6px; }
+.quote-total.referencia { font-size: 20px; font-weight: 600; color: var(--tinta-2); }
+/* Resumen previo al pago real */
+.resumen-pago { display: grid; gap: 0; margin: 0; border: 1px solid var(--borde); border-radius: var(--r-lg); background: var(--superficie); }
+.resumen-pago > div { display: flex; justify-content: space-between; gap: 12px; padding: 11px 16px; border-top: 1px solid var(--borde); font-size: 14px; }
+.resumen-pago > div:first-child { border-top: 0; }
+.resumen-pago dt { color: var(--tinta-3); }
+.resumen-pago dd { margin: 0; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.acepto-cobro { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.5; color: var(--tinta-2); cursor: pointer; }
+.acepto-cobro input { margin-top: 3px; flex: none; width: 16px; height: 16px; accent-color: var(--acento); }
 
 .closing-cta { margin-top: 72px; padding: 48px 32px; border-radius: 16px; background: var(--lienzo); border: 1px solid var(--borde); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .closing-cta h2 { font-size: clamp(24px, 2.6vw, 32px); line-height: 1.2; letter-spacing: -0.025em; font-weight: 700; max-width: 22ch; text-wrap: balance; }
@@ -371,3 +385,48 @@
   .marca-logo img { height: 28px; }
   .creacion { padding: 14px; }
 }
+
+/* ===================================================================== Recibo que «imprime» Omnegia
+   El papel sale de la ranura según el estado real del servidor. Solo transform y opacity;
+   sin movimiento con prefers-reduced-motion. Nunca bloquea botones. */
+.impresion { display: grid; justify-items: center; gap: 0; padding: 18px 16px 16px; border: 1px solid var(--borde); border-radius: var(--r-lg); background: var(--superficie-2); }
+.impresion-impresora { position: relative; z-index: 2; width: min(280px, 100%); height: 26px; border-radius: 10px 10px 6px 6px; background: var(--tinta); box-shadow: 0 6px 14px -8px rgba(0, 0, 0, 0.5); }
+.impresion-ranura { position: absolute; left: 14px; right: 14px; bottom: 6px; height: 3px; border-radius: 2px; background: #000; opacity: 0.85; }
+.impresion-luz { position: absolute; right: 12px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--atencion); }
+.impresion-listo .impresion-luz { background: color-mix(in srgb, var(--ok) 55%, #fff); }
+.impresion-validando .impresion-luz, .impresion-generando .impresion-luz { animation: impresion-luz 1.1s ease-in-out infinite; }
+.impresion-salida { position: relative; z-index: 1; width: min(250px, calc(100% - 30px)); height: 230px; margin-top: -4px; overflow: hidden; }
+.impresion-papel { position: relative; padding: 16px 16px 22px; background: var(--superficie); box-shadow: 0 10px 24px -14px rgba(20, 20, 30, 0.35); transform: translateY(-12px); clip-path: inset(0 0 100% 0); transition: transform 1200ms var(--ease-out), clip-path 1200ms var(--ease-out); will-change: transform, clip-path; font-size: 12.5px; color: var(--tinta-2); }
+.impresion-validando .impresion-papel { clip-path: inset(0 0 88% 0); }
+.impresion-generando .impresion-papel { animation: impresion-imprimir 2.6s steps(8, end) forwards; }
+.impresion-listo .impresion-papel { transform: none; clip-path: inset(0 0 -12px 0); }
+.impresion-pendiente .impresion-papel { transform: none; clip-path: inset(0 0 30% 0); }
+.impresion-cab { display: flex; align-items: center; gap: 6px; padding-bottom: 10px; margin-bottom: 8px; border-bottom: 1px dashed var(--borde); color: var(--tinta); }
+.impresion-cab .mono { margin-left: auto; font-size: 11px; color: var(--tinta-3); }
+.impresion-linea { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; opacity: 0; transform: translateY(4px); transition: opacity 300ms ease, transform 300ms var(--ease-out); transition-delay: calc(500ms + var(--i) * 140ms); }
+.impresion-linea span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.impresion-linea.total { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--borde); color: var(--tinta); }
+.impresion-linea.total b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.impresion-listo .impresion-linea, .impresion-pendiente .impresion-linea, .impresion-generando .impresion-linea { opacity: 1; transform: none; }
+.impresion-sello { margin-top: 12px; padding: 5px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1.5px solid currentColor; border-radius: 6px; text-align: center; font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--atencion); opacity: 0; transform: rotate(-3deg) scale(1.15); transition: opacity 260ms ease, transform 360ms var(--ease-out); transition-delay: 1150ms; }
+.impresion-listo .impresion-sello { opacity: 1; transform: rotate(-3deg) scale(1); }
+/* Borde de corte dentado al pie del papel */
+.impresion-corte { position: absolute; left: 0; right: 0; bottom: -7px; height: 8px; background: linear-gradient(-45deg, transparent 5px, var(--superficie) 0) 0 0 / 10px 8px repeat-x, linear-gradient(45deg, transparent 5px, var(--superficie) 0) 0 0 / 10px 8px repeat-x; }
+.impresion-estado { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 14px; text-align: center; max-width: 340px; }
+@keyframes impresion-imprimir { from { transform: translateY(-12px); clip-path: inset(0 0 100% 0); } to { transform: translateY(-4px); clip-path: inset(0 0 42% 0); } }
+@keyframes impresion-luz { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) {
+  .impresion-papel, .impresion-linea, .impresion-sello { transition: none; animation: none !important; }
+  .impresion-generando .impresion-papel { transform: none; clip-path: inset(0 0 42% 0); }
+  .impresion-luz { animation: none !important; }
+  .impresion-linea { opacity: 1; transform: none; }
+}
+
+/* Datos de facturación y nota fiscal en la propuesta */
+.form-fila { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: start; }
+.form-fila:has(.campo-dv) { grid-template-columns: minmax(150px, 1fr) minmax(150px, 1.4fr) 72px; }
+.campo-dv { width: 100%; text-align: center; }
+.resumen-pago.sin-borde { border: 0; border-radius: 0 0 var(--r-tarjeta) var(--r-tarjeta); background: transparent; }
+.nota-fiscal { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 10px 14px; border-radius: var(--r); background: var(--superficie-2); color: var(--tinta-2); line-height: 1.5; }
+.nota-fiscal svg { flex: none; margin-top: 2px; }
+@media (max-width: 520px) { .form-fila:has(.campo-dv) { grid-template-columns: 1fr 72px; } .form-fila:has(.campo-dv) > :first-child { grid-column: 1 / -1; } }

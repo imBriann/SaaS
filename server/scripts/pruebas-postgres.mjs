@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const ARCHIVOS = process.env.ARCHIVOS ? process.env.ARCHIVOS.split(',') : ['test/isolation.test.ts', 'test/acceso.test.ts', 'test/postgres.test.ts', 'test/negocio.test.ts', 'test/canal.test.ts', 'test/correo.test.ts', 'test/operador.test.ts'];
+const ARCHIVOS = process.env.ARCHIVOS ? process.env.ARCHIVOS.split(',') : ['test/isolation.test.ts', 'test/acceso.test.ts', 'test/postgres.test.ts', 'test/negocio.test.ts', 'test/canal.test.ts', 'test/correo.test.ts', 'test/operador.test.ts', 'test/institucional.test.ts', 'test/pagos.test.ts', 'test/documentos.test.ts'];
 
 let url = process.env.DATABASE_URL_PRUEBAS;
 let detener = async () => {};

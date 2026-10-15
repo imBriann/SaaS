@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { api, ApiError, cop, guardar, leer, slugDelHost } from '../../api';
+import { api, ApiError, cop, descargarDocumentos, guardar, leer, slugDelHost } from '../../api';
 import { debeConsultar, faseCierre, pasosCumplidos, type FaseCierre } from './cierre';
+import { faseRecibo, reciboEnCurso } from './recibo';
+import { ReciboImpresion } from '../../components/ReciboImpresion';
 import { Campo, Cargando, ErrorCarga, Estado, CicloFiscal, useAccion, Vacio, CodigoOtp, useCuentaAtras } from '../../components/ui';
 import { Quote } from '../../components/Quote';
 import { MarketingExperience } from '../../components/MarketingExperience';
@@ -151,7 +153,7 @@ export function Describir() {
               </div>
             </section>
             <section className="col" style={{ gap: 12 }} aria-label="Estimación">
-              <Quote quote={d.cotizacion} loading={ocupado} />
+              <Quote quote={d.cotizacion} loading={ocupado} modalidad={d.modalidad} />
               <button className="btn primario grande" disabled={ocupado} onClick={() => nav('/empezar/datos')}>Continuar con mis datos <Icon n="flecha" className="" size={16} /></button>
             </section>
           </div>
@@ -387,27 +389,134 @@ export function Catalogo() {
   );
 }
 
+// ---------------------------------------------------------------- datos de facturación
+const TIPOS_DOC: [string, string][] = [['CC', 'Cédula de ciudadanía'], ['CE', 'Cédula de extranjería'], ['NIT', 'NIT'], ['PP', 'Pasaporte'], ['PPT', 'Permiso por protección temporal'], ['DE', 'Documento extranjero']];
+
+/** Datos del contratante para el comprobante y la facturación. El número completo nunca vuelve del servidor. */
+function FormFacturacion({ d, onGuardado }: { d: any; onGuardado: (r: any) => void }) {
+  const v = d.facturacion ?? { completa: false, datos: {} };
+  const base = v.datos ?? {};
+  const [editando, setEditando] = useState(!v.completa);
+  const [f, setF] = useState<any>({ nombre: base.nombre ?? '', tipo_documento: base.tipo_documento ?? 'CC', numero_documento: base.numero_sugerido ?? '', dv: base.dv ?? '', email: base.email ?? '', telefono: base.telefono ?? '', direccion: base.direccion ?? '', ciudad: base.ciudad ?? '', departamento: base.departamento ?? '' });
+  const [err, setErr] = useState<{ campo?: string; mensaje: string } | null>(null);
+  const [guardando, setGuardando] = useState(false);
+  const cambiar = (k: string) => (e: any) => setF({ ...f, [k]: e.target.value });
+  const guardarDatos = async (e: FormEvent) => {
+    e.preventDefault();
+    setErr(null); setGuardando(true);
+    const cuerpo: any = { ...f, dv: f.tipo_documento === 'NIT' ? f.dv : null, departamento: f.departamento || null };
+    if (!cuerpo.numero_documento) delete cuerpo.numero_documento; // se conserva el guardado
+    try {
+      const r = await api.patch(`/api/onboarding/borradores/${d.token}`, { facturacion: cuerpo });
+      onGuardado(r); setEditando(false); setF({ ...f, numero_documento: '' });
+    } catch (e2) {
+      const x = e2 as any;
+      setErr({ campo: x.details?.campo, mensaje: x.message });
+    } finally { setGuardando(false); }
+  };
+  if (!editando && v.completa) return (
+    <section className="tarjeta" aria-label="Datos de facturación">
+      <div className="cab"><h2 className="titulo-tarjeta">Datos de facturación</h2><button className="btn sutil peq" style={{ marginLeft: "auto" }} onClick={() => setEditando(true)}>Editar</button></div>
+      <dl className="resumen-pago sin-borde">
+        <div><dt>Contratante</dt><dd>{base.nombre}</dd></div>
+        <div><dt>Documento</dt><dd>{base.tipo_documento_nombre ?? base.tipo_documento} {base.documento_mascara}{base.dv ? `-${base.dv}` : ''}</dd></div>
+        <div><dt>Correo</dt><dd>{base.email}</dd></div>
+        <div><dt>Teléfono</dt><dd>{base.telefono}</dd></div>
+        <div><dt>Dirección</dt><dd>{[base.direccion, base.ciudad, base.departamento].filter(Boolean).join(', ')}</dd></div>
+      </dl>
+    </section>
+  );
+  return (
+    <form className="tarjeta" onSubmit={guardarDatos} aria-label="Datos de facturación">
+      <div className="cab"><h2 className="titulo-tarjeta">Datos de facturación</h2>{v.sugerida && <span className="tenue peq-txt">Completamos lo que ya nos diste</span>}</div>
+      <div className="cuerpo col" style={{ gap: 12 }}>
+        <Campo etiqueta="Nombre completo o razón social" error={err?.campo === 'nombre' ? err.mensaje : undefined}><input className="input" value={f.nombre} onChange={cambiar('nombre')} autoComplete="name" required /></Campo>
+        <div className="form-fila">
+          <Campo etiqueta="Tipo de documento"><select className="input" value={f.tipo_documento} onChange={cambiar('tipo_documento')}>{TIPOS_DOC.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></Campo>
+          <Campo etiqueta="Número" ayuda={v.completa ? `guardado ${base.documento_mascara}; vacío para conservarlo` : 'sin puntos ni espacios'} error={err?.campo === 'numero_documento' ? err.mensaje : undefined}>
+            <input className="input mono" value={f.numero_documento} onChange={cambiar('numero_documento')} inputMode={['CC', 'NIT', 'PPT'].includes(f.tipo_documento) ? 'numeric' : 'text'} autoComplete="off" required={!v.completa} />
+          </Campo>
+          {f.tipo_documento === 'NIT' && <Campo etiqueta="DV" error={err?.campo === 'dv' ? err.mensaje : undefined}><input className="input mono campo-dv" maxLength={1} inputMode="numeric" value={f.dv ?? ''} onChange={cambiar('dv')} required /></Campo>}
+        </div>
+        <div className="form-fila">
+          <Campo etiqueta="Correo para el comprobante"><input className="input" type="email" value={f.email} onChange={cambiar('email')} autoComplete="email" required /></Campo>
+          <Campo etiqueta="Teléfono"><input className="input" type="tel" value={f.telefono} onChange={cambiar('telefono')} autoComplete="tel" required /></Campo>
+        </div>
+        <Campo etiqueta="Dirección"><input className="input" value={f.direccion} onChange={cambiar('direccion')} autoComplete="street-address" required /></Campo>
+        <div className="form-fila">
+          <Campo etiqueta="Ciudad"><input className="input" value={f.ciudad} onChange={cambiar('ciudad')} autoComplete="address-level2" required /></Campo>
+          <Campo etiqueta="Departamento" ayuda="opcional"><input className="input" value={f.departamento ?? ''} onChange={cambiar('departamento')} autoComplete="address-level1" /></Campo>
+        </div>
+        {err && !err.campo && <p className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{err.mensaje}</p>}
+        <p className="tenue peq-txt">Tu número de documento será la contraseña de los documentos de tu pago. Lo guardamos cifrado y no volvemos a mostrarlo completo.</p>
+        <div className="fila" style={{ gap: 8 }}>
+          <button className="btn primario" disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar datos de facturación'}</button>
+          {v.completa && <button type="button" className="btn sutil" onClick={() => setEditando(false)}>Cancelar</button>}
+        </div>
+      </div>
+    </form>
+  );
+}
+
+/** Medios de pago confirmados por Wompi para la cuenta; si no los informa, no se promete ninguno. */
+function MediosPago() {
+  const [m, setM] = useState<any>(null);
+  useEffect(() => { api.get('/api/publico/medios-pago').then(setM).catch(() => setM({ fuente: 'no_confirmado', medios: [] })); }, []);
+  if (!m) return null;
+  return <p className="tenue peq-txt" style={{ margin: 0 }}>
+    {m.fuente === 'wompi' && m.medios.length ? <>Medios habilitados por Wompi para este pago: <b>{m.medios.map((x: any) => x.nombre).join(', ')}</b>.</> : 'Wompi te mostrará en su página los medios de pago habilitados para este comercio.'}
+  </p>;
+}
+
 // ---------------------------------------------------------------- SCR-007
 export function Pago() {
-  const { d, cargando, error, recargar } = useBorrador();
+  const { d, setD, cargando, error, recargar } = useBorrador();
   const { run, ocupado } = useAccion();
+  const [acepto, setAcepto] = useState(false);
+  const nav = useNavigate();
   const activate = async () => {
     const r = await run(() => api.post(`/api/onboarding/borradores/${d.token}/pago`));
-    if (r) irA(r.url);
+    if (!r) return;
+    // Ya estaba pagado: no hay un segundo cobro, se va directo al estado del alta.
+    if (r.ya_pagado || !r.url) nav('/empezar/listo');
+    else irA(r.url);
   };
   if (error) return <PublicoLayout paso={4}><ErrorCarga error={error} reintentar={recargar} /></PublicoLayout>;
   if (cargando) return <PublicoLayout paso={4}><Cargando filas={5} /></PublicoLayout>;
   if (!d) return <PublicoLayout paso={4}><Vacio titulo="Primero configura tu negocio" accion={<Link className="btn primario" to="/empezar">Empezar</Link>} /></PublicoLayout>;
+  const o = d.oferta;
+  const institucional = o?.modalidad === 'INSTITUCIONAL';
+  const real = d.pasarela === 'wompi';
+  const textoBoton = ocupado ? 'Preparando…' : d.pasarela === 'simulada' ? 'Ir al pago de prueba' : `Pagar ${cop(o?.monto ?? d.cotizacion.total)} con Wompi`;
   return <PublicoLayout paso={4}><section className="proposal-summary">
     <h1 className="onb-titulo">Revisa tu propuesta</h1>
     <p className="sec">Esta es la plataforma de {d.negocio?.nombre ?? 'tu negocio'}. Revisa las funciones y el desglose antes de continuar.</p>
-    <Quote quote={d.cotizacion} />
+    <Quote quote={d.cotizacion} modalidad={d.modalidad} />
+    {institucional && <dl className="resumen-pago" aria-label="Resumen de la contratación">
+      <div><dt>Modalidad</dt><dd>Institucional</dd></div>
+      <div><dt>Valor a pagar hoy</dt><dd>{cop(o.monto)} COP</dd></div>
+      <div><dt>Vigencia</dt><dd>{o.acceso_dias} días desde la creación de tu espacio</dd></div>
+      <div><dt>Renovación</dt><dd>Manual · sin cobros automáticos</dd></div>
+      <div><dt>Precio comercial de referencia</dt><dd>{cop(o.monto_referencia)} / mes · no se cobra</dd></div>
+      <div><dt>Pasarela</dt><dd>Wompi · cobro real</dd></div>
+    </dl>}
+    {(d.facturacion_requerida || d.facturacion?.completa) && <FormFacturacion d={d} onGuardado={setD} />}
+    {real && <p className="nota-fiscal peq-txt" role="note"><Icon n="info" className="" size={16} /><span>{d.facturacion_electronica?.habilitada
+      ? 'Recibirás la factura electrónica de tu pago cuando la DIAN la valide.'
+      : 'La facturación electrónica está pendiente de configuración: recibirás un comprobante de pago en PDF, sin validez fiscal. La factura que corresponda se emitirá aparte.'}</span></p>}
     {d.pasarela === 'simulada' && <div className="aviso peq-txt"><Icon n="info" className="" size={16} />Estás en una demostración: la activación usa una pasarela simulada, sin tarjeta ni cobros reales.</div>}
+    {real && d.pago_disponible && <div className="aviso peq-txt" role="note"><Icon n="alerta" className="" size={16} /><span>Este es un <b>cobro real</b> de {cop(o?.monto ?? d.cotizacion.total)} COP, no una simulación. El pago se hace en el sitio seguro de Wompi; Omnegia no ve ni guarda los datos de tu tarjeta.</span></div>}
     {!d.pago_disponible && <div className="aviso peq-txt"><Icon n="info" className="" size={16} />La contratación en línea todavía no está habilitada. Escríbenos y activamos tu espacio contigo.</div>}
+    {real && d.pago_disponible && <label className="acepto-cobro">
+      <input type="checkbox" checked={acepto} onChange={(e) => setAcepto(e.target.checked)} />
+      <span>Entiendo que se hará un cobro real de {cop(o?.monto ?? d.cotizacion.total)} COP{institucional ? ` por ${o.acceso_dias} días de acceso, sin renovación automática` : ''}.</span>
+    </label>}
     <div className="fila envolver" style={{ gap: 8 }}>
-      {d.pago_disponible && <button className="btn primario grande" disabled={ocupado} onClick={activate}>{ocupado ? 'Preparando…' : d.pasarela === 'simulada' ? 'Ir al pago de prueba' : 'Pagar con Wompi'}</button>}
+      {d.pago_disponible && <button className="btn primario grande" disabled={ocupado || (real && !acepto) || (d.facturacion_requerida && !d.facturacion?.completa)} onClick={activate}>{textoBoton}</button>}
       {d.estado === 'BORRADOR' && <Link className="btn grande" to="/empezar">Ajustar funciones</Link>}
     </div>
+    {real && <MediosPago />}
+    {d.facturacion_requerida && !d.facturacion?.completa && <p className="tenue peq-txt" style={{ margin: 0 }}>Guarda tus datos de facturación para continuar con el pago.</p>}
     <p className="tenue peq-txt">Tu panel se crea solo después de que la pasarela confirme el pago. Si cierras la página, no pasa nada: la confirmación llega igual.</p>
   </section></PublicoLayout>;
 }
@@ -547,6 +656,14 @@ export function Aprovisionamiento() {
   const [entrando, setEntrando] = useState(false);
   const { run, ocupado } = useAccion();
   const nav = useNavigate();
+  const [q] = useSearchParams();
+  const idRetorno = q.get('id');
+
+  // Wompi vuelve con ?id=<transacción>. El navegador solo aporta el id: el servidor consulta a Wompi.
+  useEffect(() => {
+    if (!idRetorno || !/^[\w-]{3,80}$/.test(idRetorno)) return;
+    api.get(`/api/pagos/verificar?id=${encodeURIComponent(idRetorno)}`).catch(() => {}).finally(() => setConsulta((n) => n + 1));
+  }, [idRetorno]);
 
   useEffect(() => {
     if (!tk) return;
@@ -557,7 +674,9 @@ export function Aprovisionamiento() {
         const s = await api.get(`/api/onboarding/borradores/${tk}/estado`);
         if (!vivo) return;
         setSt(s); setError(null);
-        if (debeConsultar(faseCierre(tk, s, null)) && !s.error_aprovisionamiento) t = window.setTimeout(tick, 1500);
+        const f = faseCierre(tk, s, null);
+        // También mientras se preparan el comprobante y el ZIP, para que el recibo avance solo.
+        if ((debeConsultar(f) && !s.error_aprovisionamiento) || (f === 'listo' && reciboEnCurso(faseRecibo(s)))) t = window.setTimeout(tick, 1500);
       } catch (e) { if (vivo) setError(e as ApiError); }
     };
     tick();
@@ -573,6 +692,19 @@ export function Aprovisionamiento() {
   const irAPagar = async () => {
     const r = await run(() => api.post(`/api/onboarding/borradores/${tk}/pago`));
     if (r) irA(r.url);
+  };
+  const recibo = faseRecibo(st);
+  const [errDocs, setErrDocs] = useState('');
+  const [bajando, setBajando] = useState(false);
+  const bajarDocumentos = async () => {
+    setErrDocs(''); setBajando(true);
+    try { await descargarDocumentos(() => api.post(`/api/onboarding/borradores/${tk}/documentos/enlace`)); }
+    catch (e2) { setErrDocs((e2 as Error).message); }
+    finally { setBajando(false); }
+  };
+  const reintentarDocumentos = async () => {
+    const r = await run(() => api.post(`/api/onboarding/borradores/${tk}/documentos/reintentar`));
+    if (r) setConsulta((n) => n + 1);
   };
   const reintentarAlta = async () => {
     const r = await run(() => api.post(`/api/onboarding/borradores/${tk}/reintentar`));
@@ -632,11 +764,11 @@ export function Aprovisionamiento() {
             <Link className="btn primario" style={{ alignSelf: 'flex-start' }} to="/empezar/pago">Revisar la propuesta y pagar</Link>
           </>}
           {fase === 'pendiente' && <>
-            <p className="sec">La pasarela todavía no ha confirmado el pago de <b>{cop(pago.monto)}</b> <span className="mono">(ref. {pago.referencia})</span>. Volvemos a consultar cada pocos segundos.</p>
+            <p className="sec">La pasarela todavía no ha confirmado el pago de <b>{cop(pago.monto)} COP</b>{pago.modalidad === 'INSTITUCIONAL' ? ` (modalidad institucional, ${pago.acceso_dias} días de acceso)` : ''} <span className="mono">(ref. {pago.referencia})</span>. Volvemos a consultar cada pocos segundos; tu panel no se crea hasta que Wompi lo confirme.</p>
             <button className="btn primario" style={{ alignSelf: 'flex-start' }} disabled={ocupado} onClick={irAPagar}>{ocupado ? 'Preparando…' : 'Volver a la pasarela'}</button>
           </>}
           {fase === 'rechazado' && <>
-            <p className="sec">No se hizo ningún cobro y tu panel no se creó. Tu borrador sigue guardado.</p>
+            <p className="sec">{pago?.estado === 'ANULADO' ? 'La pasarela anuló la transacción' : 'La pasarela no aprobó el pago'}: no se hizo ningún cobro y tu panel no se creó. Tu borrador sigue guardado.</p>
             <div className="fila envolver" style={{ gap: 8 }}>
               <button className="btn primario" disabled={ocupado} onClick={irAPagar}>{ocupado ? 'Preparando…' : 'Intentar el pago de nuevo'}</button>
               <Link className="btn" to="/empezar/pago">Revisar la propuesta</Link>
@@ -645,6 +777,23 @@ export function Aprovisionamiento() {
           {(fase === 'confirmando' || fase === 'listo') && <CreacionEspacio etapas={st?.etapas ?? []} listo={listo} error={st?.error_aprovisionamiento ?? null} onReintentar={reintentarAlta} ocupado={ocupado} />}
           {listo && <>
             <p className="sec">Tu espacio de trabajo <b>{st.tenant.nombre}</b> está creado. Entra para revisar tus módulos y completar las conexiones pendientes.</p>
+            <section className="col" style={{ gap: 10 }} aria-label="Recibo y documentos del pago">
+              <ReciboImpresion fase={recibo} numero={st.documentos?.numero} monto={st.pago?.monto} concepto={st.pago?.modalidad === 'INSTITUCIONAL' ? `Acceso institucional ${st.pago?.acceso_dias ?? ''} días` : 'Plan Omnegia'}
+                empresa={st.tenant?.nombre} fiscal={st.documentos?.estado_fiscal_texto} validez={!!st.documentos?.validez_fiscal} />
+              <div className="fila envolver" style={{ gap: 8 }}>
+                <button className="btn primario" disabled={recibo !== 'listo' || bajando} onClick={bajarDocumentos}><Icon n="descargar" className="" size={16} />{bajando ? 'Preparando la descarga…' : 'Descargar documentos (.zip)'}</button>
+                {recibo === 'pendiente' && st.documentos?.estado !== 'SIN_DATOS' && <button className="btn" disabled={ocupado} onClick={reintentarDocumentos}>Reintentar la generación</button>}
+              </div>
+              {errDocs && <p className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{errDocs}</p>}
+              {recibo === 'listo' && <p className="tenue peq-txt" style={{ margin: 0 }}>El .zip se abre sin contraseña. Cada documento pide tu número de documento de facturación, sin puntos, espacios ni guiones. También te lo enviamos por correo.</p>}
+              {st.documentos?.estado === 'SIN_DATOS' && <p className="tenue peq-txt" style={{ margin: 0 }}>Este pago no tiene datos de facturación, así que no generamos documentos. Escríbenos si necesitas un soporte del pago.</p>}
+            </section>
+            {st.acceso && <dl className="resumen-pago" aria-label="Tu acceso">
+              {st.acceso.monto_pagado != null && <div><dt>Pago confirmado</dt><dd>{cop(st.acceso.monto_pagado)} COP{st.acceso.referencia ? ` · ref. ${st.acceso.referencia}` : ''}</dd></div>}
+              {st.acceso.modalidad && <div><dt>Modalidad</dt><dd>{st.acceso.modalidad === 'INSTITUCIONAL' ? 'Institucional · sin cobros automáticos' : 'Comercial · mensual'}</dd></div>}
+              {st.acceso.vigente_hasta && <div><dt>Acceso hasta</dt><dd>{new Date(st.acceso.vigente_hasta).toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'long', year: 'numeric' })}</dd></div>}
+              {st.acceso.url && <div><dt>Dirección</dt><dd><a href={st.acceso.url} className="mono">{st.acceso.url.replace(/^https?:\/\//, '')}</a></dd></div>}
+            </dl>}
             <form className="decision col" style={{ gap: 14, padding: 20 }} onSubmit={entrar}>
               {necesitaCrear
                 ? <Campo etiqueta={`Crea tu contraseña para ${st.email}`} ayuda="mínimo 10 caracteres"><input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" /></Campo>

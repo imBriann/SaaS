@@ -22,6 +22,7 @@ import * as team from '../../modules/team.js';
 import * as soporte from '../../modules/soporte.js';
 import * as exportsMod from '../../modules/exports.js';
 import { iniciarPagoSuscripcion } from '../../modules/billing.js';
+import { documentosTenant, enlaceDocumentosTenant } from '../../documentos/servicio.js';
 import { verificarWhatsapp } from '../../modules/channelStatus.js';
 import { askAssistant, suggestReply } from '../../ai/runtime.js';
 import { signMeta, whatsapp } from '../../adapters/channel.js';
@@ -231,9 +232,17 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
 
   // --- Suscripción
   r('get', '/suscripcion', (tx, ctx) => admin.subscriptionInfo(tx, ctx));
-  rx('post', '/suscripcion/pagar', async (ctx) => {
+  rx('post', '/suscripcion/pagar', async (ctx, req) => {
     await db.withTenant(ctx.tenantId, async () => requirePerm(ctx, 'subscription:manage'));
-    return iniciarPagoSuscripcion(db, ctx.tenantId);
+    return iniciarPagoSuscripcion(db, ctx.tenantId, req.body ?? {});
+  });
+
+  // --- Documentos de los pagos a la plataforma (la RLS limita a los de esta empresa)
+  r('get', '/suscripcion/documentos', async (tx, ctx) => { requirePerm(ctx, 'subscription:manage'); return documentosTenant(tx); });
+  r('post', '/suscripcion/documentos/:id/enlace', async (tx, ctx, req) => {
+    requirePerm(ctx, 'subscription:manage');
+    if (!isUuid(req.params.id)) throw notFound();
+    return enlaceDocumentosTenant(tx, req.params.id);
   });
 
   // --- Auditoría

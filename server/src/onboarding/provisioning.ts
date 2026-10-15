@@ -5,6 +5,8 @@ import { PLANES } from './planRules.js';
 import { deriveTheme, type TemaTenant } from './theme.js';
 import { auditPlatform } from '../core/audit.js';
 import { hashPassword, token, uuidv7, slugify } from '../lib/util.js';
+import { urlEmpresa } from '../config.js';
+import { encolarDocumentos } from '../documentos/servicio.js';
 
 /**
  * Aprovisionamiento (PRO-SW-002 fig. 10). Todo ocurre en UNA transacción: un fallo
@@ -67,6 +69,27 @@ export interface NuevoTenant {
   catalogo?: CatalogRow[] | null;
   recursos?: string[] | null;
   whatsapp_phone_number_id?: string | null;
+  /** Términos del pago que activa la empresa. Sin ellos: un mes comercial (demostración y semillas). */
+  suscripcion?: TerminosSuscripcion | null;
+}
+
+export interface TerminosSuscripcion {
+  modalidad: 'COMERCIAL' | 'INSTITUCIONAL';
+  /** Días de acceso; null = un mes calendario. */
+  accesoDias: number | null;
+  precioPagado: number;
+  montoReferencia: number | null;
+  paymentId: string | null;
+}
+
+/** Condiciones que quedan registradas con cada periodo pagado. */
+export function condicionesPeriodo(t: Pick<TerminosSuscripcion, 'modalidad' | 'accesoDias' | 'precioPagado' | 'montoReferencia'>, extra: Record<string, unknown> = {}) {
+  return {
+    modalidad: t.modalidad, monto_pagado: t.precioPagado, monto_referencia: t.montoReferencia, acceso_dias: t.accesoDias,
+    renovacion_automatica: false, cobro_automatico: false,
+    ...(t.modalidad === 'INSTITUCIONAL' ? { continuidad: 'Renovación manual al precio institucional vigente; el paso al plan comercial exige aceptación expresa.' } : {}),
+    ...extra,
+  };
 }
 
 async function uniqueSlug(tx: Tx, slug: string): Promise<string> {
@@ -93,9 +116,21 @@ export async function createTenantFromTemplate(tx: Tx, d: NuevoTenant, etapa: (e
   );
   await etapa('empresa_creada');
 
+  // La vigencia corre desde la activación (ahora), no desde el pago ni la cotización.
   const ahora = new Date();
-  const fin = new Date(ahora); fin.setUTCMonth(fin.getUTCMonth() + 1);
-  await tx.query(`INSERT INTO subscription (tenant_id, plan_codigo, estado, periodo_inicio, periodo_fin) VALUES ($1,$2,'ACTIVA',$3,$4)`, [tenantId, d.plan, ahora.toISOString(), fin.toISOString()]);
+  const s = d.suscripcion;
+  const fin = new Date(ahora);
+  if (s?.accesoDias) fin.setTime(ahora.getTime() + s.accesoDias * 86_400_000);
+  else fin.setUTCMonth(fin.getUTCMonth() + 1);
+  const condiciones = s ? condicionesPeriodo(s) : null;
+  await tx.query(
+    `INSERT INTO subscription (tenant_id, plan_codigo, estado, periodo_inicio, periodo_fin, modalidad, precio_pagado, condiciones) VALUES ($1,$2,'ACTIVA',$3,$4,$5,$6,$7)`,
+    [tenantId, d.plan, ahora.toISOString(), fin.toISOString(), s?.modalidad ?? 'COMERCIAL', s?.precioPagado ?? null, condiciones ? JSON.stringify(condiciones) : null]);
+  if (s) {
+    await tx.query(
+      `INSERT INTO subscription_period (id, tenant_id, payment_id, modalidad, plan_codigo, monto_pagado, monto_referencia, periodo_inicio, periodo_fin, condiciones) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [uuidv7(), tenantId, s.paymentId, s.modalidad, d.plan, s.precioPagado, s.montoReferencia, ahora.toISOString(), fin.toISOString(), JSON.stringify(condiciones)]);
+  }
 
   // Módulos: los de la plantilla que el plan incluye.
   for (const m of [...new Set([...tpl.modulos, ...(plan.modulos as string[])])]) {
@@ -169,15 +204,23 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
   const d = (await tx.query(`SELECT * FROM onboarding_draft WHERE token=$1 FOR UPDATE`, [draftToken])).rows[0];
   if (!d) throw new Error('Borrador inexistente');
   if (d.estado === 'APROVISIONADO') return { tenantId: d.tenant_id, yaExistia: true };
+  // El pago aprobado fija el plan y las condiciones (los términos se congelaron al crear el checkout).
+  const pago = (await tx.query(
+    `SELECT id, referencia, monto, monto_referencia, modalidad, acceso_dias, plan_codigo FROM payment WHERE draft_token=$1 AND estado='APROBADO' ORDER BY verificado_en NULLS LAST, creado_en LIMIT 1`, [draftToken])).rows[0];
+  const plan = pago?.plan_codigo ?? d.plan_codigo;
   const n = d.negocio ?? {};
   const etapas: { etapa: string; en: string }[] = [{ etapa: 'pago_verificado', en: new Date().toISOString() }];
   const r = await createTenantFromTemplate(
     tx,
     {
       nombre: n.nombre, slug: n.slug || n.nombre, nit: n.nit, ciudad: n.ciudad, email: n.email, telefono: n.telefono,
-      plan: d.plan_codigo, sector: d.clasificacion.sector && d.clasificacion.sector !== 'otro' ? d.clasificacion.sector : 'barberia',
+      plan, sector: d.clasificacion.sector && d.clasificacion.sector !== 'otro' ? d.clasificacion.sector : 'barberia',
       admin: { nombre: n.responsable || n.nombre, email: n.email },
       tema: d.tema, logo_data_url: d.logo_data_url, catalogo: d.catalogo, recursos: n.recursos,
+      suscripcion: pago ? {
+        modalidad: pago.modalidad, accesoDias: pago.acceso_dias ?? null, precioPagado: Number(pago.monto),
+        montoReferencia: pago.monto_referencia == null ? null : Number(pago.monto_referencia), paymentId: pago.id,
+      } : null,
     },
     async (e) => { etapas.push({ etapa: e, en: new Date().toISOString() }); },
   );
@@ -186,10 +229,15 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
   const tenant = (await tx.query(`SELECT nombre, slug, tema, logo_data_url FROM tenant WHERE id=$1`, [r.tenantId])).rows[0];
   const modulos = (await tx.query(`SELECT modulo FROM tenant_module WHERE tenant_id=$1 AND activo ORDER BY modulo`, [r.tenantId])).rows.map((x: any) => x.modulo);
   const productos = (await tx.query(`SELECT nombre, tipo, precio FROM product WHERE tenant_id=$1 AND eliminado_en IS NULL ORDER BY creado_en, nombre`, [r.tenantId])).rows;
+  const sus = (await tx.query(`SELECT modalidad, periodo_fin FROM subscription WHERE tenant_id=$1`, [r.tenantId])).rows[0];
+  const acceso = { url: urlEmpresa(tenant.slug), modalidad: sus.modalidad, vigente_hasta: new Date(sus.periodo_fin).toISOString(), monto_pagado: pago ? Number(pago.monto) : null, referencia: pago?.referencia ?? null };
   const cierre = {
-    nombre: tenant.nombre, slug: tenant.slug, tema: tenant.tema, logo_data_url: tenant.logo_data_url, modulos,
+    nombre: tenant.nombre, slug: tenant.slug, tema: tenant.tema, logo_data_url: tenant.logo_data_url, modulos, acceso,
     catalogo: { origen: d.catalogo?.length ? 'propio' : 'ejemplo', total: productos.length, muestra: productos.slice(0, 4).map((x: any) => ({ ...x, precio: Number(x.precio) })) },
   };
+  // Documentos del pago (comprobante y ZIP) y, al terminarlos, el correo de confirmación: en la misma
+  // transacción, así que si el alta se revierte no queda nada encolado.
+  if (pago) await encolarDocumentos(tx, pago.id);
   await tx.query(
     `UPDATE onboarding_draft SET estado='APROVISIONADO', tenant_id=$2, password_token=$3, etapas=$4, cierre=$5, actualizado_en=now() WHERE token=$1`,
     [draftToken, r.tenantId, r.passwordToken, JSON.stringify(etapas), JSON.stringify(cierre)],
@@ -197,7 +245,7 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
   await tx.query(`UPDATE payment SET tenant_id=$2 WHERE draft_token=$1`, [draftToken, r.tenantId]);
   await auditPlatform(tx, r.tenantId, { tipo: 'SISTEMA', id: null, nombre: 'Aprovisionamiento' }, 'WEBHOOK', correlacion, {
     accion: 'tenant.aprovisionar', recurso: 'tenant', recursoId: r.tenantId, resultado: 'EXITO',
-    detalle: { plan: d.plan_codigo, sector: d.clasificacion.sector, import_mapping: d.import_mapping, filas_catalogo: d.catalogo?.length ?? 0, recomendacion: d.recomendacion },
+    detalle: { plan, modalidad: sus.modalidad, referencia: pago?.referencia ?? null, monto_pagado: pago ? Number(pago.monto) : null, vigente_hasta: acceso.vigente_hasta, sector: d.clasificacion.sector, import_mapping: d.import_mapping, filas_catalogo: d.catalogo?.length ?? 0, recomendacion: d.recomendacion },
   });
   return { tenantId: r.tenantId, slug: r.slug, yaExistia: false };
 }

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { api, cop, descargar, fecha, fechaHora, hora, num } from '../../api';
+import { api, cop, descargar, descargarDocumentos, fecha, fechaHora, hora, num } from '../../api';
 import { Cabecera, Escritura, useSesion } from '../../components/Layout';
 import { accionIA, Campo, Cargando, Cifra, Confirmar, ErrorCarga, Estado, Interruptor, Medidor, Modal, motivoIA, Recibo, Tarjeta, useAccion, useApi, useToast, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
@@ -373,21 +373,72 @@ function Invitar({ roles, onCerrar, onHecho }: { roles: any[]; onCerrar: () => v
 }
 
 // =================================================================== Suscripción
+/** Comprobantes (y facturas, cuando existan) de los pagos de la empresa a Omnegia. */
+function DocumentosPagos() {
+  const { data, error, recargar } = useApi<any[]>(() => api.get('/api/t/suscripcion/documentos'), []);
+  const [bajando, setBajando] = useState<string | null>(null);
+  const [err, setErr] = useState('');
+  if (error) return <Tarjeta titulo="Documentos de tus pagos"><ErrorCarga error={error} reintentar={recargar} /></Tarjeta>;
+  if (!data?.length) return null;
+  const bajar = async (id: string) => {
+    setErr(''); setBajando(id);
+    try { await descargarDocumentos(() => api.post(`/api/t/suscripcion/documentos/${id}/enlace`)); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBajando(null); }
+  };
+  return (
+    <Tarjeta titulo="Documentos de tus pagos" sinCuerpo>
+      <div className="tabla-wrap"><table className="tabla"><thead><tr><th>Documento</th><th>Estado fiscal</th><th>Fecha</th><th className="num">Archivo</th></tr></thead>
+        <tbody>{data.map((d) => <tr key={d.id}>
+          <td className="mono">{d.factura_numero ?? d.numero}</td>
+          <td>{d.estado_fiscal_texto}</td>
+          <td>{fecha(d.generado_en ?? d.creado_en)}</td>
+          <td className="num">{d.estado === 'LISTO'
+            ? <button className="btn peq" disabled={bajando === d.id} onClick={() => bajar(d.id)}><Icon n="descargar" className="" size={14} />{bajando === d.id ? 'Preparando…' : '.zip'}</button>
+            : <span className="tenue peq-txt">{d.estado === 'SIN_DATOS' ? 'Sin datos de facturación' : 'En preparación'}</span>}</td>
+        </tr>)}</tbody></table></div>
+      <p className="sec peq-txt" style={{ padding: '10px 16px' }}>Cada .zip se abre sin contraseña; sus documentos piden el número de documento de facturación, sin puntos, espacios ni guiones.{err ? ` ${err}` : ''}</p>
+    </Tarjeta>
+  );
+}
+
 export function Suscripcion() {
   const { data, error, recargar } = useApi<any>(() => api.get('/api/t/suscripcion'), []);
   const { run, ocupado } = useAccion();
+  const [confirmar, setConfirmar] = useState(false);
   if (error) return <><Cabecera titulo="Suscripción" /><div className="contenido"><ErrorCarga error={error} reintentar={recargar} /></div></>;
   if (!data) return <><Cabecera titulo="Suscripción" /><div className="tarjeta"><Cargando filas={8} /></div></>;
   const s = data.suscripcion;
   const ciclo = ['ACTIVA', 'PAGO_PENDIENTE', 'EN_GRACIA', 'SUSPENDIDA'];
   const efecto: Record<string, string> = { ACTIVA: 'Todo funciona según tu plan', PAGO_PENDIENTE: 'Sigue funcionando; renueva pronto', EN_GRACIA: 'Sigue funcionando por pocos días', SUSPENDIDA: 'Solo lectura y exportación; WhatsApp pausado' };
-  const pagar = async () => { const r = await run(() => api.post('/api/t/suscripcion/pagar')); if (r?.url) window.location.assign(r.url.startsWith(window.location.origin) ? r.url.replace(window.location.origin, '') : r.url); };
+  const ren = data.renovacion;
+  const institucional = s.modalidad === 'INSTITUCIONAL';
+  // Lo que se envía es lo que se mostró: el servidor lo compara con su oferta vigente y decide el monto.
+  const pagar = async () => {
+    setConfirmar(false);
+    const cuerpo = ren?.requiere_confirmacion ? { modalidad: ren.modalidad, monto: ren.monto, acepto: ren.requiere_aceptacion || undefined } : {};
+    const r = await run(() => api.post('/api/t/suscripcion/pagar', cuerpo));
+    if (r?.url) window.location.assign(r.url.startsWith(window.location.origin) ? r.url.replace(window.location.origin, '') : r.url);
+    else recargar();
+  };
+  const textoPagar = ren?.requiere_aceptacion ? 'Ver el plan comercial' : institucional ? `Renovar ${ren?.acceso_dias ?? ''} días` : s.estado === 'ACTIVA' ? 'Pagar el próximo mes' : s.estado === 'SUSPENDIDA' ? 'Pagar y reactivar' : 'Renovar ahora';
   const etiquetaMetrica: Record<string, string> = { tokens_ia: 'IA', mensajes: 'Mensajes', documentos: 'Documentos fiscales', plantillas_marketing: 'Plantillas de marketing' };
   return (
     <>
-      <Cabecera titulo="Suscripción" sub={`Plan ${s.plan_nombre} · ${cop(s.precio_mensual)} al mes`}>
-        {data.pagos_en_linea && <button className="btn primario" disabled={ocupado} onClick={pagar}>{ocupado ? 'Preparando…' : s.estado === 'ACTIVA' ? 'Pagar el próximo mes' : s.estado === 'SUSPENDIDA' ? 'Pagar y reactivar' : 'Renovar ahora'}</button>}
+      <Cabecera titulo="Suscripción" sub={institucional ? `Modalidad institucional · pagaste ${cop(s.precio_pagado ?? 0)} · acceso hasta el ${fecha(s.periodo_fin)}` : `Plan ${s.plan_nombre} · ${cop(s.precio_mensual)} al mes`}>
+        {data.pagos_en_linea && ren?.disponible && <button className="btn primario" disabled={ocupado} onClick={() => (ren.requiere_confirmacion ? setConfirmar(true) : pagar())}>{ocupado ? 'Preparando…' : textoPagar}</button>}
       </Cabecera>
+      {confirmar && ren && <Confirmar titulo={ren.requiere_aceptacion ? 'Cambiar al plan comercial' : 'Renovar el acceso institucional'} textoBoton={ren.requiere_aceptacion ? `Acepto y pagar ${cop(ren.monto)}` : `Pagar ${cop(ren.monto)} con Wompi`}
+        efecto={<div className="col" style={{ gap: 10 }}>
+          <p>{ren.mensaje}</p>
+          <dl className="resumen-pago">
+            <div><dt>Modalidad</dt><dd>{ren.modalidad === 'INSTITUCIONAL' ? 'Institucional' : 'Comercial'}</dd></div>
+            <div><dt>Valor</dt><dd>{cop(ren.monto)} COP{ren.acceso_dias ? '' : ' / mes'}</dd></div>
+            <div><dt>Vigencia</dt><dd>{ren.acceso_dias ? `${ren.acceso_dias} días` : '1 mes'} desde el fin del periodo actual</dd></div>
+            <div><dt>Cobro</dt><dd>Real, único, con Wompi · sin cobros automáticos</dd></div>
+          </dl>
+        </div>}
+        onCerrar={() => setConfirmar(false)} onConfirmar={pagar} />}
       <div className="contenido">
         <Tarjeta titulo={<span className="fila">Estado <Estado v={s.estado} /></span>} nivel={['SUSPENDIDA', 'EN_GRACIA'].includes(s.estado) ? 3 : 2}>
           <ol className="ciclo-sus" aria-label="Ciclo de la suscripción">
@@ -399,7 +450,15 @@ export function Suscripcion() {
           </ol>
           <p className="sec" style={{ marginTop: 12 }}>Periodo actual: {fecha(s.periodo_inicio)} – {fecha(s.periodo_fin)}{s.gracia_hasta ? ` · gracia hasta el ${fecha(s.gracia_hasta)}` : ''}. Suspender no borra tus datos: conservas lectura y exportación.</p>
           {!data.pagos_en_linea && <p className="aviso peq-txt" style={{ marginTop: 12 }}><Icon n="info" className="" size={14} />El pago en línea está pendiente de conectar. Escríbenos para renovar.</p>}
+          {institucional && ren && <p className="aviso peq-txt" style={{ marginTop: 12 }}><Icon n="info" className="" size={14} /><span>{ren.disponible ? ren.mensaje : 'La renovación en línea no está disponible por ahora. Escríbenos y te ayudamos.'} No hay cobros automáticos.</span></p>}
         </Tarjeta>
+        <DocumentosPagos />
+        {data.periodos?.length > 0 && (
+          <Tarjeta titulo="Pagos de tu suscripción" sinCuerpo>
+            <div className="tabla-wrap"><table className="tabla"><thead><tr><th>Periodo</th><th>Modalidad</th><th className="num">Pagado</th><th className="num">Referencia comercial</th></tr></thead>
+              <tbody>{data.periodos.map((p: any, i: number) => <tr key={i}><td>{fecha(p.periodo_inicio)} – {fecha(p.periodo_fin)}</td><td>{p.modalidad === 'INSTITUCIONAL' ? 'Institucional' : 'Comercial'}</td><td className="num">{cop(p.monto_pagado)}</td><td className="num">{p.monto_referencia != null ? `${cop(p.monto_referencia)} / mes` : '—'}</td></tr>)}</tbody></table></div>
+          </Tarjeta>
+        )}
         <div className="kpis k3" aria-label="Consumo del mes">
           <div className="kpi"><Medidor c={data.consumo.tokens_ia} etiqueta="IA" /></div>
           <div className="kpi"><Medidor c={data.consumo.mensajes} etiqueta="Mensajes" /></div>

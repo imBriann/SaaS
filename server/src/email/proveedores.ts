@@ -22,6 +22,8 @@ export interface CorreoSaliente {
   /** Identificador estable del correo: evita duplicados al reintentar. */
   claveIdempotencia: string;
   tipo: string;
+  /** Archivos adjuntos (p. ej. el ZIP de documentos de un pago). */
+  adjuntos?: { nombre: string; contenido: Buffer; tipo: string }[];
 }
 
 export type CodigoFalloCorreo =
@@ -88,6 +90,7 @@ export class ProveedorResend implements ProveedorCorreo {
         {
           from: remitenteTexto(), to: [m.para], subject: m.asunto, html: m.html, text: m.texto, replyTo: m.responderA,
           tags: [{ name: 'tipo', value: m.tipo.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 256) }],
+          ...(m.adjuntos?.length ? { attachments: m.adjuntos.map((a) => ({ filename: a.nombre, content: a.contenido, contentType: a.tipo })) } : {}),
         },
         { idempotencyKey: m.claveIdempotencia, signal: AbortSignal.timeout(config.correo.timeoutMs) } as any,
       );
@@ -140,6 +143,7 @@ export class ProveedorSmtp implements ProveedorCorreo {
         // Message-ID estable: si un reintento duplica el envío, los clientes lo agrupan.
         messageId: `<${m.claveIdempotencia}@${dominio}>`,
         headers: { 'X-Entity-Ref-ID': m.claveIdempotencia },
+        attachments: m.adjuntos?.map((a) => ({ filename: a.nombre, content: a.contenido, contentType: a.tipo })),
       });
       if (info.rejected?.length) return { ok: false, codigo: 'DESTINATARIO_INVALIDO', reintentable: false };
       return { ok: true, idProveedor: String(info.messageId ?? `<${m.claveIdempotencia}@${dominio}>`) };

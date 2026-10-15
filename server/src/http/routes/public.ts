@@ -7,11 +7,13 @@ import { config, integraciones } from '../../config.js';
 import { cookieSesion, memberships, SESSION_COOKIE, sessionToken } from '../context.js';
 import * as onboarding from '../../onboarding/service.js';
 import { catalogTemplate } from '../../onboarding/importer.js';
-import { cuentaPlataforma, signWebhook, verificarEventoWompi } from '../../adapters/payments.js';
+import { cuentaPlataforma, mediosPagoWompi, signWebhook, verificarEventoWompi } from '../../adapters/payments.js';
+import * as documentos from '../../documentos/servicio.js';
 import { parseWhatsAppWebhook, verifyMetaSignature } from '../../adapters/channel.js';
 import { receiveChannelMessages, receiveDeliveryStatuses } from '../../modules/channelInbound.js';
 import { publicDocumentData } from '../../modules/fiscal.js';
 import { procesarEventoComercio, procesarEventoPago, verificarRetorno } from '../../modules/billing.js';
+import { ofertaAlta, resumenModalidad } from '../../onboarding/oferta.js';
 import * as auth from '../../modules/auth.js';
 import * as team from '../../modules/team.js';
 import { FirmaInvalida, webhookResend } from '../../email/servicio.js';
@@ -23,12 +25,17 @@ const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '
 
 export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   app.get('/api/publico/modulos', async () => ({ modulos: MODULE_CATALOG, demostracion: true }));
-  app.post('/api/publico/cotizacion', async (req) => quoteModules(req.body));
+  // La cotización comercial no cambia; con la modalidad institucional se añade lo que realmente se cobraría.
+  app.post('/api/publico/cotizacion', async (req) => {
+    const q = quoteModules(req.body);
+    const o = ofertaAlta(q.total);
+    return { ...q, oferta: { modalidad: o.modalidad, monto: o.monto, monto_referencia: o.montoReferencia, acceso_dias: o.accesoDias }, modalidad: resumenModalidad() };
+  });
   app.get('/api/publico/planes', async () =>
     db.withPlatform(async (tx) => (await tx.query(`SELECT * FROM plan WHERE codigo IN ('esencial','negocio','pro') ORDER BY orden`)).rows.map((p) => ({ ...p, precio_mensual: Number(p.precio_mensual), precio_excedente_1k_tokens: Number(p.precio_excedente_1k_tokens) }))),
   );
   app.get('/api/publico/sectores', async () => loadTemplates().map((t) => ({ sector: t.sector, version: t.version, nombre: t.nombre, descripcion: t.descripcion, modulos: t.modulos })));
-  app.get('/api/publico/estado', async () => ({ contratacion: onboarding.puedeContratar(), simuladores: config.simuladores, integraciones: integraciones().map(({ clave, estado }) => ({ clave, estado })) }));
+  app.get('/api/publico/estado', async () => ({ contratacion: onboarding.puedeContratar(), modalidad: resumenModalidad(), simuladores: config.simuladores, integraciones: integraciones().map(({ clave, estado }) => ({ clave, estado })) }));
 
   // ------------------------------------------------------------------ sesión
   app.post('/api/auth/login', async (req: any, reply) => {
@@ -101,9 +108,24 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   });
   app.post('/api/onboarding/borradores/:tk/catalogo/vista-previa', async (req: any) => onboarding.previewCatalog(db, req.params.tk, req.body?.mapeo));
   app.post('/api/onboarding/borradores/:tk/catalogo/confirmar', async (req: any) => onboarding.confirmCatalog(db, req.params.tk, req.body));
-  app.post('/api/onboarding/borradores/:tk/pago', async (req: any) => onboarding.startCheckout(db, req.params.tk));
-  app.get('/api/onboarding/borradores/:tk/estado', async (req: any) => onboarding.draftStatus(db, req.params.tk));
+  app.post('/api/onboarding/borradores/:tk/pago', async (req: any) => onboarding.startCheckout(db, req.params.tk, req.correlacion));
+  app.get('/api/onboarding/borradores/:tk/estado', async (req: any) => onboarding.draftStatus(db, req.params.tk, req.correlacion));
   app.post('/api/onboarding/borradores/:tk/reintentar', async (req: any) => onboarding.retryProvisioning(db, req.params.tk, req.correlacion));
+  // Documentos del pago: enlace temporal para quien pagó (portador del borrador) y reintento si fallaron.
+  app.post('/api/onboarding/borradores/:tk/documentos/enlace', async (req: any) => documentos.enlaceDocumentosBorrador(db, String(req.params.tk ?? '')));
+  app.post('/api/onboarding/borradores/:tk/documentos/reintentar', async (req: any) => documentos.reintentarDocumentosBorrador(db, String(req.params.tk ?? '')));
+  // Descarga con un enlace firmado y vigente (en el cuerpo, no en la URL). Nunca revela dónde se guarda.
+  app.post('/api/documentos/descarga', async (req: any, reply) => {
+    const d = await documentos.descargarDocumentos(db, String(req.body?.token ?? ''));
+    return reply.header('content-type', 'application/zip').header('content-disposition', `attachment; filename="${d.nombre}"`)
+      .header('cache-control', 'no-store, private').header('x-content-type-options', 'nosniff').send(d.contenido);
+  });
+  // Medios de pago que Wompi confirma para la cuenta de la plataforma (sin promesas si no los informa).
+  app.get('/api/publico/medios-pago', async () => {
+    const cuenta = cuentaPlataforma();
+    if (!cuenta || cuenta.proveedor !== 'wompi') return { fuente: 'no_confirmado', medios: [], bre_b: false };
+    return mediosPagoWompi(cuenta, config.institucional.activo ? config.institucional.precioCop : Number.MAX_SAFE_INTEGER);
+  });
   app.post('/api/onboarding/borradores/:tk/contrasena', async (req: any) => onboarding.setInitialPassword(db, req.params.tk, req.body?.password, req.ip));
   app.get('/api/onboarding/plantilla-catalogo.xlsx', async (_req, reply) => {
     reply.header('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -140,8 +162,10 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   // Wompi · cuenta de la plataforma (altas y renovaciones).
   app.post('/api/webhooks/wompi', async (req: any, reply) => {
     const cuenta = cuentaPlataforma();
-    const ev = cuenta?.proveedor === 'wompi' ? verificarEventoWompi(cuenta, req.body) : null;
+    const checksum = typeof req.headers['x-event-checksum'] === 'string' ? req.headers['x-event-checksum'] : undefined;
+    const ev = cuenta?.proveedor === 'wompi' ? verificarEventoWompi(cuenta, req.body, checksum) : null;
     if (!ev) {
+      // Sin el cuerpo: solo la constancia del intento rechazado.
       await db.withPlatform((tx) => auditPlatform(tx, null, { tipo: 'ANONIMO', id: null, nombre: 'webhook' }, 'WEBHOOK', req.correlacion, { accion: 'webhook.wompi.firma_invalida', resultado: 'DENEGADO' }));
       return reply.status(401).send({ error: { code: 'BAD_SIGNATURE', message: 'Firma inválida' } });
     }

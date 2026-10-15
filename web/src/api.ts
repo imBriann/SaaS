@@ -56,6 +56,26 @@ async function request<T>(method: string, url: string, body?: unknown, extra: Re
 }
 
 /** Descarga un archivo generado por el servidor (CSV, exportaciones) respetando la empresa activa. */
+/**
+ * Descarga los documentos de un pago: primero se pide un enlace temporal autorizado y luego el
+ * ZIP con ese enlace en el cuerpo (nunca en la URL, para que no quede en historiales ni registros).
+ */
+export async function descargarDocumentos(pedirEnlace: () => Promise<{ token: string; numero: string }>) {
+  const { token, numero } = await pedirEnlace();
+  const res = await fetch('/api/documentos/descarga', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }), credentials: 'include' });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, d?.error?.code ?? 'ERROR', d?.error?.message ?? 'No se pudieron descargar los documentos.');
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(await res.blob());
+  a.download = `documentos-omnegia-${numero}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+}
+
 export async function descargar(url: string, nombre: string) {
   const headers: Record<string, string> = {};
   const slug = tenantSlug();

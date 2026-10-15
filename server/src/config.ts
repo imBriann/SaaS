@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-if (existsSync(join(process.cwd(), '.env'))) process.loadEnvFile(join(process.cwd(), '.env'));
+// Las pruebas nunca leen el .env local: podría traer credenciales reales (Wompi, Resend).
+if (process.env.NODE_ENV !== 'test' && existsSync(join(process.cwd(), '.env'))) process.loadEnvFile(join(process.cwd(), '.env'));
 
 /**
  * Configuración validada. Reglas:
@@ -79,8 +80,50 @@ export const config = {
     wompi: {
       entorno: (v('WOMPI_ENTORNO') ?? 'sandbox') as 'sandbox' | 'produccion',
       llavePublica: v('WOMPI_LLAVE_PUBLICA'),
+      /** Solo para consultas servidor a servidor (Authorization: Bearer). Nunca sale del servidor. */
+      llavePrivada: v('WOMPI_LLAVE_PRIVADA'),
       secretoIntegridad: v('WOMPI_SECRETO_INTEGRIDAD'),
       secretoEventos: v('WOMPI_SECRETO_EVENTOS'),
+    },
+    /** Precios comerciales confirmados por el operador (habilita la contratación comercial). */
+    tarifasConfirmadas: v('TARIFAS_CONFIRMADAS') === '1',
+  },
+  /**
+   * Modalidad institucional: cobro real y único por un acceso de duración fija, sin
+   * renovación automática. No altera los precios comerciales, que se muestran como referencia.
+   */
+  institucional: {
+    activo: v('MODO_INSTITUCIONAL') === '1',
+    precioCop: Number(v('PRECIO_INSTITUCIONAL_COP') ?? 1500),
+    dias: Number(v('ACCESO_INSTITUCIONAL_DIAS') ?? 30),
+  },
+  /**
+   * Documentos de los pagos a la plataforma. El emisor (operador de Omnegia) y su régimen
+   * de IVA vienen del entorno: el código no supone ninguno. La factura electrónica DIAN de la
+   * plataforma NUNCA se activa sola: exige FACTURACION_ELECTRONICA_PLATAFORMA=1, un proveedor
+   * tecnológico implementado y verificado, emisor y numeración autorizada vigente.
+   */
+  documentos: {
+    emisor: {
+      razonSocial: v('EMISOR_RAZON_SOCIAL'),
+      tipoDocumento: v('EMISOR_TIPO_DOCUMENTO') ?? 'NIT',
+      numeroDocumento: v('EMISOR_NUMERO_DOCUMENTO'),
+      direccion: v('EMISOR_DIRECCION'),
+      ciudad: v('EMISOR_CIUDAD'),
+      correo: v('EMISOR_CORREO'),
+      telefono: v('EMISOR_TELEFONO'),
+    },
+    /** '1' responsable de IVA, '0' no responsable, sin definir = régimen pendiente de configurar. */
+    responsableIva: (v('EMISOR_RESPONSABLE_IVA') ?? null) as '1' | '0' | null,
+    ivaPct: Number(v('IVA_PCT') ?? 19),
+    facturacion: {
+      activa: v('FACTURACION_ELECTRONICA_PLATAFORMA') === '1',
+      proveedor: v('FACTURACION_PROVEEDOR'),
+      prefijo: v('FACTURACION_PREFIJO'),
+      resolucion: v('FACTURACION_RESOLUCION'),
+      rangoDesde: Number(v('FACTURACION_RANGO_DESDE') ?? NaN),
+      rangoHasta: Number(v('FACTURACION_RANGO_HASTA') ?? NaN),
+      vigenciaHasta: v('FACTURACION_RESOLUCION_VIGENCIA'),
     },
   },
   fiscal: {
@@ -127,6 +170,12 @@ export const config = {
 };
 
 
+/** Dirección de acceso de una empresa: <slug>.<BASE_DOMAIN> (o la URL del panel en local). */
+export function urlEmpresa(slug: string, c = config): string {
+  if (c.baseDomain === 'localhost' || !/^[a-z0-9-]{1,63}$/.test(slug)) return c.publicUrl;
+  return `${c.publicUrl.startsWith('https://') ? 'https' : 'http'}://${slug}.${c.baseDomain}`;
+}
+
 export interface ResultadoValidacion { errores: string[]; avisos: string[] }
 
 /** Comprobación de arranque. En producción, cualquier error detiene el proceso. */
@@ -142,13 +191,9 @@ export function validarConfiguracion(c = config): ResultadoValidacion {
   }
   if (c.llm.provider === 'anthropic' && !c.llm.apiKey) errores.push('LLM_PROVIDER=anthropic exige ANTHROPIC_API_KEY.');
   if (c.llm.provider === 'mock' && !c.simuladores) errores.push('LLM_PROVIDER=mock solo se permite en desarrollo o con SIMULADORES=1.');
-  if (c.pagos.proveedor === 'wompi') {
-    const w = c.pagos.wompi;
-    if (!w.llavePublica || !w.secretoIntegridad || !w.secretoEventos) errores.push('PAGOS_PROVEEDOR=wompi exige WOMPI_LLAVE_PUBLICA, WOMPI_SECRETO_INTEGRIDAD y WOMPI_SECRETO_EVENTOS.');
-    if (w.llavePublica && w.entorno === 'produccion' && !w.llavePublica.startsWith('pub_prod_')) errores.push('WOMPI_ENTORNO=produccion con una llave pública que no es de producción (pub_prod_…).');
-    if (w.llavePublica && w.entorno === 'sandbox' && !w.llavePublica.startsWith('pub_test_')) avisos.push('WOMPI_ENTORNO=sandbox con una llave pública que no empieza por pub_test_.');
-  }
-  if (c.pagos.proveedor === 'simulada' && !c.simuladores) errores.push('PAGOS_PROVEEDOR=simulada solo se permite en desarrollo o con SIMULADORES=1.');
+  const pagos = validarPagos(c);
+  errores.push(...pagos.errores);
+  avisos.push(...pagos.avisos);
   errores.push(...validarCorreo(c));
   if (c.correo.proveedor === 'ninguno' && !c.dev) avisos.push('Sin proveedor de correo (EMAIL_PROVIDER): no salen códigos, recuperaciones ni invitaciones.');
   if (c.correo.proveedor === 'resend' && c.correo.resendApiKey && !c.correo.resendApiKey.startsWith('re_')) avisos.push('RESEND_API_KEY no tiene el formato habitual (re_…).');
@@ -158,7 +203,89 @@ export function validarConfiguracion(c = config): ResultadoValidacion {
   return { errores, avisos };
 }
 
-const CORREO_RE = /^[^@\s<>,;"']+@[^@\s<>,;"']+\.[^@\s<>,;"']+$/;
+/** Prefijos que Wompi asigna a cada credencial según el ambiente. */
+export const PREFIJOS_WOMPI = {
+  produccion: { llavePublica: 'pub_prod_', llavePrivada: 'prv_prod_', secretoIntegridad: 'prod_integrity_', secretoEventos: 'prod_events_' },
+  sandbox: { llavePublica: 'pub_test_', llavePrivada: 'prv_test_', secretoIntegridad: 'test_integrity_', secretoEventos: 'test_events_' },
+} as const;
+const VARIABLE_WOMPI = { llavePublica: 'WOMPI_LLAVE_PUBLICA', llavePrivada: 'WOMPI_LLAVE_PRIVADA', secretoIntegridad: 'WOMPI_SECRETO_INTEGRIDAD', secretoEventos: 'WOMPI_SECRETO_EVENTOS' } as const;
+
+/** Wompi no documenta un mínimo por transacción; este piso evita montos que algunos medios rechazan. */
+export const PRECIO_INSTITUCIONAL_MIN = 1500;
+export const PRECIO_INSTITUCIONAL_MAX = 10_000_000;
+
+/** Credenciales de Wompi: presentes y del mismo ambiente que WOMPI_ENTORNO (nunca se imprime su valor). */
+export function erroresWompi(c = config): string[] {
+  const w = c.pagos.wompi;
+  if (w.entorno !== 'produccion' && w.entorno !== 'sandbox') return [`WOMPI_ENTORNO=${String(w.entorno)} no es válido: usa produccion o sandbox.`];
+  const e: string[] = [];
+  const faltan: string[] = (['llavePublica', 'secretoIntegridad', 'secretoEventos'] as const).filter((k) => !w[k]).map((k) => VARIABLE_WOMPI[k]);
+  // Sin la llave privada no se puede consultar una transacción (Wompi responde 404 a consultas sin ella).
+  if (w.entorno === 'produccion' && !w.llavePrivada) faltan.push(VARIABLE_WOMPI.llavePrivada);
+  if (faltan.length) e.push(`PAGOS_PROVEEDOR=wompi exige ${faltan.join(', ')}.`);
+  const esperado = PREFIJOS_WOMPI[w.entorno];
+  const otro = PREFIJOS_WOMPI[w.entorno === 'produccion' ? 'sandbox' : 'produccion'];
+  for (const k of Object.keys(esperado) as (keyof typeof esperado)[]) {
+    const valor = w[k];
+    if (!valor || valor.startsWith(esperado[k])) continue;
+    e.push(valor.startsWith(otro[k])
+      ? `${VARIABLE_WOMPI[k]} es de ${w.entorno === 'produccion' ? 'pruebas' : 'producción'} y WOMPI_ENTORNO=${w.entorno}: usa la credencial que empieza por ${esperado[k]}.`
+      : `${VARIABLE_WOMPI[k]} no tiene el formato de Wompi para ${w.entorno} (${esperado[k]}…).`);
+  }
+  return e;
+}
+
+/** Parámetros de la modalidad institucional (precio y vigencia). */
+export function erroresInstitucional(c = config): string[] {
+  const e: string[] = [];
+  const { precioCop, dias } = c.institucional;
+  if (!Number.isInteger(precioCop) || precioCop < PRECIO_INSTITUCIONAL_MIN || precioCop > PRECIO_INSTITUCIONAL_MAX) {
+    e.push(`PRECIO_INSTITUCIONAL_COP debe ser un entero en pesos entre ${PRECIO_INSTITUCIONAL_MIN} y ${PRECIO_INSTITUCIONAL_MAX} (sin decimales ni separadores).`);
+  }
+  if (!Number.isInteger(dias) || dias < 1 || dias > 365) e.push('ACCESO_INSTITUCIONAL_DIAS debe ser un entero entre 1 y 365.');
+  return e;
+}
+
+/**
+ * ¿Se puede cobrar en la modalidad institucional? Exige Wompi en producción con todas
+ * las credenciales válidas: nunca una pasarela simulada ni el ambiente de pruebas.
+ */
+export function institucionalDisponible(c = config): { ok: boolean; motivos: string[] } {
+  if (!c.institucional.activo) return { ok: false, motivos: ['MODO_INSTITUCIONAL no está activo.'] };
+  const motivos = [...erroresInstitucional(c)];
+  if (c.pagos.proveedor !== 'wompi') motivos.push('La modalidad institucional cobra con Wompi: configura PAGOS_PROVEEDOR=wompi.');
+  else {
+    if (c.pagos.wompi.entorno !== 'produccion') motivos.push('La modalidad institucional hace cobros reales: exige WOMPI_ENTORNO=produccion.');
+    motivos.push(...erroresWompi(c));
+  }
+  if (!c.publicUrl.startsWith('https://')) motivos.push('El retorno del checkout de Wompi exige PUBLIC_URL con https://.');
+  return { ok: motivos.length === 0, motivos };
+}
+
+export function validarPagos(c = config): ResultadoValidacion {
+  const errores: string[] = [];
+  const avisos: string[] = [];
+  if (!['wompi', 'simulada', 'ninguno'].includes(c.pagos.proveedor)) errores.push(`PAGOS_PROVEEDOR=${c.pagos.proveedor} no es válido: usa wompi.`);
+  if (c.pagos.proveedor === 'wompi') {
+    errores.push(...erroresWompi(c));
+    if (c.pagos.wompi.entorno === 'sandbox' && !c.pagos.wompi.llavePrivada) avisos.push('Sin WOMPI_LLAVE_PRIVADA no se puede consultar una transacción si el evento de Wompi se retrasa.');
+  }
+  if (c.pagos.proveedor === 'simulada' && !c.simuladores) errores.push('PAGOS_PROVEEDOR=simulada solo se permite en desarrollo o con SIMULADORES=1.');
+  const docs = c.documentos;
+  if (docs.responsableIva !== null && !['0', '1'].includes(docs.responsableIva)) errores.push('EMISOR_RESPONSABLE_IVA debe ser 1 (responsable de IVA) o 0 (no responsable).');
+  if (!Number.isFinite(docs.ivaPct) || docs.ivaPct < 0 || docs.ivaPct > 100) errores.push('IVA_PCT debe ser un porcentaje entre 0 y 100.');
+  if (c.institucional.activo && (!docs.emisor.razonSocial || !docs.emisor.numeroDocumento)) avisos.push('Faltan EMISOR_RAZON_SOCIAL y EMISOR_NUMERO_DOCUMENTO: el comprobante de pago saldrá sin la identificación completa del emisor.');
+  if (c.institucional.activo && docs.responsableIva === null) avisos.push('Sin EMISOR_RESPONSABLE_IVA el comprobante indica que el régimen de IVA del emisor está pendiente de configuración.');
+  if (docs.facturacion.activa) avisos.push('FACTURACION_ELECTRONICA_PLATAFORMA=1: solo se emitirán facturas si hay un adaptador de proveedor implementado, verificado y con resolución vigente; si no, quedan pendientes.');
+  if (c.institucional.activo) {
+    // No detiene el arranque: la contratación queda bloqueada y el motivo se informa.
+    const d = institucionalDisponible(c);
+    if (!d.ok) avisos.push(`MODO_INSTITUCIONAL=1 pero la contratación está bloqueada: ${d.motivos.join(' ')}`);
+  }
+  return { errores, avisos };
+}
+
+const CORREO_RE =/^[^@\s<>,;"']+@[^@\s<>,;"']+\.[^@\s<>,;"']+$/;
 
 /** Reglas del correo transaccional. Devuelve errores en lenguaje claro. */
 export function validarCorreo(c = config): string[] {
@@ -205,8 +332,9 @@ export function integraciones(c = config): Integracion[] {
     {
       clave: 'pagos', nombre: 'Pasarela de pagos (Wompi)',
       estado: c.pagos.proveedor === 'wompi' ? 'conectado' : c.pagos.proveedor === 'simulada' ? 'simulado' : 'pendiente',
-      detalle: c.pagos.proveedor === 'wompi' ? `Entorno ${c.pagos.wompi.entorno}.` : c.pagos.proveedor === 'simulada' ? 'Pasarela simulada: sin cobros reales.' : 'Sin pasarela: no se pueden contratar ni renovar planes.',
-      variables: ['WOMPI_LLAVE_PUBLICA', 'WOMPI_SECRETO_INTEGRIDAD', 'WOMPI_SECRETO_EVENTOS', 'WOMPI_ENTORNO'],
+      detalle: (c.pagos.proveedor === 'wompi' ? `Entorno ${c.pagos.wompi.entorno}.` : c.pagos.proveedor === 'simulada' ? 'Pasarela simulada: sin cobros reales.' : 'Sin pasarela: no se pueden contratar ni renovar planes.')
+        + (c.institucional.activo ? (institucionalDisponible(c).ok ? ` Modalidad institucional activa: ${c.institucional.precioCop} COP por ${c.institucional.dias} días.` : ' Modalidad institucional activa pero bloqueada por configuración incompleta.') : ''),
+      variables: ['WOMPI_LLAVE_PUBLICA', 'WOMPI_LLAVE_PRIVADA', 'WOMPI_SECRETO_INTEGRIDAD', 'WOMPI_SECRETO_EVENTOS', 'WOMPI_ENTORNO', 'MODO_INSTITUCIONAL', 'PRECIO_INSTITUCIONAL_COP', 'ACCESO_INSTITUCIONAL_DIAS'],
     },
     {
       clave: 'facturacion', nombre: 'Proveedor de facturación electrónica',

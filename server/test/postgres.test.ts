@@ -35,7 +35,7 @@ const ctxDe = (nombre: string): Ctx => ({ ...systemCtx(A, uuidv7(), nombre), ori
 
 describe(`Migraciones (${motor()})`, () => {
   it('una base creada antes del registro de migraciones se actualiza sin perder datos y repetir es inocuo', async () => {
-    expect(await db.migrations()).toEqual(['001_base', '002_operacion', '003_correo_operador']);
+    expect(await db.migrations()).toEqual(['001_base', '002_operacion', '003_correo_operador', '004_institucional', '005_documentos_pago']);
     expect(await db.migrate()).toBe(false);
     const cols = await db.raw(async (tx) => (await tx.query(`SELECT column_name FROM information_schema.columns WHERE table_name='message' AND column_name IN ('ocurrido_en','id_externo_salida','error_entrega')`)).rows.length);
     expect(cols).toBe(3);
@@ -93,7 +93,7 @@ describe(`Concurrencia (${motor()})`, () => {
       await tx.query(`INSERT INTO payment_link (id, tenant_id, order_id, referencia, url, estado, monto, expira_en) VALUES ($1,$2,$3,'PL-CONC-1','x','ABIERTO',$4, now() + interval '1 day')`, [uuidv7(), A, o.id, o.total]);
       return { order: o.id, total: Number(o.total) };
     });
-    const ev = { id: 'evt-conc-1', referencia: 'PL-CONC-1', estado: 'APROBADO' as const, montoCentavos: Math.round(ref.total * 100), moneda: 'COP' };
+    const ev = { id: 'evt-conc-1', proveedor: 'wompi' as const, referencia: 'PL-CONC-1', estado: 'APROBADO' as const, montoCentavos: Math.round(ref.total * 100), moneda: 'COP' };
     const r = await Promise.all(Array.from({ length: 5 }, () => procesarEventoPago(db, ev, uuidv7(), 'prueba')));
     expect(r.filter((x) => x.duplicado)).toHaveLength(4);
     const conc = await db.withTenant(A, async (tx) => (await tx.query(`SELECT count(*)::int n FROM audit_event WHERE accion='cobro.conciliado' AND recurso_id=$1`, [ref.order])).rows[0].n);

@@ -15,6 +15,7 @@ import { MODULOS } from '../templates/index.js';
 import { gatewayAccount } from './payments.js';
 import { listInvitations } from './team.js';
 import { config, integraciones } from '../config.js';
+import { ofertaRenovacion } from './billing.js';
 import { nitValido } from '../adapters/fiscal.js';
 import { encolarCorreo } from '../email/servicio.js';
 import * as plantillas from '../email/plantillas.js';
@@ -376,7 +377,16 @@ export async function subscriptionInfo(tx: Tx, ctx: Ctx) {
      FROM subscription s JOIN plan p ON p.codigo=s.plan_codigo WHERE s.tenant_id=$1`, [ctx.tenantId])).rows[0];
   const historico = (await tx.query(`SELECT periodo, metrica, cantidad FROM usage_record ORDER BY periodo DESC, metrica LIMIT 36`)).rows;
   const usuarios = (await tx.query(`SELECT count(*)::int AS n FROM user_tenant WHERE activo`)).rows[0].n;
-  return { suscripcion: { ...s, precio_mensual: Number(s.precio_mensual) }, consumo: await allQuotas(tx, ctx.tenantId), historico, usuarios, pagos_en_linea: config.pagos.proveedor !== 'ninguno' };
+  // Periodos pagados con su modalidad, monto y condiciones (trazabilidad visible para la empresa).
+  const periodos = (await tx.query(`SELECT modalidad, monto_pagado, monto_referencia, periodo_inicio, periodo_fin, condiciones FROM subscription_period ORDER BY periodo_inicio DESC LIMIT 24`)).rows
+    .map((p: any) => ({ ...p, monto_pagado: Number(p.monto_pagado), monto_referencia: p.monto_referencia == null ? null : Number(p.monto_referencia) }));
+  return {
+    suscripcion: { ...s, precio_mensual: Number(s.precio_mensual), precio_pagado: s.precio_pagado == null ? null : Number(s.precio_pagado) },
+    consumo: await allQuotas(tx, ctx.tenantId), historico, usuarios, periodos,
+    pagos_en_linea: config.pagos.proveedor !== 'ninguno',
+    // Cómo continuar: lo que se cobraría y si exige aceptar un cambio de modalidad. Nunca es automático.
+    renovacion: ofertaRenovacion(s),
+  };
 }
 
 // ---------------------------------------------------------------------------

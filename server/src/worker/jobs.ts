@@ -13,8 +13,9 @@ import { createInvoiceForOrder, emitDocument } from '../modules/fiscal.js';
 import { addMessage, getOrOpenConversation, ventanaAbierta } from '../modules/conversations.js';
 import { applyDeliveryStatus } from '../modules/channelInbound.js';
 import { verificarWhatsapp } from '../modules/channelStatus.js';
-import { aprovisionarConReintento } from '../modules/billing.js';
+import { aprovisionarConReintento, conciliarPagosPendientes, ofertaRenovacion } from '../modules/billing.js';
 import { config } from '../config.js';
+import { emitirFacturaPago, encolarCorreoFactura, encolarCorreoPago, generarDocumentosPago } from '../documentos/servicio.js';
 import { cop, uuidv7 } from '../lib/util.js';
 import { formatFechaLarga, utcToLocal } from '../lib/time.js';
 
@@ -263,6 +264,35 @@ export const HANDLERS: Record<string, Handler> = {
 
   reintentar_aprovisionamiento: async (db, _t, p, job) => { await aprovisionarConReintento(db, p.draft_token, job.id); },
 
+  /** Comprobante PDF protegido + ZIP del pago; después, el correo de confirmación (una vez por pago). */
+  generar_documentos_pago: async (db, _t, p, job) => {
+    try {
+      const r = await generarDocumentosPago(db, p.payment_id, job.id);
+      await db.withPlatform(async (tx) => {
+        const d = (await tx.query(`SELECT estado_fiscal FROM documento_pago WHERE payment_id=$1`, [p.payment_id])).rows[0];
+        if (d?.estado_fiscal === 'VALIDADA') await encolarCorreoFactura(tx, p.payment_id);
+        else await encolarCorreoPago(tx, p.payment_id, r.estado === 'LISTO');
+        // La factura electrónica solo se intenta si la facturación de la plataforma está habilitada (lo decide el trabajo).
+        if (r.estado === 'LISTO' && d?.estado_fiscal === 'PENDIENTE_CONFIGURACION') {
+          await enqueue(tx, null, 'emitir_factura_pago', { payment_id: p.payment_id }, { claveUnica: `factura:${p.payment_id}:inicial`, maxIntentos: 3 });
+        }
+      });
+    } catch (e) {
+      // Sin más reintentos: la confirmación sale igual (sin adjunto) y los documentos quedan para recuperación.
+      if (ultimoIntento(job)) await db.withPlatform((tx) => encolarCorreoPago(tx, p.payment_id, false));
+      throw e;
+    }
+  },
+
+  /** Factura electrónica de un pago. Sin facturación habilitada y verificada, la obligación queda pendiente. */
+  emitir_factura_pago: async (db, _t, p, job) => {
+    const r = await emitirFacturaPago(db, p.payment_id, job.id);
+    if (r === 'EN_PROCESO' && !ultimoIntento(job)) return 'reintentar';
+  },
+
+  /** Recuperación: checkouts de Wompi sin evento (retraso o caída) y altas pagadas sin terminar. */
+  conciliar_pagos: async (db, _t, _p, job) => { await conciliarPagosPendientes(db, job.id); },
+
   /** Cierre por inactividad: atendida solo por la IA, sin caso ni acción pendiente y quieta 12 h. */
   cerrar_inactivas: async (db) => {
     await db.withPlatform((tx) => tx.query(
@@ -314,6 +344,17 @@ export const HANDLERS: Record<string, Handler> = {
           await encolarCorreo(tx, { tenantId: null, para: t.email_contacto, clave: `suscripcion:${c.tenant_id}:${c.estado}:${new Date().toISOString().slice(0, 10)}`,
             correo: plantillas.suscripcion({ empresa: t.nombre, estado: c.estado, graciaHasta: c.gracia_hasta ? new Date(c.gracia_hasta).toLocaleDateString('es-CO', { timeZone: 'America/Bogota' }) : null, url: `${config.publicUrl}/suscripcion` }) });
         }
+      }
+      // Acceso institucional por vencer: aviso único con las condiciones de continuidad. Nunca se cobra solo.
+      const porVencer = (await tx.query(
+        `SELECT s.tenant_id, s.periodo_fin, p.precio_mensual, t.nombre, t.email_contacto FROM subscription s JOIN tenant t ON t.id=s.tenant_id JOIN plan p ON p.codigo=s.plan_codigo
+         WHERE s.modalidad='INSTITUCIONAL' AND s.estado='ACTIVA' AND s.periodo_fin > now() AND s.periodo_fin < now() + interval '5 days'`)).rows;
+      for (const v of porVencer) {
+        if (!v.email_contacto) continue;
+        const o = ofertaRenovacion({ modalidad: 'INSTITUCIONAL', precio_mensual: v.precio_mensual });
+        await encolarCorreo(tx, { tenantId: null, para: v.email_contacto, clave: `vence-institucional:${v.tenant_id}:${new Date(v.periodo_fin).toISOString().slice(0, 10)}`,
+          correo: plantillas.vencimientoInstitucional({ empresa: v.nombre, venceEl: new Date(v.periodo_fin).toLocaleDateString('es-CO', { timeZone: 'America/Bogota' }),
+            renovacion: { modalidad: o.modalidad, monto: cop(o.monto), dias: o.acceso_dias, disponible: o.disponible }, url: `${config.publicUrl}/suscripcion` }) });
       }
     });
   },
@@ -393,6 +434,7 @@ export function startWorker(db: Database): () => Promise<void> {
           await enqueue(tx, null, 'ciclo_suscripcion', {}, { claveUnica: `ciclo:${hora}` });
           await enqueue(tx, null, 'cerrar_inactivas', {}, { claveUnica: `inactivas:${hora}` });
           await enqueue(tx, null, 'mantenimiento', {}, { claveUnica: `mant:${hora}` });
+          await enqueue(tx, null, 'conciliar_pagos', {}, { claveUnica: `conciliar:${Math.floor(Date.now() / 300_000)}` });
         });
       }
     } catch (e) {

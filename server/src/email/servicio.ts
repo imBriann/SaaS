@@ -101,10 +101,16 @@ export async function procesarCorreo(db: Database, tenantId: string | null, emai
   }
   if (!texto) texto = html.replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
+  // Adjunto de un pago a la plataforma: el ZIP se lee del almacenamiento privado en el momento del envío.
+  let adjuntos: { nombre: string; contenido: Buffer; tipo: string }[] | undefined;
+  if (typeof m.adjunto_ref === 'string' && m.adjunto_ref.startsWith('docpago:')) {
+    const d = await db.withPlatform(async (tx) => (await tx.query(`SELECT numero, zip FROM documento_pago WHERE id=$1 AND estado='LISTO'`, [m.adjunto_ref.slice(8)])).rows[0]);
+    if (d?.zip) adjuntos = [{ nombre: `documentos-omnegia-${d.numero}.zip`, contenido: Buffer.from(d.zip), tipo: 'application/zip' }];
+  }
   const p = proveedorCorreo();
   const r = await p.enviar({
     para: m.para, asunto: m.asunto, html, texto, tipo: m.tipo,
-    responderA: m.responder_a ?? config.correo.responderA, claveIdempotencia: m.id,
+    responderA: m.responder_a ?? config.correo.responderA, claveIdempotencia: m.id, adjuntos,
   });
 
   if (r.ok) {

@@ -19,6 +19,9 @@ export function faseCierre(tk: string | null, st: EstadoServidor | null, error: 
     case undefined: return 'sin_pago';
     case 'PENDIENTE': return 'pendiente';
     case 'RECHAZADO': return 'rechazado';
+    case 'ANULADO': return 'rechazado';
+    // Checkout que dejó de ofrecerse (cambió el precio o la modalidad): hay que iniciar uno nuevo.
+    case 'REEMPLAZADO': return 'sin_pago';
     // Pago aprobado pero el panel aún no figura: el servidor aprovisiona en la misma transacción,
     // así que es transitorio; se sigue consultando sin inventar progreso.
     case 'APROBADO': return 'confirmando';

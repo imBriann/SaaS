@@ -26,6 +26,7 @@ export const CATALOGO_INCIDENTES: Record<string, { gravedad: Gravedad; descripci
   CORREO_NO_ENVIADO: { gravedad: 'MEDIA', descripcion: 'Un correo no se pudo enviar tras sus reintentos.', accion: 'Si la causa fue temporal, reintenta el envío.' },
   WHATSAPP_CREDENCIAL: { gravedad: 'ALTA', descripcion: 'Meta rechazó el token de acceso: no salen mensajes de WhatsApp.', accion: 'Renueva WHATSAPP_ACCESS_TOKEN o revisa los permisos del usuario del sistema en Meta.' },
   WHATSAPP_ENVIO_FALLIDO: { gravedad: 'MEDIA', descripcion: 'Un mensaje de WhatsApp no se pudo entregar.', accion: 'Revisa el estado del número en Configuración › WhatsApp de la empresa (sin abrir sus conversaciones).' },
+  PAGO_REQUIERE_REVISION: { gravedad: 'ALTA', descripcion: 'Un pago de la plataforma no coincide con lo esperado (monto, moneda, pasarela) o se cobró dos veces.', accion: 'Revisa la referencia en el panel de Wompi y en la auditoría; si hubo cobro doble o anulación, gestiona el reembolso o la suspensión manualmente.' },
   APROVISIONAMIENTO_FALLIDO: { gravedad: 'ALTA', descripcion: 'Un alta pagada no terminó de crear el espacio.', accion: 'Reintenta el aprovisionamiento: es idempotente y no cobra de nuevo.' },
   IA_NO_DISPONIBLE: { gravedad: 'MEDIA', descripcion: 'El modelo de lenguaje no respondió; la conversación pasó a una persona.', accion: 'Revisa el estado del proveedor y ANTHROPIC_API_KEY.' },
 };
