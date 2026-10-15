@@ -7,8 +7,10 @@ import { PLANES } from './planRules.js';
 import { deriveTheme, type TemaTenant } from './theme.js';
 import { auditPlatform } from '../core/audit.js';
 import { hashPassword, token, uuidv7, slugify } from '../lib/util.js';
-import { urlEmpresa } from '../config.js';
+import { config, urlEmpresa } from '../config.js';
 import { encolarDocumentos } from '../documentos/servicio.js';
+import { encolarCorreo } from '../email/servicio.js';
+import * as plantillas from '../email/plantillas.js';
 
 /**
  * Aprovisionamiento (PRO-SW-002 fig. 10). Todo ocurre en UNA transacción: un fallo
@@ -252,6 +254,11 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
   // Documentos del pago (comprobante y ZIP) y, al terminarlos, el correo de confirmación: en la misma
   // transacción, así que si el alta se revierte no queda nada encolado.
   if (pago) await encolarDocumentos(tx, pago.id);
+  // Enlace para continuar (definir la contraseña, descargar documentos) aunque se haya cerrado el navegador.
+  if (r.passwordToken && d.email_verificado) {
+    await encolarCorreo(tx, { tenantId: null, para: d.email_verificado, sensible: true, clave: `continuar:${r.tenantId}`, caducaEn: new Date(Date.now() + 7 * 86_400_000),
+      correo: plantillas.continuarAlta({ nombre: n.responsable || n.nombre || '', empresa: tenant.nombre, url: `${config.publicUrl}/empezar/listo#borrador=${draftToken}` }) });
+  }
   await tx.query(
     `UPDATE onboarding_draft SET estado='APROVISIONADO', tenant_id=$2, password_token=$3, etapas=$4, cierre=$5, actualizado_en=now() WHERE token=$1`,
     [draftToken, r.tenantId, r.passwordToken, JSON.stringify(etapas), JSON.stringify(cierre)],

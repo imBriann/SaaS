@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { setup, verificarAlta, type Env } from './helpers.js';
+import { loginOperador, setup, verificarAlta, type Env } from './helpers.js';
 import { classifyBusiness } from '../src/onboarding/classifier.js';
 import { classifyHeuristic } from '../src/ai/llm/mock.js';
 import { setLlm } from '../src/ai/llm/index.js';
@@ -120,13 +120,51 @@ describe('Subdominios reales', () => {
     expect(String(salir.headers['set-cookie'])).toMatch(/Domain=omnegia\.test/i);
   });
 
+  it('cada host sirve solo lo suyo: empresa existente, subdominio inventado, operador solo en el principal', async () => {
+    const { olvidarEmpresas } = await import('../src/http/dominios.js');
+    const dir = mkdtempSync(join(tmpdir(), 'web-'));
+    writeFileSync(join(dir, 'index.html'), '<!doctype html><html><head><title>Omnegia</title></head><body><div id="root"></div></body></html>');
+    const publicoOriginal = config.publicUrl;
+    config.baseDomain = 'omnegia.test'; config.publicUrl = 'https://omnegia.test'; olvidarEmpresas();
+    const app = await buildApp(E.db, { webDir: dir, logger: false });
+    const pedir = (host: string, url: string) => app.inject({ method: 'GET', url, headers: { host } });
+    try {
+      // Empresa que existe: su panel sí; lo exclusivo del principal redirige allá.
+      expect((await pedir('elparche.omnegia.test', '/clientes')).statusCode).toBe(200);
+      const op = await pedir('elparche.omnegia.test', '/operador/empresas/123');
+      expect(op.statusCode).toBe(302);
+      expect(op.headers.location).toBe('https://omnegia.test/operador/empresas/123');
+      expect((await pedir('elparche.omnegia.test', '/empezar')).headers.location).toBe('https://omnegia.test/empezar');
+      expect((await pedir('elparche.omnegia.test', '/entrar')).statusCode).toBe(200);
+      // Subdominio inventado: «esta dirección no existe», sin servir la aplicación.
+      const inventado = await pedir('scs.omnegia.test', '/operador/empresas/01a13d79');
+      expect(inventado.statusCode).toBe(404);
+      expect(inventado.body).toContain('Esta dirección no existe');
+      expect(inventado.body).not.toContain('id="root"');
+      expect((await pedir('a.b.omnegia.test', '/')).statusCode).toBe(404);
+      // La API del operador tampoco responde fuera del principal.
+      const sesion = await loginOperador(E.app, E.db);
+      const conSesion = (host: string) => app.inject({ method: 'GET', url: '/api/operador/yo', headers: { host, cookie: sesion } });
+      expect((await conSesion('omnegia.test')).statusCode).toBe(200);
+      expect((await conSesion('elparche.omnegia.test')).statusCode).toBe(404);
+      expect((await conSesion('scs.omnegia.test')).statusCode).toBe(404);
+      // www y hosts ajenos (la URL de onrender.com) redirigen al principal, conservando la ruta.
+      expect((await pedir('www.omnegia.test', '/planes')).headers.location).toBe('https://omnegia.test/planes');
+      expect((await pedir('omnegia-pruebas.onrender.com', '/empezar/listo?id=1')).headers.location).toBe('https://omnegia.test/empezar/listo?id=1');
+      // El principal sirve todo.
+      for (const ruta of ['/', '/operador', '/empezar']) expect((await pedir('omnegia.test', ruta)).statusCode).toBe(200);
+      // Las comprobaciones de salud de Render siguen respondiendo en cualquier host.
+      expect((await pedir('omnegia-pruebas.onrender.com', '/api/salud')).statusCode).toBe(200);
+    } finally { config.publicUrl = publicoOriginal; olvidarEmpresas(); await app.close(); rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('el panel recibe el dominio base en index.html para detectar el subdominio de la empresa', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'web-'));
     writeFileSync(join(dir, 'index.html'), '<!doctype html><html><head><title>Omnegia</title></head><body><div id="root"></div></body></html>');
     config.baseDomain = 'omnegia.brianacevedo.dev';
     const app = await buildApp(E.db, { webDir: dir, logger: false });
     try {
-      for (const ruta of ['/', '/empezar', '/clientes']) {
+      for (const ruta of ['/', '/clientes', '/entrar']) {
         const r = await app.inject({ method: 'GET', url: ruta, headers: { host: 'huellitas.omnegia.brianacevedo.dev' } });
         expect(r.statusCode).toBe(200);
         expect(r.body).toContain('<meta name="omnegia-dominio" content="omnegia.brianacevedo.dev">');

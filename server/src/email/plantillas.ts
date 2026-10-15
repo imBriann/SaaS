@@ -277,6 +277,17 @@ export const altaConfirmada = (o: { empresa: string; modalidad: 'COMERCIAL' | 'I
   boton: { texto: 'Abrir mi espacio', url: o.urlEmpresa },
 });
 
+/** Enlace para volver al alta (definir contraseña, documentos). Lleva una llave: solo al correo verificado. */
+export const continuarAlta = (o: { nombre: string; empresa: string; url: string }) => render({
+  tipo: 'continuar_alta', asunto: `Continúa con tu espacio en Omnegia — ${o.empresa}`, previa: 'Vuelve a la página de tu alta para entrar a tu panel.',
+  titulo: 'Continúa donde ibas',
+  parrafos: [
+    `${o.nombre ? `Hola, ${o.nombre}. ` : ''}Con este enlace vuelves a la página del alta de ${o.empresa}: ahí ves el estado del pago, descargas tus documentos y defines tu contraseña.`,
+    'Es personal: no lo reenvíes. Si no pediste esto, puedes ignorar el mensaje.',
+  ],
+  boton: { texto: 'Continuar mi alta', url: o.url },
+});
+
 /** Factura electrónica validada por la DIAN (solo cuando existe una de verdad). */
 export const facturaDisponible = (o: { empresa: string; numero: string; referencia: string; adjunto: boolean; url: string }) => render({
   tipo: 'factura_electronica', asunto: `Tu factura electrónica ${o.numero} — ${o.empresa}`, previa: 'La DIAN validó la factura electrónica de tu pago.',

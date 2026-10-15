@@ -180,6 +180,22 @@ export const config = {
 };
 
 
+/**
+ * Origen al que Wompi puede devolver al usuario: el mismo donde empezó el alta (allí está la llave
+ * del borrador en el navegador). Solo se aceptan el dominio público, los subdominios https de
+ * BASE_DOMAIN y, en desarrollo, localhost. Cualquier otro valor se descarta.
+ */
+export function origenRetorno(origen: unknown, c = config): string | null {
+  try {
+    const u = new URL(String(origen ?? ''));
+    if (u.pathname !== '/' || u.search || u.hash || u.username || u.password) return null;
+    if (u.origin === new URL(c.publicUrl).origin) return u.origin;
+    if (c.baseDomain !== 'localhost' && u.protocol === 'https:' && u.hostname.endsWith('.' + c.baseDomain)) return u.origin;
+    if (c.dev && ['localhost', '127.0.0.1'].includes(u.hostname.replace(/^.*\.(?=localhost$)/, ''))) return u.origin;
+    return null;
+  } catch { return null; }
+}
+
 /** Dirección de acceso de una empresa: <slug>.<BASE_DOMAIN> (o la URL del panel en local). */
 export function urlEmpresa(slug: string, c = config): string {
   if (c.baseDomain === 'localhost' || !/^[a-z0-9-]{1,63}$/.test(slug)) return c.publicUrl;

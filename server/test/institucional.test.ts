@@ -439,3 +439,50 @@ describe('Aislamiento', () => {
     expect(verificarEventoWompi({ ...cuentaComercio, secretoEventos: SECRETO_EVENTOS }, ev)).toBeNull();
   });
 });
+
+describe('Vuelta de la pasarela sin perder el alta', () => {
+  it('solo se vuelve a orígenes permitidos', async () => {
+    const { origenRetorno } = await import('../src/config.js');
+    const c = { ...config, publicUrl: 'https://omnegia.test', baseDomain: 'omnegia.test', dev: false };
+    expect(origenRetorno('https://omnegia.test', c)).toBe('https://omnegia.test');
+    expect(origenRetorno('https://huellitas.omnegia.test', c)).toBe('https://huellitas.omnegia.test');
+    for (const malo of ['https://evil.test', 'http://huellitas.omnegia.test', 'https://omnegia.test.evil.test', 'https://omnegia.test/otra', 'javascript:alert(1)', '', null]) expect(origenRetorno(malo, c)).toBeNull();
+    expect(origenRetorno('http://localhost:5173', c)).toBeNull();
+    expect(origenRetorno('http://localhost:5173', { ...c, dev: true })).toBe('http://localhost:5173');
+  });
+
+  it('Wompi devuelve al mismo dominio donde empezó el alta (y nunca a uno ajeno)', async () => {
+    const baseOriginal = config.baseDomain;
+    config.baseDomain = 'omnegia.test';
+    try {
+    const tk = await borrador('retorno-origen');
+    const p = (await post(`/api/onboarding/borradores/${tk}/pago`, { retorno: 'https://retorno-origen.omnegia.test' })).json();
+    expect(new URL(p.url).searchParams.get('redirect-url')).toBe('https://retorno-origen.omnegia.test/empezar/listo');
+    const ajeno = (await post(`/api/onboarding/borradores/${tk}/pago`, { retorno: 'https://evil.test' })).json();
+    expect(new URL(ajeno.url).searchParams.get('redirect-url')).toBe('https://omnegia.test/empezar/listo');
+    } finally { config.baseDomain = baseOriginal; }
+  });
+
+  it('sin la llave en el navegador: confirma con Wompi, envía el enlace al correo verificado y nunca devuelve la llave', async () => {
+    const tk = await borrador('rescate');
+    const p = (await post(`/api/onboarding/borradores/${tk}/pago`)).json();
+    respuestaWompi = (url) => url.endsWith('/transactions/tx-rescate')
+      ? new Response(JSON.stringify({ data: { id: 'tx-rescate', status: 'APPROVED', amount_in_cents: 150000, reference: p.referencia, currency: 'COP' } }), { status: 200 })
+      : new Response('{}', { status: 404 });
+    // El webhook nunca llegó: la vuelta misma confirma el pago y crea la empresa.
+    const r = await post('/api/onboarding/retorno', { id: 'tx-rescate' });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ alta: true, pago: 'APROBADO', creada: true, empresa: 'Empresa rescate', correo: 'd•••@rescate.test', enviado: true });
+    expect(r.body).not.toContain(tk);
+    expect((await estado(tk)).estado).toBe('APROVISIONADO');
+    // Recargar la página no inunda el correo.
+    await post('/api/onboarding/retorno', { id: 'tx-rescate' });
+    const enlaces = await E.db.withPlatform(async (tx) => (await tx.query(`SELECT tipo, sensible, para FROM email_outbox WHERE tipo='continuar_alta' AND para='dueno@rescate.test'`)).rows);
+    // Uno por la creación de la empresa y uno por la vuelta (ventana de 15 minutos); todos sensibles y al correo verificado.
+    expect(enlaces.length).toBe(2);
+    expect(enlaces.every((x: any) => x.sensible)).toBe(true);
+    // Una transacción desconocida no revela nada.
+    respuestaWompi = () => new Response('{}', { status: 404 });
+    expect((await post('/api/onboarding/retorno', { id: 'tx-ajena' })).json()).toEqual({ estado: 'DESCONOCIDO', alta: false });
+  });
+});

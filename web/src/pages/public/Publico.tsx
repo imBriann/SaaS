@@ -63,8 +63,17 @@ export function Landing() {
 
 // ---------------------------------------------------------------- SCR-002 / SCR-003
 
+/** Llave del borrador recibida en el enlace del correo (#borrador=…). El fragmento nunca llega al servidor. */
+function llaveDelEnlace(): string | null {
+  const m = /(?:^#|&)borrador=([\w-]{20,64})(?:&|$)/.exec(window.location.hash);
+  if (!m) return null;
+  guardar('borrador', m[1]);
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  return m[1];
+}
+
 export function useBorrador() {
-  const [tk] = useState(() => sessionStorage.getItem('descripcion_inicial') ? null : leer('borrador'));
+  const [tk] = useState(() => llaveDelEnlace() ?? (sessionStorage.getItem('descripcion_inicial') ? null : leer('borrador')));
   const [d, setD] = useState<any>(null);
   const [cargando, setCargando] = useState(!!tk);
   const [error, setError] = useState<ApiError | null>(null);
@@ -334,7 +343,7 @@ export function Pago() {
   const [acepto, setAcepto] = useState(false);
   const nav = useNavigate();
   const activate = async () => {
-    const r = await run(() => api.post(`/api/onboarding/borradores/${d.token}/pago`));
+    const r = await run(() => api.post(`/api/onboarding/borradores/${d.token}/pago`, { retorno: window.location.origin }));
     if (!r) return;
     // Ya estaba pagado: no hay un segundo cobro, se va directo al estado del alta.
     if (r.ya_pagado || !r.url) nav('/empezar/listo');
@@ -406,7 +415,7 @@ export function Pasarela() {
     else if (r === 'aprobado' && q.get('volver')) { const v = new URL(q.get('volver')!, window.location.origin); nav(`${v.pathname}?ref=${encodeURIComponent(ref)}`, { replace: true }); }
   };
   const reintentar = async () => {
-    const x = await run(() => api.post(`/api/onboarding/borradores/${leer('borrador')}/pago`));
+    const x = await run(() => api.post(`/api/onboarding/borradores/${leer('borrador')}/pago`, { retorno: window.location.origin }));
     if (x) irA(x.url);
   };
   return (
@@ -518,11 +527,18 @@ export function Aprovisionamiento() {
   const [q] = useSearchParams();
   const idRetorno = q.get('id');
 
+  const [rescate, setRescate] = useState<any>(null);
   // Wompi vuelve con ?id=<transacción>. El navegador solo aporta el id: el servidor consulta a Wompi.
+  // Sin la llave del borrador en este navegador, el servidor confirma el pago y envía el enlace para continuar al correo verificado.
   useEffect(() => {
     if (!idRetorno || !/^[\w-]{3,80}$/.test(idRetorno)) return;
+    if (!tk) {
+      setRescate({ cargando: true });
+      api.post('/api/onboarding/retorno', { id: idRetorno }).then(setRescate).catch((e) => setRescate({ error: (e as Error).message }));
+      return;
+    }
     api.get(`/api/pagos/verificar?id=${encodeURIComponent(idRetorno)}`).catch(() => {}).finally(() => setConsulta((n) => n + 1));
-  }, [idRetorno]);
+  }, [idRetorno]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!tk) return;
@@ -543,13 +559,14 @@ export function Aprovisionamiento() {
   }, [tk, consulta]);
 
   const fase = faseCierre(tk, st, error);
+  const enRescate = fase === 'sin_borrador' && !!rescate;
   const falloCreacion = fase === 'confirmando' && !!st?.error_aprovisionamiento;
   const listo = fase === 'listo';
   const pago = st?.pago;
   const necesitaCrear = listo && st.requiere_contrasena && !creada;
 
   const irAPagar = async () => {
-    const r = await run(() => api.post(`/api/onboarding/borradores/${tk}/pago`));
+    const r = await run(() => api.post(`/api/onboarding/borradores/${tk}/pago`, { retorno: window.location.origin }));
     if (r) irA(r.url);
   };
   const reciboReal = faseRecibo(st);
@@ -605,15 +622,15 @@ export function Aprovisionamiento() {
     sin_pago: 'Aún no has iniciado el pago', pendiente: 'Esperando la confirmación del pago', rechazado: 'La pasarela rechazó el pago',
     confirmando: 'Pago confirmado. Estamos creando tu panel', listo: `${st?.tenant?.nombre ?? 'Tu negocio'} ya tiene su panel`,
   };
-  const hechos = pasosCumplidos(fase, d);
+  const hechos = enRescate && rescate?.alta ? (rescate.creada ? 6 : rescate.pago === 'APROBADO' ? 5 : 4) : pasosCumplidos(fase, d);
 
   return (
-    <PublicoLayout paso={Math.min(hechos, 5)} hechos={hechos} estado={falloCreacion ? { tono: 'err', icono: 'alerta', texto: 'Creación detenida · tu pago está confirmado' } : CABECERA[fase]} notaAlta={listo ? 'Tu espacio está creado. Puedes continuar desde tu panel.' : falloCreacion ? 'Tu pago está confirmado. Reintenta la creación con tu configuración guardada.' : fase === 'confirmando' ? 'Tu pago está confirmado. Estamos preparando tu espacio.' : fase === 'error' ? 'Tu configuración se conserva. Reintenta la consulta del estado.' : fase === 'sin_borrador' ? 'Describe tu negocio para empezar a configurar tu espacio.' : fase === 'cargando' ? 'Estamos consultando el estado de tu configuración.' : 'Tu borrador se conserva mientras se confirma el pago.'}>
+    <PublicoLayout paso={Math.min(hechos, 5)} hechos={hechos} estado={falloCreacion ? { tono: 'err', icono: 'alerta', texto: 'Creación detenida · tu pago está confirmado' } : enRescate ? { tono: rescate?.pago === 'APROBADO' ? 'ok' : 'neutro', icono: rescate?.pago === 'APROBADO' ? 'ok' : 'reloj', texto: rescate?.pago === 'APROBADO' ? 'Pago confirmado · continúa desde tu correo' : 'Confirmando el pago con Wompi' } : CABECERA[fase]} notaAlta={listo ? 'Tu espacio está creado. Puedes continuar desde tu panel.' : falloCreacion ? 'Tu pago está confirmado. Reintenta la creación con tu configuración guardada.' : fase === 'confirmando' ? 'Tu pago está confirmado. Estamos preparando tu espacio.' : fase === 'error' ? 'Tu configuración se conserva. Reintenta la consulta del estado.' : enRescate ? 'Tu alta se conserva en el servidor. Continúa con el enlace que enviamos a tu correo.' : fase === 'sin_borrador' ? 'Describe tu negocio para empezar a configurar tu espacio.' : fase === 'cargando' ? 'Estamos consultando el estado de tu configuración.' : 'Tu borrador se conserva mientras se confirma el pago.'}>
       {(fase === 'confirmando' || fase === 'listo') && <WorkspaceAssembly nombre={st?.tenant?.nombre ?? d?.negocio?.nombre ?? 'Tu negocio'} modulos={listo ? st?.panel?.modulos ?? [] : d?.cotizacion?.modulos ?? []} listo={listo} error={!!st?.error_aprovisionamiento} />}
       <div className={`cierre ${fase === 'sin_borrador' ? 'solo' : ''}`}>
         <section className="tarjeta col cierre-estado" aria-live="polite">
-          <h1 className="onb-titulo">{falloCreacion ? 'Tu pago está confirmado. La creación necesita un reintento.' : titulo[fase]}</h1>
-          {fase === 'sin_borrador' && <><p className="sec">{error ? 'No encontramos el borrador guardado en este navegador.' : 'Describe tu negocio para preparar una propuesta.'}</p><Link className="btn primario" style={{ alignSelf: 'flex-start' }} to="/empezar">Empezar</Link></>}
+          <h1 className="onb-titulo">{falloCreacion ? 'Tu pago está confirmado. La creación necesita un reintento.' : enRescate ? (rescate?.alta ? 'Tu pago y tu alta están a salvo' : 'Confirmando tu pago') : titulo[fase]}</h1>
+          {fase === 'sin_borrador' && (rescate ? <RescateAlta r={rescate} /> : <><p className="sec">{error ? 'No encontramos el borrador guardado en este navegador.' : 'Describe tu negocio para preparar una propuesta.'}</p><Link className="btn primario" style={{ alignSelf: 'flex-start' }} to="/empezar">Empezar</Link></>)}
           {fase === 'cargando' && <Cargando filas={3} />}
           {fase === 'error' && <>
             <div className="aviso" role="alert"><Icon n="alerta" className="" size={16} /><span>{error?.message}. Esto solo afecta a la consulta del estado; vuelve a intentarlo.</span></div>
@@ -773,6 +790,38 @@ export function Empresas() {
         {s.usuario.rol_plataforma && s.usuario.segundo_factor && <Link className="btn" to="/operador">Panel del operador de {MARCA.nombre}</Link>}
       </div>
     </PublicoLayout>
+  );
+}
+
+/**
+ * Vuelta de la pasarela en un navegador sin la llave del alta. Nada se perdió: el pago lo confirma el
+ * servidor con Wompi, la empresa se crea igual, y el enlace para continuar llega al correo verificado.
+ */
+function RescateAlta({ r }: { r: any }) {
+  if (r.cargando) return <><p className="sec">Confirmando tu pago con Wompi…</p><Cargando filas={2} /></>;
+  if (r.error || !r.alta) return (
+    <div className="col" style={{ gap: 10 }}>
+      <p className="sec">{r.error ? `No pudimos confirmar el pago todavía: ${r.error}` : r.estado === 'DESCONOCIDO' ? 'Wompi todavía no confirma esta transacción. Si ya pagaste, la confirmación llega en unos minutos y no se pierde.' : 'Esta transacción no corresponde a un alta de Omnegia.'}</p>
+      <p className="tenue peq-txt">Si tu empresa ya se creó, puedes entrar con «¿Olvidaste tu contraseña?» usando el correo de administrador.</p>
+      <div className="fila envolver" style={{ gap: 8 }}><Link className="btn primario" to="/recuperar">Recuperar mi acceso</Link><Link className="btn" to="/empezar">Empezar un alta nueva</Link></div>
+    </div>
+  );
+  const pagado = r.pago === 'APROBADO';
+  return (
+    <div className="rescate col" style={{ gap: 12 }}>
+      <p className={`estado ${pagado ? 'ok' : 'warn'}`} style={{ alignSelf: 'flex-start', height: 'auto', padding: '4px 10px' }}><Icon n={pagado ? 'ok' : 'reloj'} className="" />{pagado ? 'Pago confirmado por Wompi' : 'Pago pendiente de confirmación'}</p>
+      <p className="sec" style={{ margin: 0 }}>
+        {r.creada ? <>El espacio de <b>{r.empresa}</b> ya está creado.</> : pagado ? <>Estamos creando el espacio de <b>{r.empresa}</b>.</> : <>El alta de <b>{r.empresa}</b> sigue guardada.</>}{' '}
+        Abriste esta página en un navegador o dirección distinta a la del alta, así que por seguridad no mostramos aquí sus datos.
+      </p>
+      {r.enviado
+        ? <p className="nota-fiscal peq-txt" style={{ margin: 0 }}><Icon n="correo" className="" size={16} /><span>Te enviamos un enlace a <b>{r.correo}</b> para continuar donde ibas: definir tu contraseña y descargar tus documentos. Revisa también el correo no deseado.</span></p>
+        : <p className="tenue peq-txt" style={{ margin: 0 }}>Este alta no tiene un correo verificado. Escríbenos y te ayudamos a recuperarla.</p>}
+      <div className="fila envolver" style={{ gap: 8 }}>
+        {r.creada && <Link className="btn" to="/recuperar">Ya tengo cuenta: recuperar acceso</Link>}
+        <Link className="btn sutil" to="/ayuda">Necesito ayuda</Link>
+      </div>
+    </div>
   );
 }
 

@@ -118,7 +118,7 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   });
   app.post('/api/onboarding/borradores/:tk/catalogo/vista-previa', async (req: any) => onboarding.previewCatalog(db, req.params.tk, req.body?.mapeo));
   app.post('/api/onboarding/borradores/:tk/catalogo/confirmar', async (req: any) => onboarding.confirmCatalog(db, req.params.tk, req.body));
-  app.post('/api/onboarding/borradores/:tk/pago', async (req: any) => onboarding.startCheckout(db, req.params.tk, req.correlacion));
+  app.post('/api/onboarding/borradores/:tk/pago', async (req: any) => onboarding.startCheckout(db, req.params.tk, req.correlacion, req.body?.retorno));
   app.get('/api/onboarding/borradores/:tk/estado', async (req: any) => onboarding.draftStatus(db, req.params.tk, req.correlacion));
   app.post('/api/onboarding/borradores/:tk/reintentar', async (req: any) => onboarding.retryProvisioning(db, req.params.tk, req.correlacion));
   // Documentos del pago: enlace temporal para quien pagó (portador del borrador) y reintento si fallaron.
@@ -136,6 +136,8 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
     if (!cuenta || cuenta.proveedor !== 'wompi') return { fuente: 'no_confirmado', medios: [], bre_b: false };
     return mediosPagoWompi(cuenta, config.institucional.activo ? config.institucional.precioCop : Number.MAX_SAFE_INTEGER);
   });
+  // Vuelta de la pasarela sin la llave del borrador: confirma con Wompi y envía el enlace al correo verificado.
+  app.post('/api/onboarding/retorno', async (req: any) => onboarding.recuperarRetorno(db, String(req.body?.id ?? ''), req.correlacion));
   app.post('/api/onboarding/borradores/:tk/contrasena', async (req: any) => onboarding.setInitialPassword(db, req.params.tk, req.body?.password, req.ip));
   app.get('/api/onboarding/plantilla-catalogo.xlsx', async (_req, reply) => {
     reply.header('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

@@ -1,11 +1,11 @@
-import { config, urlEmpresa } from '../config.js';
+import { config, origenRetorno, urlEmpresa } from '../config.js';
 import { encolarCorreo } from '../email/servicio.js';
 import * as plantillas from '../email/plantillas.js';
 import { emitirOtp } from '../modules/otp.js';
 import { validarContrasena } from '../modules/auth.js';
 import { quoteClassification } from './pricing.js';
 import { z } from 'zod';
-import type { Database } from '../db/index.js';
+import type { Database, Tx } from '../db/index.js';
 import { AppError, invalid, notFound } from '../lib/errors.js';
 import { hashPassword, slugify, token, uuidv7 } from '../lib/util.js';
 import { auditPlatform } from '../core/audit.js';
@@ -14,7 +14,7 @@ import { recommendPlan } from './planRules.js';
 import { applyMapping, inferMapping, readSheet, CAMPOS_DESTINO, type Hoja, type Mapeo } from './importer.js';
 import { deriveTheme } from './theme.js';
 import { checkoutUrl, cuentaPlataforma, normalizarEventoSimulado, verifyWebhook } from '../adapters/payments.js';
-import { aprovisionarConReintento, conciliarReferencia, MINUTOS_CHECKOUT, procesarEventoPago } from '../modules/billing.js';
+import { aprovisionarConReintento, conciliarReferencia, MINUTOS_CHECKOUT, procesarEventoPago, verificarRetorno } from '../modules/billing.js';
 import { ofertaAlta, puedeContratar, resumenModalidad } from './oferta.js';
 import { facturacionPublica, huellaFacturacion, prepararFacturacion, vistaFacturacion, type FacturacionGuardada } from './facturacion.js';
 import { requisitosFacturacion } from '../documentos/fiscalPlataforma.js';
@@ -281,7 +281,7 @@ export async function confirmCatalog(db: Database, tk: string, body: unknown) {
 // ---------------------------------------------------------------------------
 // Pago y aprovisionamiento
 // ---------------------------------------------------------------------------
-export async function startCheckout(db: Database, tk: string, correlacion = uuidv7()) {
+export async function startCheckout(db: Database, tk: string, correlacion = uuidv7(), retorno?: unknown) {
   const d = await loadDraft(db, tk);
   const cuenta = cuentaPlataforma();
   if (!cuenta || !puedeContratar()) throw new AppError('CONFLICT', 'La contratación en línea todavía no está habilitada. Escríbenos y te ayudamos a activar tu espacio.');
@@ -300,6 +300,9 @@ export async function startCheckout(db: Database, tk: string, correlacion = uuid
   if (cuenta.proveedor === 'wompi' && !facturacion) faltan.push('facturacion');
   if (faltan.length) throw new AppError('VALIDATION', 'Faltan datos para continuar.', { faltan });
   const entorno = cuenta.proveedor === 'wompi' ? cuenta.entorno : null;
+  // Wompi devuelve al mismo origen donde empezó el alta; en producción solo https (si no, el dominio público).
+  const origen = origenRetorno(retorno);
+  const urlRetorno = `${origen && (entorno !== 'produccion' || origen.startsWith('https://')) ? origen : config.publicUrl}/empezar/listo`;
   const huella = facturacion ? huellaFacturacion(facturacion) : null;
   const r = await db.withPlatform(async (tx) => {
     const slugTomado = (await tx.query(`SELECT 1 FROM tenant WHERE slug=$1`, [n.slug])).rows[0];
@@ -316,7 +319,7 @@ export async function startCheckout(db: Database, tk: string, correlacion = uuid
     const quote = quoteClassification(locked.clasificacion);
     const oferta = ofertaAlta(quote.total);
     const urlDe = (referencia: string, monto: number, expira: Date | undefined) => checkoutUrl(cuenta, {
-      referencia, montoCentavos: aCentavos(monto), redirectUrl: `${config.publicUrl}/empezar/listo`, expiraEn: cuenta.proveedor === 'wompi' ? expira : undefined,
+      referencia, montoCentavos: aCentavos(monto), redirectUrl: urlRetorno, expiraEn: cuenta.proveedor === 'wompi' ? expira : undefined,
       concepto: oferta.concepto, cliente: { email: n.email, nombre: n.nombre },
     });
     // Un checkout pendiente solo se reutiliza si sus términos coinciden exactamente con los vigentes
@@ -454,6 +457,36 @@ export async function retryProvisioning(db: Database, tk: string, correlacion: s
   const r = await aprovisionarConReintento(db, tk, correlacion);
   if (!r.tenantId) throw new AppError('CONFLICT', r.error ?? 'No pudimos crear el espacio todavía.');
   return { ok: true };
+}
+
+const enmascarar = (correo: string) => correo.replace(/^(.)[^@]*(@.*)$/, '$1•••$2');
+
+/** Correo con el enlace para continuar el alta. Solo al correo de administrador ya verificado. */
+async function enviarContinuacion(tx: Tx, d: any, empresa: string | null, clave: string) {
+  if (!d.email_verificado) return null;
+  await encolarCorreo(tx, { tenantId: null, para: d.email_verificado, sensible: true, clave, caducaEn: new Date(Date.now() + 7 * 86_400_000),
+    correo: plantillas.continuarAlta({ nombre: d.negocio?.responsable || d.negocio?.nombre || '', empresa: empresa ?? d.negocio?.nombre ?? 'tu negocio', url: `${config.publicUrl}/empezar/listo#borrador=${d.token}` }) });
+  return enmascarar(d.email_verificado);
+}
+
+/**
+ * Vuelta de la pasarela en un navegador que no tiene la llave del borrador (otro dominio, otro
+ * dispositivo, datos borrados). El servidor confirma la transacción con Wompi y, si corresponde a
+ * un alta, envía el enlace para continuar al correo verificado del administrador. Nunca devuelve la
+ * llave: quien solo conoce el identificador de la transacción no puede tomar el control del alta.
+ */
+export async function recuperarRetorno(db: Database, transaccionId: string, correlacion: string) {
+  if (!/^[\w-]{3,80}$/.test(transaccionId)) throw invalid('Identificador de transacción inválido.');
+  const v: any = await verificarRetorno(db, transaccionId, correlacion);
+  if (!v.referencia?.startsWith('SUB-')) return { estado: v.estado ?? 'DESCONOCIDO', alta: false };
+  return db.withPlatform(async (tx) => {
+    const r = (await tx.query(
+      `SELECT p.estado AS pago, d.*, t.nombre AS empresa FROM payment p JOIN onboarding_draft d ON d.token=p.draft_token LEFT JOIN tenant t ON t.id=d.tenant_id WHERE p.referencia=$1`, [v.referencia])).rows[0];
+    if (!r) return { estado: v.estado, alta: false };
+    // Un envío cada 15 minutos por alta, aunque se recargue la página.
+    const correo = await enviarContinuacion(tx, r, r.empresa, `retorno:${r.token}:${Math.floor(Date.now() / 900_000)}`);
+    return { estado: v.estado, alta: true, pago: r.pago, creada: r.estado === 'APROVISIONADO', empresa: r.empresa ?? r.negocio?.nombre ?? null, correo, enviado: !!correo };
+  });
 }
 
 export async function reanalyzeDraft(db: Database, tk: string, descripcion: unknown) {

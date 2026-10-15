@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import { existsSync, readFileSync } from 'node:fs';
+import { clasificarHost, empresaExiste, paginaInexistente, soloPrincipal, urlPrincipal } from './dominios.js';
 import { join, resolve } from 'node:path';
 import { ZodError } from 'zod';
 import type { Database, Tx } from '../db/index.js';
@@ -47,6 +48,8 @@ function origenPermitido(origin: string): boolean {
   }
 }
 
+const hostDe = (req: FastifyRequest) => String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '');
+
 export async function buildApp(db: Database, opts: { logger?: boolean; webDir?: string } = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger: opts.logger === false || config.logNivel === 'silent' ? false : {
@@ -69,6 +72,10 @@ export async function buildApp(db: Database, opts: { logger?: boolean; webDir?: 
   });
 
   app.addHook('onRequest', async (req, reply) => {
+    // El panel del operador solo responde en el dominio principal (nunca en un subdominio de empresa).
+    if (req.url.startsWith('/api/operador') && clasificarHost(hostDe(req)).tipo !== 'principal') {
+      return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'No encontramos eso.' } });
+    }
     const entrante = String(req.headers['x-correlation-id'] ?? '');
     req.correlacion = /^[\w-]{8,64}$/.test(entrante) ? entrante : req.id;
     reply.header('x-correlation-id', req.correlacion);
@@ -166,9 +173,17 @@ export async function buildApp(db: Database, opts: { logger?: boolean; webDir?: 
         if (/[\\/]assets[\\/]/.test(path)) reply.header('cache-control', 'public, max-age=31536000, immutable');
       },
     });
-    app.setNotFoundHandler((req, reply) => {
+    app.setNotFoundHandler(async (req, reply) => {
       if (req.url.startsWith('/api/')) return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'No encontramos eso.' } });
       reply.header('cache-control', 'no-cache');
+      // Cada host sirve solo lo suyo (ver dominios.ts).
+      const host = hostDe(req);
+      const destino = clasificarHost(host);
+      if (destino.tipo === 'redirigir') return reply.redirect(urlPrincipal(req.url), 301);
+      if (destino.tipo === 'inexistente' || (destino.tipo === 'empresa' && !(await empresaExiste(db, destino.slug)))) {
+        return reply.status(404).header('x-robots-tag', 'noindex').type('text/html; charset=utf-8').send(paginaInexistente(host));
+      }
+      if (destino.tipo === 'empresa' && soloPrincipal(req.url)) return reply.redirect(urlPrincipal(req.url), 302);
       return reply.type('text/html; charset=utf-8').send(indice);
     });
   } else {
