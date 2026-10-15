@@ -1,3 +1,4 @@
+import { verificarAlta } from './helpers.js';
 import { createHash } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { setup, login, api, CRED, type Env, loginOperador, op } from './helpers.js';
@@ -162,7 +163,8 @@ describe('Aprovisionamiento recuperable', () => {
   it('si el alta falla después del pago, queda el pago aprobado, se muestra el error y el reintento crea UNA empresa sin cobrar otra vez', async () => {
     const post = (url: string, payload?: unknown) => E.app.inject({ method: 'POST', url, payload: payload as any });
     const d = (await post('/api/onboarding/borradores', { descripcion: 'Tengo una barbería pequeña en Ocaña, atiendo yo solo con citas por WhatsApp.' })).json();
-    await E.app.inject({ method: 'PATCH', url: `/api/onboarding/borradores/${d.token}`, payload: { negocio: { nombre: 'Barbería Recupera', email: 'dueno@recupera.test', slug: 'recupera', nit: `901999888-${digitoVerificacionNit('901999888')}` } } });
+    await E.app.inject({ method: 'PATCH', url: `/api/onboarding/borradores/${d.token}`, payload: { negocio: { nombre: 'Barbería Recupera', email: 'dueno@recupera.test', slug: 'recupera', nit: '901999888', nit_dv:String(digitoVerificacionNit('901999888')) } } });
+    await verificarAlta(E,d.token);
     const pago = (await post(`/api/onboarding/borradores/${d.token}/pago`)).json();
     // Se fuerza un fallo del alta: el plan congelado del borrador desaparece antes del pago.
     await E.db.withPlatform((tx) => tx.query(`UPDATE onboarding_draft SET plan_codigo='esencial' WHERE token=$1`, [d.token]));

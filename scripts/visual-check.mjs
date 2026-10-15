@@ -109,17 +109,30 @@ try {
   await page.goto('http://localhost:5174/empezar');
   await page.getByRole('textbox', { name: 'Describe tu negocio' }).fill('Tengo una barbería con dos personas. Necesito organizar las citas, los clientes y las ventas.');
   await page.getByRole('button', { name: 'Analizar mi negocio' }).click();
-  await page.getByRole('heading', { name: 'Lo que entendimos' }).waitFor();
+  await page.getByRole('heading', { name: 'Una propuesta para tu negocio' }).waitFor();
   await capture('setup-selection');
   await page.getByRole('button', { name: 'Continuar con mis datos' }).click();
-  await page.getByRole('textbox', { name: 'Nombre del negocio', exact: true }).fill('Estudio QA Omnegia');
+  await page.getByRole('textbox', { name: 'Nombre comercial', exact: true }).fill('Estudio QA Omnegia');
   await page.getByRole('textbox', { name: 'Correo del administrador', exact: true }).fill('dueno@omnegia-qa.test');
-  await page.getByRole('textbox', { name: 'Tu nombre', exact: true }).fill('Prueba Omnegia');
-  await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+  await page.getByRole('textbox', { name: /^Tu nombre/ }).fill('Prueba Omnegia');
+  await page.getByLabel('Nombre de tu direcci\u00f3n', {exact:false}).fill('estudio-qa-omnegia');
+  await page.getByRole('button', {name:'Guardar y continuar',exact:true}).click();
+  await page.getByText('Confirma el c\u00f3digo de tu correo antes de continuar.',{exact:true}).waitFor();
+  await page.getByRole('button', {name:'Enviar c\u00f3digo de verificaci\u00f3n'}).click();
+  const code=await (await page.request.get('http://127.0.0.1:3002/api/__test/codigo?email=dueno@omnegia-qa.test')).json();
+  await page.getByLabel('C\u00f3digo de 6 d\u00edgitos').fill(code.codigo);
+  await page.getByRole('button',{name:'Confirmar c\u00f3digo',exact:true}).click();
+  await page.getByText('Correo verificado',{exact:true}).waitFor();
+  for(const width of [1440,390,320]) {
+    await page.setViewportSize({width,height:900});
+    await capture(`registration-${width}`);await overflow('/empezar/datos');
+  }
+  await page.getByRole('button', {name:'Guardar y continuar',exact:true}).click();
   await page.getByRole('button', { name: /Escribirlo a mano/ }).click();
   await page.getByRole('textbox', { name: 'Nombre del ítem 1', exact: true }).fill('Corte de prueba');
   await page.getByRole('textbox', { name: 'Precio del ítem 1 en pesos', exact: true }).fill('25000');
   await page.getByRole('button', { name: 'Guardar catálogo' }).click();
+  await page.getByRole('button',{name:'Continuar a la revisi\u00f3n del pago'}).click();
   await page.getByRole('button', { name: 'Ir al pago de prueba' }).click();
   await page.getByRole('button', { name: 'Simular rechazo' }).click();
   await page.getByRole('link', { name: 'Ver el estado de mi alta' }).click();

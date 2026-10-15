@@ -1,3 +1,4 @@
+import { TeamCommissions } from '../../components/TeamCommissions';
 import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, cop, descargar, descargarDocumentos, fecha, fechaHora, hora, num } from '../../api';
@@ -92,7 +93,7 @@ export function CentroIA() {
 // =================================================================== Configuración
 const DIAS: [string, string][] = [['lun', 'Lunes'], ['mar', 'Martes'], ['mie', 'Miércoles'], ['jue', 'Jueves'], ['vie', 'Viernes'], ['sab', 'Sábado'], ['dom', 'Domingo']];
 const ZONAS = ['America/Bogota', 'America/Mexico_City', 'America/Lima', 'America/Guayaquil', 'America/Caracas', 'America/Santiago', 'America/Argentina/Buenos_Aires', 'America/Panama', 'America/New_York', 'Europe/Madrid'];
-const TABS: [string, string][] = [['personas', 'Equipo'], ['equipo', 'Horarios'], ['empresa', 'Empresa'], ['canal', 'WhatsApp'], ['cobros', 'Cobros'], ['modulos', 'Módulos'], ['integraciones', 'Integraciones']];
+const TABS: [string, string][] = [['personas', 'Equipo y comisiones'], ['equipo', 'Horarios'], ['empresa', 'Empresa'], ['canal', 'WhatsApp'], ['cobros', 'Cobros'], ['modulos', 'Módulos'], ['integraciones', 'Integraciones']];
 
 export function Configuracion() {
   const { s, recargar: recargarSesion } = useSesion();
@@ -127,11 +128,12 @@ export function Configuracion() {
         <div className="tabs tabs-config" role="tablist" aria-label="Secciones de configuración">{TABS.map(([k, v]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setParams({ tab: k })}>{v}</button>)}</div>
 
         {tab === 'personas' && <>
+          {s.permisos.includes('user:manage') && <TeamCommissions people={data.personas} />}
           <Tarjeta titulo="Personas con acceso" acciones={<Escritura permiso="user:manage"><button className="btn primario peq" onClick={() => setInvitar(true)}><Icon n="mas" className="" size={14} />Invitar</button></Escritura>} sinCuerpo>
             <div className="tabla-wrap"><table className="tabla tabla-movil"><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Recibe radicados</th><th>Acceso</th></tr></thead>
               <tbody>{data.personas.map((p: any) => (
                 <tr key={p.id} className={p.activo ? '' : 'inactiva'}>
-                  <td data-etiqueta="Nombre" className="principal"><b style={{ fontWeight: 600 }}>{p.nombre}</b>{p.id === s.usuario.id && <span className="tenue"> (tú)</span>}</td><td data-etiqueta="Correo" className="mono">{p.email}</td>
+                  <td data-etiqueta="Nombre" className="principal"><input className="input" aria-label={`Nombre de ${p.nombre}`} defaultValue={p.nombre} disabled={s.solo_lectura || !s.permisos.includes('user:manage')} onBlur={e=>{if(e.target.value!==p.nombre)run(()=>api.patch(`/api/t/configuracion/personas/${p.id}`,{nombre:e.target.value}),'Nombre actualizado').then(recargar);}} />{p.id === s.usuario.id && <span className="tenue"> (tú)</span>}</td><td data-etiqueta="Correo" className="mono">{p.email}</td>
                   <td data-etiqueta="Rol"><select className="input" style={{ width: 'auto', minWidth: 150 }} value={p.rol} disabled={p.id === s.usuario.id || s.solo_lectura} aria-label={`Rol de ${p.nombre}`} onChange={(e) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { rol: e.target.value }), 'Rol actualizado').then(recargar)}>{rolesPersonas.map((r: any) => <option key={r.clave} value={r.clave}>{r.nombre}</option>)}</select></td>
                   <td data-etiqueta="Radicados">{p.atiende_casos ? <Interruptor on={p.disponible} disabled={s.solo_lectura || !p.activo} etiqueta={`${p.nombre} recibe radicados`} onChange={(v) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { disponible: v }), v ? 'Recibirá radicados' : 'No recibirá radicados nuevos').then(recargar)} /> : <span className="tenue peq-txt">Su rol no atiende</span>}</td>
                   <td data-etiqueta="Acceso"><Interruptor on={p.activo} disabled={p.id === s.usuario.id || s.solo_lectura} etiqueta={`Acceso de ${p.nombre}`} onChange={(v) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { activo: v }), v ? 'Acceso restituido' : 'Acceso retirado. Sus radicados volvieron a la cola.').then(recargar)} /></td>

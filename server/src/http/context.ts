@@ -39,7 +39,12 @@ export async function loadUser(db: Database, req: FastifyRequest): Promise<Sessi
 }
 
 export function cookieSesion() {
-  return { path: '/', httpOnly: true, sameSite: 'lax' as const, secure: config.cookieSegura, maxAge: config.sesion.dias * 86400 };
+  return { path: '/', httpOnly: true, sameSite: 'lax' as const, secure: config.cookieSegura, maxAge: config.sesion.dias * 86400, ...(config.cookieDominio ? { domain: config.cookieDominio } : {}) };
+}
+
+/** Opciones para borrar la cookie: deben coincidir en ruta y dominio con las de creación. */
+export function cookieBorrar() {
+  return { path: '/', ...(config.cookieDominio ? { domain: config.cookieDominio } : {}) };
 }
 
 export function slugFromRequest(req: FastifyRequest): string | null {

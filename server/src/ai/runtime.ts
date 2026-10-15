@@ -1,3 +1,4 @@
+import { SECTOR_CATALOG } from '../onboarding/sectors.js';
 import { z } from 'zod';
 import type { Database, Tx } from '../db/index.js';
 import type { Ctx } from '../core/context.js';
@@ -81,10 +82,18 @@ function historyFrom(mensajes: { remitente: string; contenido: string }[]): Chat
   return turns;
 }
 
-function systemPrompt(agent: AgentProfile & { prompt_base?: string }, negocio: { nombre: string; sector: string; zona?: string }, extra = '') {
+/** «Veterinaria (Servicios para mascotas)» a partir de la actividad registrada en el alta. */
+function describirActividad(a: any): string | null {
+  if (!a?.sector) return null;
+  const s = SECTOR_CATALOG.find((x) => x.id === a.sector);
+  const tipo = a.tipo_negocio ?? (a.sector === 'otro' ? a.descripcion : null);
+  return [tipo, s ? `sector ${s.nombre.toLowerCase()}` : null].filter(Boolean).join(', ') || null;
+}
+
+function systemPrompt(agent: AgentProfile & { prompt_base?: string }, negocio: { nombre: string; sector: string; actividad?: string | null; zona?: string }, extra = '') {
   const hoy = todayLocal(negocio.zona);
   return [
-    `Eres el ${agent.configuracion === 'atencion' ? 'agente de atención por WhatsApp' : agent.configuracion === 'asistente' ? 'asistente interno del panel' : 'copiloto del asesor'} de «${negocio.nombre}» (sector ${negocio.sector}).`,
+    `Eres el ${agent.configuracion === 'atencion' ? 'agente de atención por WhatsApp' : agent.configuracion === 'asistente' ? 'asistente interno del panel' : 'copiloto del asesor'} de «${negocio.nombre}» (${negocio.actividad ?? `sector ${negocio.sector}`}).`,
     agent.prompt_base ?? '',
     'Reglas que no cambian:',
     '- Solo puedes consultar o hacer cosas mediante las herramientas disponibles. Si algo no se puede con ellas, dilo con claridad u ofrece pasar con una persona.',
@@ -115,7 +124,7 @@ export async function handleCustomerMessage(db: Database, tenantId: string, conv
       [conversationId],
     )).rows[0];
     if (!v) return { stop: 'sin_agente' as const };
-    const t = (await tx.query(`SELECT nombre, sector FROM tenant WHERE id=$1`, [tenantId])).rows[0];
+    const t = (await tx.query(`SELECT nombre, sector, registro_datos->'actividad' AS actividad FROM tenant WHERE id=$1`, [tenantId])).rows[0];
     const sub = (await tx.query(`SELECT estado FROM subscription WHERE tenant_id=$1`, [tenantId])).rows[0];
     if (!sub || ['SUSPENDIDA', 'CANCELADA'].includes(sub.estado)) return { stop: 'suspendido' as const };
     if (v.control === 'HUMANO') return { stop: 'humano_al_frente' as const };
@@ -237,7 +246,7 @@ export async function handleCustomerMessage(db: Database, tenantId: string, conv
     }
 
     const tools = await visibleTools(tx, agent, true);
-    return { stop: null, agent, ctx, negocio: { nombre: t.nombre, sector: t.sector, zona }, history: historyFrom(ultimoMsg ? [...mensajes.filter((m: any) => m.id !== ultimoMsg.id), ultimoMsg] : mensajes), tools, customerId: v.customer_id as string };
+    return { stop: null, agent, ctx, negocio: { nombre: t.nombre, sector: t.sector, actividad: describirActividad(t.actividad), zona }, history: historyFrom(ultimoMsg ? [...mensajes.filter((m: any) => m.id !== ultimoMsg.id), ultimoMsg] : mensajes), tools, customerId: v.customer_id as string };
   });
 
   if (prep.stop) return { accion: prep.stop };
@@ -312,7 +321,7 @@ export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string,
     // Actúa en nombre del usuario: permisos = intersección (agente ∩ usuario).
     const permisos = new Set([...agent.permisos].filter((p) => userCtx.permisos.has('*') || userCtx.permisos.has(p)));
     const efectivo = { ...agent, permisos };
-    const t = (await tx.query(`SELECT nombre, sector FROM tenant WHERE id=$1`, [userCtx.tenantId])).rows[0];
+    const t = (await tx.query(`SELECT nombre, sector, registro_datos->'actividad' AS actividad FROM tenant WHERE id=$1`, [userCtx.tenantId])).rows[0];
     const tools = await visibleTools(tx, efectivo, false);
     const cuota = await quotaStatus(tx, userCtx.tenantId, 'tokens_ia');
     return { agent: efectivo, t, tools, cuota };
@@ -324,7 +333,7 @@ export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string,
   const out = await llm().runLoop(
     {
       configuracion: 'asistente',
-      system: systemPrompt(prep.agent as any, { nombre: prep.t.nombre, sector: prep.t.sector }),
+      system: systemPrompt(prep.agent as any, { nombre: prep.t.nombre, sector: prep.t.sector, actividad: describirActividad(prep.t.actividad) }),
       history: [...historial.slice(-8), { role: 'user', text: pregunta }],
       tools: prep.tools.map((t) => ({ name: t.nombre, description: t.descripcion, input_schema: toolJsonSchema(t) })),
       negocio: { nombre: prep.t.nombre },

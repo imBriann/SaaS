@@ -172,11 +172,11 @@ describe('Clientes: duplicados, importación y exportación', () => {
     expect(filas.map((f: any) => [f.nombre, f.precio, f.existente])).toEqual([['Cera para peinar', 35000, 'Cera para peinar'], ['Mascarilla', 20000, null]]);
     const enviar = (f: any[], duplicados: string) => admin.post('/productos/importar/confirmar', { filas: f.map((x) => ({ tipo: x.tipo, nombre: x.nombre, precio: x.precio, iva_pct: 0 })), duplicados });
     const repetido = await enviar([...filas, filas[1]], 'omitir');
-    expect(repetido.status).toBe(400);
-    expect((await admin.get('/productos')).body.some((p: any) => p.nombre === 'Mascarilla')).toBe(false);
-    expect((await enviar(filas, 'omitir')).body).toEqual({ creados: 1, actualizados: 0, omitidos: 1 });
+    expect(repetido.status).toBe(200);
+    expect((await admin.get('/productos')).body.filter((p: any) => p.nombre === 'Mascarilla')).toHaveLength(1);
+    expect((await enviar(filas, 'omitir')).body).toMatchObject({ creados: 0, actualizados: 0, omitidos: 2 });
     expect((await admin.get('/productos')).body.find((p: any) => p.nombre === 'Cera para peinar').precio).toBe(32000);
-    expect((await enviar(filas, 'actualizar')).body).toEqual({ creados: 0, actualizados: 2, omitidos: 0 });
+    expect((await enviar(filas, 'actualizar')).body).toMatchObject({ creados: 0, actualizados: 2, omitidos: 0 });
     expect((await admin.get('/productos')).body.find((p: any) => p.nombre === 'Cera para peinar').precio).toBe(35000);
   });
 });

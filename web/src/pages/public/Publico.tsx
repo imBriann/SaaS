@@ -1,8 +1,13 @@
+import { ImportSummary } from '../../components/ImportSummary';
+import { ImportarCatalogo } from '../../components/ImportarCatalogo';
+import { AnalisisEnCurso, PropuestaIA } from '../../components/PropuestaIA';
+import { RegistrationData } from '../../components/RegistrationData';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { api, ApiError, cop, descargarDocumentos, guardar, leer, slugDelHost } from '../../api';
+import { api, ApiError, cop, descargarDocumentos, guardar, irAEmpresa, leer, slugDelHost } from '../../api';
 import { debeConsultar, faseCierre, pasosCumplidos, type FaseCierre } from './cierre';
-import { faseRecibo, reciboEnCurso } from './recibo';
+import { faseRecibo, reciboEnCurso, type FaseRecibo } from './recibo';
+import { useFaseMinima, useRevelado } from './ritmo';
 import { ReciboImpresion } from '../../components/ReciboImpresion';
 import { Campo, Cargando, ErrorCarga, Estado, CicloFiscal, useAccion, Vacio, CodigoOtp, useCuentaAtras } from '../../components/ui';
 import { Quote } from '../../components/Quote';
@@ -57,10 +62,6 @@ export function Landing() {
 }
 
 // ---------------------------------------------------------------- SCR-002 / SCR-003
-const SECTORES: Record<string, string> = { barberia: 'Barbería', gimnasio: 'Gimnasio', restaurante: 'Restaurante', taller: 'Taller', servicios: 'Servicios con cita', otro: 'Otro' };
-const TAMANOS: Record<string, string> = { unipersonal: 'Solo yo', '2_5': '2 a 5 personas', '6_15': '6 a 15 personas', mas_15: 'Más de 15' };
-const VOLUMENES: Record<string, string> = { bajo: 'Menos de 300 conversaciones/mes', medio: '300 a 1.500 /mes', alto: 'Más de 1.500 /mes' };
-const MODULOS = ['clientes', 'catalogo', 'ventas', 'agenda', 'inventario', 'facturacion', 'conversaciones', 'ia'];
 
 export function useBorrador() {
   const [tk] = useState(() => sessionStorage.getItem('descripcion_inicial') ? null : leer('borrador'));
@@ -81,22 +82,29 @@ export function useBorrador() {
   return { tk, d, setD, cargando, error, recargar: () => setIntento(n => n + 1) };
 }
 
+/** Pistas de escritura: indican qué datos ayudan a la IA y si el texto parece mencionarlos (no son confirmaciones). */
+const PISTAS: [string, RegExp][] = [
+  ['Qué vendes o qué servicio das', /\b(vend|ofrec|servicio|tienda|negocio|barber|veterin|restaur|academ|taller|consultor|clinica|cafe|panader|gimnas|almac|distribu)/i],
+  ['Cuántas personas atienden', /\b(\d+|solo yo|yo sol[oa]|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s*(person|emplead|barber|medic|auxiliar|asesor|trabajador|vendedor|estilist|socio|colaborador)?|\batiendo yo\b/i],
+  ['Cuántos mensajes o clientes recibes', /\b\d+\s*(mensaje|chat|conversaci|cliente|pedido|cita)/i],
+  ['Si necesitas facturar electrónicamente', /factur|dian/i],
+];
+
 export function Describir() {
   const nav = useNavigate();
   const { d, setD, error: errorBorrador, recargar: recargarBorrador } = useBorrador();
   const [texto, setTexto] = useState('');
-  const [planes, setPlanes] = useState<any[]>([]);
-  const { run, ocupado } = useAccion();
-  useEffect(() => { api.get('/api/publico/planes').then(setPlanes).catch(() => setPlanes([])); }, []);
+  const analisis = useAccion();
+  const edicion = useAccion();
   useEffect(() => { if (d?.descripcion && !texto) setTexto(d.descripcion); }, [d]); // eslint-disable-line
 
   const analizar = async (descripcion: string) => {
-    const r = await run(() => api.post('/api/onboarding/borradores', { descripcion }));
+    const r = await analisis.run(() => api.post(d ? `/api/onboarding/borradores/${d.token}/analizar` : '/api/onboarding/borradores', { descripcion }));
     if (r) {
       guardar('borrador', r.token);
       const stored = sessionStorage.getItem('funciones_elegidas');
       if (stored) {
-        const updated = await run(() => api.patch(`/api/onboarding/borradores/${r.token}`, { clasificacion: { modulos_sugeridos: JSON.parse(stored) } }));
+        const updated = await edicion.run(() => api.patch(`/api/onboarding/borradores/${r.token}`, { clasificacion: { modulos_sugeridos: JSON.parse(stored) } }));
         if (updated) { setD(updated); sessionStorage.removeItem('funciones_elegidas'); } else setD(r);
       } else setD(r);
     }
@@ -108,278 +116,129 @@ export function Describir() {
     try { inicial = sessionStorage.getItem('descripcion_inicial') ?? ''; sessionStorage.removeItem('descripcion_inicial'); } catch { /* sin almacenamiento */ }
     if (inicial.trim()) { setTexto(inicial); if (inicial.trim().length >= 15) analizar(inicial); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const corregir = async (campo: string, valor: unknown) => {
-    const r = await run(() => api.patch(`/api/onboarding/borradores/${d.token}`, { clasificacion: { [campo]: valor } }));
+  const cambiar = async (cambios: Record<string, unknown>) => {
+    const r = await edicion.run(() => api.patch(`/api/onboarding/borradores/${d.token}`, { clasificacion: cambios }));
     if (r) setD(r);
   };
   const c = d?.clasificacion;
-  const plan = planes.find((p) => p.codigo === d?.plan_codigo);
+  const largo = texto.trim().length;
+  const cambioTexto = !!d && texto.trim() !== (d.descripcion ?? '').trim();
+  const actividadLista = !!c?.sector && (c.sector !== 'otro' ? !!c.tipo_negocio : !!c.otro_descripcion);
 
   return (
     <PublicoLayout paso={d ? 1 : 0}>
       {errorBorrador && <ErrorCarga error={errorBorrador} reintentar={recargarBorrador} />}
-      <div className="grid g-main onboarding-layout" style={{ alignItems: 'start', marginTop: 32, gap: 24 }}>
-        <form className="tarjeta col" style={{ gap: 16, padding: 28 }} onSubmit={enviar}>
-          <h1 className="onb-titulo">Primero, hablemos de tu negocio.</h1>
-          <p className="sec">Con tus palabras: qué vendes, cuántos son y cómo atienden hoy. Con eso proponemos una configuración; tú corriges lo que haga falta.</p>
+      <div className="describir">
+        <form className="describir-texto" onSubmit={enviar}>
+          <span className="ia-etiqueta"><Icon n="ia" className="" size={14} />Configuración asistida por IA</span>
+          <h1 className="onb-titulo">Cuéntanos de tu negocio con tus palabras.</h1>
+          <p className="sec">La IA de {MARCA.nombre} lee lo que escribas, te propone una configuración y tú decides qué se queda. Nada se confirma sin ti.</p>
           <label className="campo"><span>Describe tu negocio</span>
-            <textarea maxLength={2000} className="input" style={{ minHeight: 160, fontSize: 16 }} value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Ej.: Tengo una barbería en Cúcuta con tres barberos. Nos escriben unos 20 mensajes al día por WhatsApp para pedir turno y necesito empezar a facturar electrónico." aria-describedby="desc-ayuda" />
+            <textarea maxLength={2000} className="input describir-area" value={texto} onChange={(e) => setTexto(e.target.value)} disabled={analisis.ocupado}
+              placeholder="Ej.: Tengo una barbería en Cúcuta con tres barberos. Nos escriben unos 20 mensajes al día por WhatsApp para pedir turno y necesito empezar a facturar electrónicamente." aria-describedby="desc-ayuda desc-pistas" />
           </label>
-          <div className="fila entre envolver"><span className="tenue peq-txt" id="desc-ayuda">{texto.trim().length < 15 ? `Escribe al menos 15 caracteres (${texto.trim().length}/15).` : `${texto.length}/2000`}</span><button className="btn primario" disabled={ocupado || texto.trim().length < 15}>{ocupado ? 'Analizando…' : d ? 'Volver a analizar' : 'Analizar mi negocio'}</button></div>
-        </form>
-        {!c ? (
-          <aside className="onboarding-intro"><img src={MARCA.isologo} width={70} height={70} alt="" /><h2>Empieza con tu negocio.<br />El resto toma forma.</h2><p>Una descripción es suficiente para empezar a organizar tu espacio.</p><ol><li>Revisa las funciones sugeridas</li><li>Añade tu identidad y catálogo</li><li>Confirma la propuesta antes de pagar</li></ol><span>El panel se crea después de confirmar el pago.</span></aside>
-        ) : (
-          <div className="col" style={{ gap: 20 }}>
-            <section className="tarjeta">
-              <div className="cab"><h2 className="titulo-tarjeta">Lo que entendimos</h2>
-                <span className="estado ia" style={{ marginLeft: 'auto' }}><Icon n="ia" className="" />Propuesta de la IA · puedes corregirla</span></div>
-              <div className="cuerpo col" style={{ gap: 16 }}>
-                {!c.prellenar && <span className="estado warn" style={{ alignSelf: 'flex-start' }}><Icon n="alerta" className="" />No estamos seguros: revisa cada campo.</span>}
-                <Campo etiqueta="Sector"><select disabled={ocupado} className={`input ${c.corregido_por_usuario ? '' : 'inferido'}`} value={c.sector ?? ''} onChange={(e) => corregir('sector', e.target.value)}><option value="" disabled>Elige…</option>{Object.entries(SECTORES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Campo>
-                <div className="grid g2" style={{ gap: 12 }}>
-                  <Campo etiqueta="Equipo"><select disabled={ocupado} className="input inferido" value={c.tamano ?? ''} onChange={(e) => corregir('tamano', e.target.value)}><option value="" disabled>Elige…</option>{Object.entries(TAMANOS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Campo>
-                  <Campo etiqueta="Conversaciones"><select disabled={ocupado} className="input inferido" value={c.volumen_conv_mes ?? ''} onChange={(e) => corregir('volumen_conv_mes', e.target.value)}><option value="" disabled>Elige…</option>{Object.entries(VOLUMENES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Campo>
-                </div>
-                <label className="fila sec"><input disabled={ocupado} type="checkbox" checked={!!c.factura_electronica} onChange={(e) => corregir('factura_electronica', e.target.checked)} /> Necesito factura electrónica ante la DIAN</label>
-                <div className="col" style={{ gap: 8 }}>
-                  <span className="etiqueta">Módulos</span>
-                  <div className="fila envolver" style={{ gap: 6 }}>{MODULOS.map((m) => (
-                    <button key={m} type="button" disabled={ocupado || ['clientes', 'catalogo'].includes(m)} className={`chip ${d.cotizacion.modulos.includes(m) ? 'on' : ''}`} aria-pressed={d.cotizacion.modulos.includes(m)}
-                      onClick={() => corregir('modulos_sugeridos', c.modulos_sugeridos.includes(m) ? c.modulos_sugeridos.filter((x: string) => x !== m) : [...c.modulos_sugeridos, m])}>{{clientes:"Clientes",catalogo:"Catálogo",ventas:"Ventas",agenda:"Agenda",inventario:"Inventario",facturacion:"Facturación",conversaciones:"WhatsApp",ia:"Asistente IA"}[m] ?? m}</button>
-                  ))}</div>
-                </div>
-                {c.justificacion && <p className="tenue">«{c.justificacion}»</p>}
-              </div>
-            </section>
-            <section className="col" style={{ gap: 12 }} aria-label="Estimación">
-              <Quote quote={d.cotizacion} loading={ocupado} modalidad={d.modalidad} />
-              <button className="btn primario grande" disabled={ocupado} onClick={() => nav('/empezar/datos')}>Continuar con mis datos <Icon n="flecha" className="" size={16} /></button>
-            </section>
+          <ul className="describir-pistas" id="desc-pistas" aria-label="Lo que ayuda a la IA">
+            {PISTAS.map(([p, re]) => { const ok = re.test(texto); return <li key={p} className={ok ? 'on' : ''}><span aria-hidden="true">{ok ? <Icon n="ok" className="" size={12} /> : null}</span>{p}<span className="sr">{ok ? ' (mencionado)' : ''}</span></li>; })}
+          </ul>
+          <div className="fila entre envolver" style={{ gap: 12 }}>
+            <span className="tenue peq-txt" id="desc-ayuda">{largo < 15 ? `Escribe al menos 15 caracteres (${largo}/15).` : cambioTexto ? 'Cambiaste la descripción: vuelve a analizar para actualizar la propuesta. Tus respuestas se conservan.' : `${texto.length}/2000`}</span>
+            <button className="btn primario" disabled={analisis.ocupado || largo < 15 || (!!d && !cambioTexto)}>{analisis.ocupado ? 'Analizando…' : d ? 'Volver a analizar' : 'Analizar mi negocio'}</button>
           </div>
-        )}
-      </div>
-    </PublicoLayout>
-  );
-}
-
-// ---------------------------------------------------------------- SCR-004
-async function coloresDominantes(src: string): Promise<string[]> {
-  const img = new Image();
-  img.src = src;
-  await img.decode();
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = 48;
-  const cx = cv.getContext('2d')!;
-  cx.drawImage(img, 0, 0, 48, 48);
-  const px = cx.getImageData(0, 0, 48, 48).data;
-  const cuenta = new Map<string, number>();
-  for (let i = 0; i < px.length; i += 4) {
-    if (px[i + 3] < 128) continue;
-    const q = [px[i], px[i + 1], px[i + 2]].map((v) => Math.min(255, Math.round(v / 24) * 24));
-    const k = '#' + q.map((v) => v.toString(16).padStart(2, '0')).join('');
-    cuenta.set(k, (cuenta.get(k) ?? 0) + 1);
-  }
-  return [...cuenta.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k]) => k);
-}
-
-export function Datos() {
-  const nav = useNavigate();
-  const { d, setD, cargando, error, recargar } = useBorrador();
-  const [f, setF] = useState<any>({});
-  const [faltan, setFaltan] = useState<string[]>([]);
-  const [errLogo, setErrLogo] = useState('');
-  const { run, ocupado } = useAccion();
-  useEffect(() => { if (d) setF({ ...d.negocio, recursos: (d.negocio.recursos ?? []).join(', ') }); }, [d?.token]); // eslint-disable-line
-  if (error) return <PublicoLayout paso={2}><ErrorCarga error={error} reintentar={recargar} /></PublicoLayout>;
-  if (cargando) return <PublicoLayout paso={2}><Cargando filas={6} /></PublicoLayout>;
-  if (!d) return <PublicoLayout paso={2}><Vacio titulo="No hay un borrador activo" accion={<Link className="btn primario" to="/empezar">Empezar</Link>} /></PublicoLayout>;
-  const factura = d.clasificacion.factura_electronica;
-
-  const guardarDatos = async (extra: any = {}) => {
-    const negocio = { ...f, recursos: String(f.recursos ?? '').split(',').map((s: string) => s.trim()).filter(Boolean) };
-    for (const k of Object.keys(negocio)) if (negocio[k] === '') delete negocio[k];
-    return run(() => api.patch(`/api/onboarding/borradores/${d.token}`, { negocio, ...extra }));
-  };
-  const subirLogo = async (file: File) => {
-    if (file.size > 200_000) return setErrLogo(`El logotipo pesa ${Math.round(file.size / 1000)} KB. Sube uno de menos de 200 KB (PNG, JPG, WEBP o SVG).`);
-    setErrLogo('');
-    const url = await new Promise<string>((ok) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.readAsDataURL(file); });
-    const colores = await coloresDominantes(url).catch(() => []);
-    const r = await guardarDatos({ logo_data_url: url, colores_logo: colores });
-    if (r) setD(r);
-  };
-  const seguir = async () => {
-    const r = await guardarDatos();
-    if (!r) return;
-    setD(r);
-    const req = ['nombre', 'email', ...(factura ? ['nit'] : [])].filter((k) => !r.negocio[k]);
-    setFaltan(req);
-    if (!req.length) nav('/empezar/catalogo');
-  };
-  const inp = (k: string, ph = '', type = 'text') => (
-    <input className={`input ${faltan.includes(k) ? 'falta' : ''}`} type={type} required={['nombre', 'email'].includes(k) || (factura && k === 'nit')} aria-invalid={faltan.includes(k) || undefined} value={f[k] ?? ''} placeholder={ph} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
-  );
-  const tema = d.tema;
-  return (
-    <PublicoLayout paso={2}>
-      <div className="grid g-main onboarding-layout" style={{ alignItems: 'start', marginTop: 32, gap: 24 }}>
-        <form className="tarjeta col" style={{ gap: 20, padding: 28 }} onSubmit={e => { e.preventDefault(); seguir(); }}>
-          <h1 className="onb-titulo">Datos del negocio</h1>
-          {faltan.length > 0 && <div className="aviso" role="alert"><Icon n="alerta" className="" size={16} />Completa los campos marcados para continuar: {faltan.map((k) => ({ nombre: 'nombre del negocio', email: 'correo del administrador', nit: 'NIT' }[k] ?? k)).join(', ')}.</div>}
-          <div className="grid g2">
-            <Campo etiqueta="Nombre del negocio">{inp('nombre', 'Barbería El Parche')}</Campo>
-            <Campo etiqueta="Subdominio" ayuda={`${f.slug || 'tu-negocio'}.localhost`}>{inp('slug', 'elparche')}</Campo>
-            <Campo etiqueta="Correo del administrador">{inp('email', 'tu@correo.com', 'email')}</Campo>
-            <Campo etiqueta="Tu nombre">{inp('responsable')}</Campo>
-            <Campo etiqueta="NIT con dígito de verificación" ayuda={factura ? 'necesario para facturar' : 'opcional'} error={faltan.includes('nit') ? 'Sin un NIT válido no podemos emitir tus facturas.' : undefined}>{inp('nit', '901456789-3')}</Campo>
-            <Campo etiqueta="Ciudad">{inp('ciudad', 'Cúcuta')}</Campo>
-            <Campo etiqueta="Teléfono">{inp('telefono', '+57…')}</Campo>
-            <Campo etiqueta="Personas que atienden" ayuda="separadas por coma">{inp('recursos', 'Andrés, Camilo, Julián')}</Campo>
-          </div>
-          <div className="fila entre"><Link to="/empezar" className="btn sutil">Atrás</Link><button type="submit" className="btn primario" disabled={ocupado}>Continuar <Icon n="flecha" className="" size={14} /></button></div>
-          <p className="tenue peq-txt">Nada de esto ha creado aún tu empresa: se guarda como borrador hasta el pago.</p>
+          {analisis.error && <p className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{analisis.error.message}</p>}
         </form>
-        <div className="tarjeta col" style={{ gap: 16, padding: 28 }}>
-          <h2 className="titulo-tarjeta">Identidad visual</h2>
-          <label className="btn upload-brand" style={{ alignSelf: 'flex-start' }}><Icon n="subir" className="" size={16} /> Subir logotipo<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="sr" onChange={(e) => e.target.files?.[0] && subirLogo(e.target.files[0])} /></label>
-          {errLogo && <span className="campo"><span className="error" role="alert">{errLogo}</span></span>}
-          {tema ? (
-            <div className="col">
-              <div className="fila" style={{ gap: 12 }}>
-                <div style={{ width: 56, height: 56, borderRadius: 12, background: tema.acento, color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 500, overflow: 'hidden' }}>
-                  {d.logo_data_url ? <img src={d.logo_data_url} alt="Logotipo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : tema.monograma}
-                </div>
-                <div className="col" style={{ gap: 2 }}>
-                  <span className="mono">{tema.acento}</span>
-                  <span className="tenue">Contraste {tema.contraste.acento_blanco}:1 {tema.ajustado ? '· ajustado para ser legible' : ''}</span>
-                </div>
-              </div>
-              <div className="fila" style={{ gap: 6 }}>{[['Acción', tema.acento], ['Selección', `color-mix(in srgb, ${tema.acento} 9%, #fff)`], ['Tarjeta', 'var(--superficie)'], ['Lienzo', 'var(--lienzo)']].map(([n, c]) => <span key={n} title={n} aria-label={n} style={{ width: 28, height: 28, borderRadius: 6, background: c, border: '1px solid var(--borde-2)' }} />)}</div>
-              <span className="tenue">Tu panel usará este color. {tema.origen === 'monograma' ? 'Sin logotipo, generamos un monograma.' : ''}</span>
-            </div>
-          ) : <span className="tenue">Escribe el nombre o sube tu logotipo para ver la paleta.</span>}
+
+        <div className="describir-resultado">
+          {analisis.ocupado ? <AnalisisEnCurso /> : !c ? (
+            <aside className="onboarding-intro"><img src={MARCA.isologo} width={56} height={56} alt="" /><h2>Una frase basta para empezar.</h2>
+              <p>Con tu descripción la IA propone actividad, equipo, volumen de conversaciones, facturación y funciones.</p>
+              <ol><li>La IA interpreta lo que escribiste</li><li>Sugiere una configuración con sus razones</li><li>Tú confirmas o corriges cada dato</li></ol>
+              <span>Tu espacio se crea solo después de confirmar el pago.</span></aside>
+          ) : (
+            <>
+              <PropuestaIA c={c} ocupado={edicion.ocupado} cambiar={cambiar} />
+              <section className="col" style={{ gap: 12 }} aria-label="Estimación">
+                <Quote quote={d.cotizacion} loading={edicion.ocupado} modalidad={d.modalidad} />
+                <button className="btn primario grande" disabled={edicion.ocupado || !actividadLista} onClick={() => nav('/empezar/datos')}>Continuar con los datos del negocio <Icon n="flecha" className="" size={16} /></button>
+                {!actividadLista && <p className="tenue peq-txt" style={{ margin: 0 }}>Elige tu actividad en la propuesta para continuar.</p>}
+              </section>
+            </>
+          )}
         </div>
       </div>
     </PublicoLayout>
   );
 }
 
-// ---------------------------------------------------------------- SCR-005 / SCR-006
+// ---------------------------------------------------------------- SCR-004
+export function Datos() {
+  const { d, setD, cargando, error, recargar } = useBorrador();
+  return <PublicoLayout paso={2}>{error ? <ErrorCarga error={error} reintentar={recargar} /> : cargando ? <Cargando filas={6} /> : d ? <RegistrationData d={d} setD={setD} /> : <Vacio titulo="No hay un borrador activo" accion={<Link className="btn primario" to="/empezar">Empezar</Link>} />}</PublicoLayout>;
+}
+
 export function Catalogo() {
   const nav = useNavigate();
   const { d, setD, cargando, error, recargar } = useBorrador();
-  const [prev, setPrev] = useState<any>(null);
-  const [filas, setFilas] = useState<any[]>([]);
-  const [manual, setManual] = useState<any[] | null>(null);
+  const [modo, setModo] = useState<'inicio' | 'archivo' | 'manual'>('inicio');
+  const [resumen, setResumen] = useState<any>(null);
+  const [manual, setManual] = useState<any[]>([{ tipo: 'SERVICIO', nombre: '', precio: '', duracion_min: 30, categoria: '' }]);
   const { run, ocupado } = useAccion();
   if (cargando) return <PublicoLayout paso={3}><Cargando /></PublicoLayout>;
   if (error) return <PublicoLayout paso={3}><ErrorCarga error={error} reintentar={recargar} /></PublicoLayout>;
   if (!d) return <PublicoLayout paso={3}><Vacio titulo="No hay un borrador activo" accion={<Link className="btn primario" to="/empezar">Empezar</Link>} /></PublicoLayout>;
 
-  const subir = async (file: File) => {
-    const r = await run(() => api.upload(`/api/onboarding/borradores/${d.token}/catalogo/archivo`, file));
-    if (r) { setPrev(r); setFilas(r.filas.map((f: any) => ({ ...f, incluir: true }))); }
+  const guardado = (borrador: any, r: any) => { setD(borrador); setResumen(r); setModo('inicio'); };
+  const guardarManual = async () => {
+    const filas = manual.filter((f) => f.nombre.trim()).map((f, i) => ({ ...f, fila: i + 1, precio: Number(f.precio || 0), duracion_min: f.tipo === 'SERVICIO' ? Number(f.duracion_min) || null : null }));
+    const r = await run(() => api.post(`/api/onboarding/borradores/${d.token}/catalogo/confirmar`, { filas, origen: 'manual', duplicados: 'omitir' }));
+    if (r) guardado(r, r.resumen);
   };
-  const cambiarMapeo = async (col: string, campo: string) => {
-    const mapeo = prev.mapeo.map((m: any) => (m.columna === col ? { ...m, campo, confianza: 1 } : m.campo === campo && campo !== 'ignorar' ? { ...m, campo: 'ignorar' } : m));
-    const r = await run(() => api.post(`/api/onboarding/borradores/${d.token}/catalogo/vista-previa`, { mapeo }));
-    if (r) { setPrev({ ...prev, mapeo, filas: r.filas, error: null }); setFilas(r.filas.map((f: any) => ({ ...f, incluir: true }))); }
-  };
-  const confirmar = async (origen: 'archivo' | 'manual', fuente: any[]) => {
-    const payload = fuente.filter((f) => f.incluir !== false && f.nombre && f.precio !== null && f.precio !== '').map((f) => ({
-      tipo: f.tipo, nombre: f.nombre, categoria: f.categoria || null, precio: Number(f.precio), iva_pct: Number(f.iva_pct ?? 0),
-      duracion_min: f.tipo === 'SERVICIO' ? Number(f.duracion_min || 30) : null, stock: f.stock === '' || f.stock === null || f.stock === undefined ? null : Number(f.stock),
-    }));
-    const r = await run(() => api.post(`/api/onboarding/borradores/${d.token}/catalogo/confirmar`, { filas: payload, mapeo: prev?.mapeo, origen }), `${payload.length} ítems guardados en el borrador`);
-    if (r) { setD(r); nav('/empezar/pago'); }
-  };
-  const revisar = filas.filter((f) => f.estado === 'REVISAR').length;
+  const cambiarManual = (i: number, k: string, v: string) => setManual(manual.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
 
   return (
     <PublicoLayout paso={3}>
-      <div className="col" style={{ gap: 24, marginTop: 32 }}>
-        <div className="fila entre envolver" style={{ gap: 12 }}><h1 className="onb-titulo">Tu catálogo</h1><button className="btn sutil" onClick={() => nav('/empezar/pago')}>Omitir: usar el catálogo de ejemplo del sector</button></div>
-        {!prev && !manual && (
+      <div className="col" style={{ gap: 22, marginTop: 32 }}>
+        <header className="fila entre envolver" style={{ gap: 12, alignItems: 'flex-end' }}>
+          <div className="col" style={{ gap: 6 }}>
+            <h1 className="onb-titulo">Tu catálogo</h1>
+            <p className="sec" style={{ margin: 0 }}>Tus productos y servicios, con precio. Puedes importarlos ahora o hacerlo después desde el panel.</p>
+          </div>
+          <button className="btn sutil" onClick={() => nav('/empezar/pago')}>{d.catalogo?.length ? 'Continuar al pago' : 'Lo haré después'} <Icon n="flecha" className="" size={14} /></button>
+        </header>
+        {d.catalogo?.length > 0 && !resumen && <p className="estado ok" style={{ alignSelf: 'flex-start', height: 'auto', padding: '6px 10px' }}><Icon n="ok" className="" />Tu borrador tiene {d.catalogo.length} {d.catalogo.length === 1 ? 'ítem' : 'ítems'}.</p>}
+        {resumen && <ImportSummary resumen={resumen} draft onContinue={() => nav('/empezar/pago')} onOtro={() => { setResumen(null); setModo('archivo'); }} />}
+
+        {!resumen && modo === 'inicio' && (
           <div className="opciones-catalogo">
-            <label className="opcion-cat principal">
-              <span className="module-icon"><Icon n="subir" className="" size={20} /></span><b className="titulo-tarjeta">Subir mi hoja de cálculo</b>
-              <span className="sec">.xlsx o .csv. Detectamos las columnas aunque vengan desordenadas; tú confirmas antes de guardar.</span>
-              <input type="file" accept=".xlsx,.csv" className="sr" onChange={(e) => e.target.files?.[0] && subir(e.target.files[0])} />
-              <span className="btn primario" aria-hidden="true">{ocupado ? 'Leyendo el archivo…' : 'Elegir archivo'}</span>
-            </label>
-            <button type="button" className="opcion-cat" onClick={() => setManual([{ tipo: 'SERVICIO', nombre: '', precio: '', duracion_min: 30, categoria: '' }])}>
-              <span className="module-icon"><Icon n="facturacion" className="" size={20} /></span><b className="titulo-tarjeta">Escribirlo a mano</b><span className="sec">Pocos productos o servicios: agrégalos aquí mismo.</span>
+            <button type="button" className="opcion-cat principal" onClick={() => setModo('archivo')}>
+              <span className="module-icon"><Icon n="subir" className="" size={20} /></span><b className="titulo-tarjeta">Importar mi hoja de cálculo</b>
+              <span className="sec">Excel (.xlsx) o .csv. Detectamos las columnas y revisas cada fila antes de guardar.</span>
+            </button>
+            <button type="button" className="opcion-cat" onClick={() => setModo('manual')}>
+              <span className="module-icon"><Icon n="nota" className="" size={20} /></span><b className="titulo-tarjeta">Escribirlo a mano</b><span className="sec">Si son pocos productos o servicios.</span>
             </button>
             <a className="opcion-cat" href="/api/onboarding/plantilla-catalogo.xlsx">
-              <span className="module-icon"><Icon n="inventario" className="" size={20} /></span><b className="titulo-tarjeta">Descargar plantilla</b><span className="sec">Llénala y súbela después.</span>
+              <span className="module-icon"><Icon n="descargar" className="" size={20} /></span><b className="titulo-tarjeta">Descargar la plantilla</b><span className="sec">Llénala con tus datos y súbela después.</span>
             </a>
           </div>
         )}
-        {d.catalogo && !prev && !manual && <div className="estado ok" style={{ alignSelf: 'flex-start', padding: '6px 10px' }}><Icon n="ok" className="" />Ya confirmaste {d.catalogo.length} ítems.</div>}
-
-        {prev && (
-          <>
-            <section className="tarjeta">
-              <div className="cab"><h2 className="titulo-tarjeta">Correspondencia de columnas</h2><span className="tenue" style={{ marginLeft: 'auto' }}>{prev.archivo} · hoja «{prev.hoja}» · encabezado en la fila {prev.fila_encabezado}</span></div>
-              <div className="cuerpo fila envolver" style={{ gap: 12 }}>
-                {prev.mapeo.map((m: any) => (
-                  <label key={m.columna} className="campo" style={{ minWidth: 150 }}>
-                    <span>«{m.columna}» <span className="ayuda">{Math.round(m.confianza * 100)}%</span></span>
-                    <select className={`input ${m.confianza < 0.8 && m.campo !== 'ignorar' ? 'falta' : ''}`} value={m.campo} onChange={(e) => cambiarMapeo(m.columna, e.target.value)}>
-                      {Object.entries({ nombre: 'Nombre', precio: 'Precio', categoria: 'Categoría', tipo: 'Tipo', duracion_min: 'Duración en minutos', stock: 'Existencias', iva_pct: 'IVA (%)', sku: 'Código del producto', ignorar: 'No importar' }).map(([c, etiqueta]) => <option key={c} value={c}>{etiqueta}</option>)}
-                    </select>
-                  </label>
-                ))}
-              </div>
-              {prev.error && <div className="cuerpo"><div className="bloqueado">{prev.error}</div></div>}
-            </section>
-            <section className="tarjeta">
-              <div className="cab"><h2 className="titulo-tarjeta">Vista previa</h2><span className="tenue">{filas.length} filas · {revisar} para revisar</span></div>
-              <div className="tabla-wrap" style={{ maxHeight: 420 }}>
-                <table className="tabla">
-                  <thead><tr><th /><th>Fila</th><th>Nombre</th><th>Tipo</th><th className="num">Precio</th><th>Duración</th><th>Estado</th></tr></thead>
-                  <tbody>{filas.map((f, i) => (
-                    <tr key={i}>
-                      <td><input type="checkbox" checked={f.incluir} onChange={(e) => setFilas(filas.map((x, j) => (j === i ? { ...x, incluir: e.target.checked } : x)))} aria-label={`Incluir fila ${f.fila}`} /></td>
-                      <td className="mono tenue">{f.fila}</td>
-                      <td>{f.nombre}</td>
-                      <td><select className="input" aria-label={`Tipo de la fila ${f.fila}`} value={f.tipo} onChange={(e) => setFilas(filas.map((x, j) => (j === i ? { ...x, tipo: e.target.value } : x)))}><option value="SERVICIO">Servicio</option><option value="PRODUCTO">Producto</option></select></td>
-                      <td className="num">{f.precio === null ? <input className="input falta" style={{ width: 110 }} placeholder="Corrige" onChange={(e) => setFilas(filas.map((x, j) => (j === i ? { ...x, precio_corregido: e.target.value } : x)))} /> : cop(f.precio)}</td>
-                      <td>{f.tipo === 'SERVICIO' ? `${f.duracion_min ?? 30} min` : '—'}</td>
-                      <td>{f.estado === 'OK' ? <Estado v="EXITO" texto="Listo" /> : <span className="estado warn" title={f.problemas.join(' · ')}><Icon n="alerta" className="" />{f.problemas[0]}</span>}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-              <div className="cuerpo fila entre">
-                <button className="btn sutil" onClick={() => { setPrev(null); setFilas([]); }}>Cargar otro archivo</button>
-                <button className="btn primario" disabled={ocupado || !filas.length} onClick={() => confirmar('archivo', filas.map((f) => ({ ...f, precio: f.precio ?? (f.precio_corregido ? Number(String(f.precio_corregido).replace(/\D/g, '')) : null) })))}>
-                  Confirmar e importar {filas.filter((f) => f.incluir).length} ítems
-                </button>
-              </div>
-            </section>
-            <p className="tenue">Nada se guarda hasta que confirmes. El mapeo que uses quedará registrado en la auditoría de tu empresa.</p>
-          </>
-        )}
-
-        {manual && (
+        {!resumen && modo === 'archivo' && <><button className="btn sutil peq" style={{ alignSelf: 'flex-start' }} onClick={() => setModo('inicio')}><Icon n="atras" className="" size={14} />Otras opciones</button><ImportarCatalogo d={d} onGuardado={guardado} /></>}
+        {!resumen && modo === 'manual' && (
           <section className="tarjeta">
-            <div className="cab"><h2 className="titulo-tarjeta">Alta manual</h2></div>
+            <div className="cab"><h2 className="titulo-tarjeta">Escribe tus productos y servicios</h2><button className="btn sutil peq" style={{ marginLeft: 'auto' }} onClick={() => setModo('inicio')}>Otras opciones</button></div>
             <div className="cuerpo col">
               {manual.map((f, i) => (
                 <fieldset key={i} className="fila-manual">
                   <legend className="sr">Ítem {i + 1}</legend>
-                  <select className="input" aria-label={`Tipo del ítem ${i + 1}`} value={f.tipo} onChange={(e) => setManual(manual.map((x, j) => (j === i ? { ...x, tipo: e.target.value } : x)))}><option value="SERVICIO">Servicio</option><option value="PRODUCTO">Producto</option></select>
-                  <input className="input" aria-label={`Nombre del ítem ${i + 1}`} placeholder="Nombre" value={f.nombre} onChange={(e) => setManual(manual.map((x, j) => (j === i ? { ...x, nombre: e.target.value } : x)))} />
-                  <input className="input" aria-label={`Precio del ítem ${i + 1} en pesos`} placeholder="Precio" inputMode="numeric" value={f.precio} onChange={(e) => setManual(manual.map((x, j) => (j === i ? { ...x, precio: e.target.value.replace(/\D/g, '') } : x)))} />
-                  <input className="input" aria-label={`Duración del ítem ${i + 1} en minutos`} placeholder="Minutos" inputMode="numeric" value={f.duracion_min ?? ''} disabled={f.tipo !== 'SERVICIO'} onChange={(e) => setManual(manual.map((x, j) => (j === i ? { ...x, duracion_min: e.target.value } : x)))} />
-                  <input className="input" aria-label={`Categoría del ítem ${i + 1}`} placeholder="Categoría" value={f.categoria} onChange={(e) => setManual(manual.map((x, j) => (j === i ? { ...x, categoria: e.target.value } : x)))} />
+                  <select className="input" aria-label={`Tipo del ítem ${i + 1}`} value={f.tipo} onChange={(e) => cambiarManual(i, 'tipo', e.target.value)}><option value="SERVICIO">Servicio</option><option value="PRODUCTO">Producto</option></select>
+                  <input className="input" aria-label={`Nombre del ítem ${i + 1}`} placeholder="Nombre" value={f.nombre} onChange={(e) => cambiarManual(i, 'nombre', e.target.value)} />
+                  <input className="input" aria-label={`Precio del ítem ${i + 1} en pesos`} placeholder="Precio" inputMode="numeric" value={f.precio} onChange={(e) => cambiarManual(i, 'precio', e.target.value.replace(/\D/g, ''))} />
+                  <input className="input" aria-label={`Duración del ítem ${i + 1} en minutos`} placeholder="Minutos" inputMode="numeric" value={f.duracion_min ?? ''} disabled={f.tipo !== 'SERVICIO'} onChange={(e) => cambiarManual(i, 'duracion_min', e.target.value.replace(/\D/g, ''))} />
+                  <input className="input" aria-label={`Categoría del ítem ${i + 1}`} placeholder="Categoría" value={f.categoria} onChange={(e) => cambiarManual(i, 'categoria', e.target.value)} />
                 </fieldset>
               ))}
-              <div className="fila entre">
+              <div className="fila entre envolver" style={{ gap: 8 }}>
                 <button className="btn" onClick={() => setManual([...manual, { tipo: 'SERVICIO', nombre: '', precio: '', duracion_min: 30, categoria: '' }])}>Agregar otro</button>
-                <button className="btn primario" disabled={ocupado} onClick={() => confirmar('manual', manual)}>Guardar catálogo</button>
+                <button className="btn primario" disabled={ocupado || !manual.some((f) => f.nombre.trim())} onClick={guardarManual}>{ocupado ? 'Guardando…' : 'Guardar en el borrador'}</button>
               </div>
             </div>
           </section>
@@ -628,7 +487,7 @@ function PanelPersonalizado({ d, st, real, fase }: { d: any; st: any; real: bool
           <div className="cp-cat">
             <span className="cp-tit">Catálogo{cat.origen === 'ejemplo' && <span className="cp-ej">Ejemplo del sector</span>}</span>
             {conPrecio ? cat.muestra.map((x: any, i: number) => <div key={i} className="cp-fila" style={{ ['--i' as any]: i }}><span>{x.nombre}</span><b>{cop(x.precio)}</b></div>)
-              : <div className="cp-fila vacia" style={{ ['--i' as any]: 0 }}><span>Se cargará el catálogo de ejemplo de tu sector</span></div>}
+              : <div className="cp-fila vacia" style={{ ['--i' as any]: 0 }}><span>Podrás añadir productos y servicios desde tu panel</span></div>}
           </div>
         </div>
       </div>
@@ -693,7 +552,9 @@ export function Aprovisionamiento() {
     const r = await run(() => api.post(`/api/onboarding/borradores/${tk}/pago`));
     if (r) irA(r.url);
   };
-  const recibo = faseRecibo(st);
+  const reciboReal = faseRecibo(st);
+  // El recibo sostiene «validando» y «generando» lo suficiente para verse; la descarga no espera a la animación.
+  const recibo = useFaseMinima<FaseRecibo>(reciboReal, ORDEN_RECIBO, MINIMOS_RECIBO);
   const [errDocs, setErrDocs] = useState('');
   const [bajando, setBajando] = useState(false);
   const bajarDocumentos = async () => {
@@ -734,9 +595,8 @@ export function Aprovisionamiento() {
       }
       const emp = r.empresas?.find((x: any) => x.slug === st.tenant.slug);
       if (!emp) { setErrAcceso('Iniciaste sesión, pero esta cuenta no tiene acceso al panel recién creado. Revisa el correo con el que entras.'); return; }
-      guardar('empresa', emp.slug);
       guardar('borrador', null);
-      nav('/');
+      irAEmpresa(emp.slug, '/', nav);
     } finally { setEntrando(false); }
   };
 
@@ -781,7 +641,7 @@ export function Aprovisionamiento() {
               <ReciboImpresion fase={recibo} numero={st.documentos?.numero} monto={st.pago?.monto} concepto={st.pago?.modalidad === 'INSTITUCIONAL' ? `Acceso institucional ${st.pago?.acceso_dias ?? ''} días` : 'Plan Omnegia'}
                 empresa={st.tenant?.nombre} fiscal={st.documentos?.estado_fiscal_texto} validez={!!st.documentos?.validez_fiscal} />
               <div className="fila envolver" style={{ gap: 8 }}>
-                <button className="btn primario" disabled={recibo !== 'listo' || bajando} onClick={bajarDocumentos}><Icon n="descargar" className="" size={16} />{bajando ? 'Preparando la descarga…' : 'Descargar documentos (.zip)'}</button>
+                <button className="btn primario" disabled={reciboReal !== 'listo' || bajando} onClick={bajarDocumentos}><Icon n="descargar" className="" size={16} />{bajando ? 'Preparando la descarga…' : 'Descargar documentos (.zip)'}</button>
                 {recibo === 'pendiente' && st.documentos?.estado !== 'SIN_DATOS' && <button className="btn" disabled={ocupado} onClick={reintentarDocumentos}>Reintentar la generación</button>}
               </div>
               {errDocs && <p className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{errDocs}</p>}
@@ -830,7 +690,7 @@ export function Entrar() {
     const next = q.get('volver');
     if (slugDelHost()) return nav(next?.startsWith('/') && !next.startsWith('//') ? next : '/');
     if (r.usuario.rol_plataforma && r.usuario.segundo_factor && !r.empresas.length) return nav('/operador');
-    if (r.empresas.length === 1 && !r.usuario.rol_plataforma) { guardar('empresa', r.empresas[0].slug); return nav(next?.startsWith('/') && !next.startsWith('//') ? next : '/'); }
+    if (r.empresas.length === 1 && !r.usuario.rol_plataforma) { irAEmpresa(r.empresas[0].slug, next ?? '/', nav); return; }
     nav(next?.startsWith('/') && !next.startsWith('//') ? `/empresas?volver=${encodeURIComponent(next)}` : '/empresas');
   };
   const enviar = async (e: FormEvent) => {
@@ -904,7 +764,7 @@ export function Empresas() {
         <p className="tenue">Tu rol puede ser distinto en cada una. Elegir una empresa solo cambia lo que ves: el servidor valida tu acceso.</p>
         {s.empresas.length === 0 && !s.usuario.rol_plataforma && <Vacio titulo="Tu cuenta no pertenece a ninguna empresa">Pide a un administrador que te invite, o crea tu plataforma.</Vacio>}
         {s.empresas.map((e: any) => (
-          <button key={e.id} className="btn fila" style={{ justifyContent: 'flex-start', height: 'auto', padding: '10px 14px', gap: 12 }} onClick={() => { guardar('empresa', e.slug); nav(volver?.startsWith('/') && !volver.startsWith('//') ? volver : '/'); }}>
+          <button key={e.id} className="btn fila" style={{ justifyContent: 'flex-start', height: 'auto', padding: '10px 14px', gap: 12 }} onClick={() => irAEmpresa(e.slug, volver ?? '/', nav)}>
             <span style={{ width: 32, height: 32, borderRadius: 8, background: e.tema?.acento ?? 'var(--tinta-3)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 600, fontSize: 13, flex: 'none' }} aria-hidden="true">{e.tema?.monograma}</span>
             <span style={{ textAlign: 'left', minWidth: 0 }}><b>{e.nombre}</b><br /><span className="tenue peq-txt">{e.rol} · {e.slug}.localhost</span></span>
             <Icon n="derecha" className="" size={16} />
@@ -917,6 +777,8 @@ export function Empresas() {
 }
 
 // ---------------------------------------------------------------- creación del espacio
+const ORDEN_RECIBO = ['validando', 'generando', 'listo'] as const satisfies readonly FaseRecibo[];
+const MINIMOS_RECIBO: Partial<Record<FaseRecibo, number>> = { validando: 1400, generando: 2600 };
 const ORDEN_ETAPAS = ['pago_verificado', 'empresa_creada', 'plantilla_aplicada', 'catalogo_importado', 'administrador_creado', 'tema_generado', 'subdominio_asignado'];
 const DETALLE_ETAPA: Record<string, string> = {
   pago_verificado: 'La pasarela confirmó el pago con su firma',
@@ -937,8 +799,10 @@ const DETALLE_ETAPA: Record<string, string> = {
 function CreacionEspacio({ etapas, listo, error, onReintentar, ocupado }: { etapas: { etapa: string; en: string }[]; listo: boolean; error: string | null; onReintentar: () => void; ocupado: boolean }) {
   const hechas = new Set(etapas.map((e) => e.etapa));
   if (!hechas.has('pago_verificado')) hechas.add('pago_verificado'); // fase «confirmando»: el pago ya está aprobado
-  // La animación acompaña el registro, sin retrasar ni inventar el estado visible.
-  const terminado = listo;
+  // Las etapas confirmadas aparecen de una en una para poder leerlas; nunca se muestra una que el servidor no registró.
+  const confirmadas = ORDEN_ETAPAS.filter((e) => hechas.has(e)).length;
+  const vistas = useRevelado(confirmadas, 620);
+  const terminado = listo && vistas >= ORDEN_ETAPAS.length;
   return (
     <div className={`creacion ${terminado ? 'terminada' : ''}`} aria-live="polite">
       <div className="creacion-cab">
@@ -950,11 +814,12 @@ function CreacionEspacio({ etapas, listo, error, onReintentar, ocupado }: { etap
       </div>
       <ol className="creacion-etapas">
         {ORDEN_ETAPAS.map((e, i) => {
-          const hecha = hechas.has(e);
+          const hecha = hechas.has(e) && i < vistas;
           const fallo = !!error && !hechas.has(e) && ORDEN_ETAPAS.find((x) => !hechas.has(x)) === e;
-          const curso = false; // El servidor no publica una etapa activa; las restantes siguen pendientes.
+          // «En curso»: la siguiente etapa ya confirmada que todavía se está presentando.
+          const curso = !hecha && !fallo && i === vistas && hechas.has(e);
           return (
-            <li key={e} className={hecha ? 'hecha' : fallo ? 'fallo' : curso ? 'curso' : ''}>
+            <li key={e} className={hecha ? 'hecha' : fallo ? 'fallo' : curso ? 'curso' : ''} style={{ ['--i' as any]: i }}>
               <span className="punto" aria-hidden="true">{hecha ? <Icon n="ok" className="" size={12} /> : fallo ? <Icon n="x" className="" size={12} /> : null}</span>
               <span className="col" style={{ gap: 0 }}><b>{ETAPAS[e]}</b><span className="tenue peq-txt">{DETALLE_ETAPA[e]}</span></span>
               <span className="sr">{hecha ? '(hecho)' : fallo ? '(falló)' : curso ? '(en curso)' : '(pendiente)'}</span>
@@ -1027,7 +892,7 @@ export function Invitacion() {
     const r = await run(() => api.post(`/api/invitaciones/${tk}/aceptar`, { password: pw }), undefined, { silencioso: true });
     if (!r) return;
     const s = await run(() => api.post('/api/auth/login', { email: r.email, password: pw }));
-    if (s) { guardar('empresa', r.slug); nav('/'); }
+    if (s) irAEmpresa(r.slug, '/', nav);
   };
   return <PublicoLayout><div className="auth-layout solo">
     <div className="auth-form col">

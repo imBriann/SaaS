@@ -1,3 +1,4 @@
+import { verificarAlta } from './helpers.js';
 import { createDecipheriv, createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -56,11 +57,12 @@ function eventoWompi(tx: { id: string; status: string; amount_in_cents: number; 
 
 async function borrador(slug: string, facturacion: Record<string, unknown> | null = FACT(slug)) {
   const d = (await post('/api/onboarding/borradores', { descripcion: 'Tengo una barbería pequeña en Ocaña, atiendo yo solo con citas por WhatsApp.' })).json();
-  await patch(d.token, { negocio: { nombre: `Empresa ${slug}`, email: `dueno@${slug}.test`, slug, nit: `901222333-${digitoVerificacionNit('901222333')}` } });
+  await patch(d.token, { negocio: { nombre: `Empresa ${slug}`, email: `dueno@${slug}.test`, slug, nit: '901222333', nit_dv:String(digitoVerificacionNit('901222333')) } });
   if (facturacion) {
     const r = await patch(d.token, { facturacion });
     if (r.statusCode !== 200) throw new Error(r.body);
   }
+  await verificarAlta(E,d.token);
   return d.token as string;
 }
 

@@ -7,7 +7,30 @@ export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: any) { super(message); }
 }
 
-const BASE = (import.meta.env.VITE_BASE_DOMAIN as string | undefined) ?? 'localhost';
+/** Dominio base de las empresas: lo publica el servidor en index.html (producción) o Vite (desarrollo). */
+const BASE = (document.querySelector<HTMLMetaElement>('meta[name="omnegia-dominio"]')?.content || (import.meta.env.VITE_BASE_DOMAIN as string | undefined) || 'localhost').toLowerCase();
+
+/** ¿Cada empresa vive en su propio subdominio? Solo con un dominio real (en local se usa la empresa guardada). */
+export const subdominiosActivos = () => BASE !== 'localhost' && window.location.protocol === 'https:';
+
+/**
+ * Lleva al panel de una empresa. En producción va a <slug>.<dominio> (la cookie de sesión vale para
+ * todos los subdominios); en local guarda la empresa elegida y navega dentro de la misma pestaña.
+ * Devuelve true si salió de la página.
+ */
+export function irAEmpresa(slug: string, ruta = '/', navegar?: (r: string) => void): boolean {
+  const destino = ruta.startsWith('/') && !ruta.startsWith('//') ? ruta : '/';
+  if (subdominiosActivos() && /^[a-z0-9-]{1,63}$/.test(slug) && window.location.hostname !== `${slug}.${BASE}`) {
+    window.location.assign(`https://${slug}.${BASE}${destino}`);
+    return true;
+  }
+  guardar('empresa', slug);
+  if (navegar) navegar(destino); else window.location.assign(destino);
+  return false;
+}
+
+/** Dirección pública de una empresa para mostrarla (nunca «.localhost» en producción). */
+export const direccionEmpresa = (slug: string) => (BASE === 'localhost' ? `${slug}.localhost` : `${slug}.${BASE}`);
 
 export function slugDelHost(): string | null {
   const h = window.location.hostname.toLowerCase();

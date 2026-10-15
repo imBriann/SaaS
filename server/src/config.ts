@@ -48,6 +48,16 @@ export const config = {
   /** URL pública que reciben los proveedores para sus webhooks (por defecto, la misma). */
   apiPublicUrl: (v('API_PUBLIC_URL') ?? publicUrl).replace(/\/$/, ''),
   cookieSegura: publicUrl.startsWith('https://'),
+  /**
+   * Dominio de la cookie de sesión. En producción, el dominio base (p. ej. omnegia.brianacevedo.dev)
+   * para que la sesión valga en el panel principal y en cada subdominio de empresa. En local, sin dominio.
+   */
+  cookieDominio: (() => {
+    const base = (v('BASE_DOMAIN') ?? 'localhost').toLowerCase();
+    if (base === 'localhost' || !publicUrl.startsWith('https://')) return undefined;
+    const host = new URL(publicUrl).hostname;
+    return host === base || host.endsWith('.' + base) ? base : undefined;
+  })(),
   databaseUrl: v('DATABASE_URL'),
   dataDir: v('PGLITE_DIR') ?? './data/pglite',
   /** Clave para cifrar secretos de terceros en reposo (AES-256-GCM). */

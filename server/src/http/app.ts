@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { ZodError } from 'zod';
 import type { Database, Tx } from '../db/index.js';
@@ -156,8 +156,12 @@ export async function buildApp(db: Database, opts: { logger?: boolean; webDir?: 
   // Panel compilado (producción): SPA servida por el mismo proceso.
   const webDir = opts.webDir ?? resolve(process.cwd(), '../web/dist');
   if (existsSync(join(webDir, 'index.html'))) {
+    // index.html con el dominio base en tiempo de ejecución: el panel detecta el subdominio de la
+    // empresa sin depender de una variable de compilación.
+    const meta = `<meta name="omnegia-dominio" content="${config.baseDomain.replace(/[^a-z0-9.-]/g, '')}">`;
+    const indice = readFileSync(join(webDir, 'index.html'), 'utf8').replace('</head>', `${meta}</head>`);
     await app.register(fastifyStatic, {
-      root: webDir, wildcard: false,
+      root: webDir, wildcard: false, index: false,
       setHeaders: (reply, path) => {
         if (/[\\/]assets[\\/]/.test(path)) reply.header('cache-control', 'public, max-age=31536000, immutable');
       },
@@ -165,7 +169,7 @@ export async function buildApp(db: Database, opts: { logger?: boolean; webDir?: 
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/api/')) return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'No encontramos eso.' } });
       reply.header('cache-control', 'no-cache');
-      return reply.sendFile('index.html');
+      return reply.type('text/html; charset=utf-8').send(indice);
     });
   } else {
     app.setNotFoundHandler((_req, reply) => reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'No encontramos eso.' } }));

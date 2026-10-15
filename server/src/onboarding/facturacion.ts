@@ -92,12 +92,12 @@ export function vistaFacturacion(negocio: any) {
   const g: FacturacionGuardada | undefined = negocio?.facturacion;
   if (g?.documento_cifrado) return { completa: true, sugerida: false, datos: facturacionPublica(g) };
   const nit = typeof negocio?.nit === 'string' ? negocio.nit.replace(/[.\s]/g, '') : '';
-  const m = /^(\d{6,15})-?(\d)$/.exec(nit);
+  const m = negocio?.nit_dv ? [null,nit,negocio.nit_dv] : /^(\d{6,15})-?(\d)$/.exec(nit);
   return {
     completa: false, sugerida: true,
     datos: {
       nombre: negocio?.nombre ?? '', tipo_documento: m ? 'NIT' : 'CC', numero_sugerido: m ? m[1] : '', dv: m ? m[2] : null,
-      email: negocio?.email ?? '', telefono: negocio?.telefono ?? '', direccion: '', ciudad: negocio?.ciudad ?? '', departamento: null,
+      email: negocio?.email ?? '', telefono: negocio?.telefono ?? '', direccion: negocio?.direccion ?? '', ciudad: negocio?.ciudad ?? '', departamento: negocio?.departamento ?? null,
     },
   };
 }

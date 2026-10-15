@@ -239,7 +239,7 @@ describe('Salud y migraciones', () => {
   it('readiness informa la base, las migraciones aplicadas y el estado de las integraciones sin secretos', async () => {
     const r = await E.app.inject({ method: 'GET', url: '/api/salud/listo' });
     expect(r.statusCode).toBe(200);
-    expect(r.json().migraciones).toEqual(['001_base', '002_operacion', '003_correo_operador', '004_institucional', '005_documentos_pago']);
+    expect(r.json().migraciones).toEqual(['001_base', '002_operacion', '003_correo_operador', '004_institucional', '005_documentos_pago','006_registro','007_comisiones']);
     expect(r.body).not.toMatch(/sk-ant|secret|token-de/);
   });
   void drain;

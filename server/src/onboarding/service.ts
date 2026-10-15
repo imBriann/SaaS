@@ -21,6 +21,10 @@ import { requisitosFacturacion } from '../documentos/fiscalPlataforma.js';
 import { estadoDocumentosBorrador } from '../documentos/servicio.js';
 import { aCentavos } from '../lib/money.js';
 import { nitValido } from '../adapters/fiscal.js';
+import { sectorTypes } from './sectors.js';
+import { normalizePhone, validateLocation } from './location.js';
+import { domainInfo, reserveSlug, validSlug } from './subdomain.js';
+import { imageSize } from 'image-size';
 
 /**
  * Onboarding inteligente (PRO-SW-001 §13). Todo se persiste como BORRADOR con
@@ -39,6 +43,8 @@ function publicDraft(d: any) {
   const cotizacion = d.recomendacion?.cotizacion ?? quoteClassification(d.clasificacion);
   const oferta = ofertaAlta(cotizacion.total);
   return {
+    dominio: domainInfo(),
+    correo_verificado: !!d.email_verificado_en && d.email_verificado === d.negocio?.email,
     cotizacion,
     // Lo que se cobraría hoy al pagar (calculado en el servidor; el navegador no lo envía).
     oferta: { modalidad: oferta.modalidad, monto: oferta.monto, monto_referencia: oferta.montoReferencia, acceso_dias: oferta.accesoDias, concepto: oferta.concepto },
@@ -93,9 +99,16 @@ export const getDraft = async (db: Database, tk: string) => publicDraft(await lo
 const NegocioSchema = z.object({
   nombre: z.string().trim().min(2).max(80).optional(),
   slug: z.string().trim().max(40).optional(),
-  nit: z.string().trim().max(20).optional().nullable(),
+  nit: z.string().regex(/^\d{5,15}$|^$/, 'NIT: escribe entre 5 y 15 números, sin puntos ni guiones.').optional().nullable(),
+  nit_dv: z.string().regex(/^\d?$/, 'El DV es un solo número.').optional().nullable(),
+  pais: z.string().max(2).optional(),
+  departamento: z.string().max(60).optional(),
+  municipio: z.string().max(100).optional(),
+  direccion: z.string().trim().max(200).optional(),
+  telefono_pais: z.string().max(2).optional(),
+  telefono_nacional: z.string().max(25).optional(),
   ciudad: z.string().trim().max(60).optional().nullable(),
-  email: z.email().optional(),
+  email: z.email().transform(s => s.toLowerCase()).optional(),
   telefono: z.string().trim().max(20).optional().nullable(),
   responsable: z.string().trim().max(80).optional(),
   recursos: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
@@ -106,12 +119,19 @@ const PatchSchema = z.object({
   plan_codigo: z.enum(['esencial', 'negocio', 'pro']).optional(),
   negocio: NegocioSchema.optional(),
   colores_logo: z.array(z.string()).max(12).optional(),
-  logo_data_url: z.string().max(300_000).regex(/^data:image\/(png|jpeg|webp|svg\+xml);base64,/).optional().nullable(),
+  logo_data_url: z.string().max(300_000).regex(/^data:image\/(png|jpeg|webp);base64,/).optional().nullable(),
   /** Datos de facturación del contratante (se validan en facturacion.ts). */
   facturacion: z.record(z.string(), z.unknown()).optional(),
 });
 
 export async function updateDraft(db: Database, tk: string, body: unknown) {
+  return db.withPlatform(async tx => {
+    await tx.query('SELECT token FROM onboarding_draft WHERE token=$1 FOR UPDATE', [tk]);
+    const scoped = { withPlatform: (fn: any) => fn(tx) } as Database;
+    return updateDraftLocked(scoped, tk, body);
+  });
+}
+async function updateDraftLocked(db: Database, tk: string, body: unknown) {
   const d = await loadDraft(db, tk);
   const p = PatchSchema.parse(body);
   // Los datos de facturación se pueden corregir hasta que la empresa exista (también con un pago en curso:
@@ -129,13 +149,31 @@ export async function updateDraft(db: Database, tk: string, body: unknown) {
   if (p.clasificacion) {
     // Corrección humana: se revalida igual que la salida del modelo y se vuelve a aplicar la tabla de reglas.
     const corrections = { ...p.clasificacion };
-    if (Array.isArray(corrections.modulos_sugeridos) && corrections.factura_electronica === undefined) corrections.factura_electronica = corrections.modulos_sugeridos.includes('facturacion');
+    // Activar o quitar la función de facturación responde la pregunta fiscal; confirmar la lista sin tocarla no la responde.
+    if (Array.isArray(corrections.modulos_sugeridos) && corrections.factura_electronica === undefined) {
+      const antes = (d.clasificacion.modulos_sugeridos ?? []).includes('facturacion');
+      const ahora = corrections.modulos_sugeridos.includes('facturacion');
+      if (antes !== ahora) corrections.factura_electronica = ahora;
+    }
     if (typeof corrections.factura_electronica === 'boolean' && !Array.isArray(corrections.modulos_sugeridos)) {
       const modules = (d.clasificacion.modulos_sugeridos as string[]).filter(m => m !== 'facturacion');
       corrections.modulos_sugeridos = corrections.factura_electronica ? [...modules, 'facturacion'] : modules;
     }
-    const s = sanitizeClassification({ ...d.clasificacion, ...corrections, confianza: 1 });
-    clasificacion = { ...s, justificacion: d.clasificacion.justificacion, tokens: d.clasificacion.tokens, corregido_por_usuario: true } as any;
+    const campos = ['sector','tipo_negocio','tamano','volumen_conv_mes','factura_electronica','modulos_sugeridos','otro_descripcion'];
+    for (const k of Object.keys(corrections)) if (!campos.includes(k)) delete corrections[k];
+    if (corrections.sector && corrections.sector !== d.clasificacion.sector && !('tipo_negocio' in corrections)) corrections.tipo_negocio = null;
+    const merged = { ...d.clasificacion, ...corrections, confianza: 1 };
+    if (merged.tipo_negocio && !sectorTypes(merged.sector).includes(merged.tipo_negocio)) throw invalid('El tipo de negocio no corresponde al sector.');
+    const s = sanitizeClassification(merged);
+    for (const k of Object.keys(corrections)) if (k !== 'otro_descripcion' && corrections[k] != null && (s as any)[k] == null) throw invalid(`Revisa el campo ${k}.`);
+    const confirmados = [...new Set([...(d.clasificacion.confirmados ?? []), ...Object.keys(corrections).filter(k => corrections[k] != null)])].filter(k => (s as any)[k] != null);
+    clasificacion = { ...s, confirmados, motor: d.clasificacion.motor, otro_descripcion: String(merged.otro_descripcion ?? '').slice(0,160),
+      estados: Object.fromEntries(campos.map(k => [k, (s as any)[k] == null ? 'pendiente' : confirmados.includes(k) ? 'confirmado' : 'sugerido'])),
+      conflictos: (d.clasificacion.conflictos ?? []).filter((x: any) => !Object.keys(corrections).includes(x.campo)), justificacion: d.clasificacion.justificacion, tokens: d.clasificacion.tokens,
+      // La evidencia deja de aplicar en lo que la persona cambió con su propio valor.
+      evidencia: Object.fromEntries(Object.entries((d.clasificacion.evidencia ?? {}) as Record<string, string>).filter(([k]) => !(k in corrections) || JSON.stringify(corrections[k]) === JSON.stringify(d.clasificacion[k]))),
+      // Las preguntas solo siguen para lo que aún está pendiente.
+      preguntas: Object.fromEntries(Object.entries((d.clasificacion.preguntas ?? {}) as Record<string, string>).filter(([k]) => (s as any)[k] == null)) };
     recomendacion = recommendPlan(clasificacion);
     plan = recomendacion.plan;
   }
@@ -143,12 +181,20 @@ export async function updateDraft(db: Database, tk: string, body: unknown) {
   const negocio = { ...d.negocio, ...(p.negocio ?? {}) };
   if (p.facturacion) negocio.facturacion = prepararFacturacion(p.facturacion, d.negocio?.facturacion ?? null);
   if (p.negocio?.nombre && !d.negocio?.slug && !p.negocio.slug) negocio.slug = slugify(p.negocio.nombre);
-  if (negocio.slug) negocio.slug = slugify(negocio.slug);
+  if (negocio.slug && !validSlug(negocio.slug)) throw invalid('El nombre de tu dirección debe tener 3–40 letras minúsculas, números o guiones interiores y no estar reservado.');
+  if (p.negocio?.email && p.negocio.email !== d.negocio.email) await db.withPlatform(tx => tx.query('UPDATE onboarding_draft SET email_verificado=NULL,email_verificado_en=NULL WHERE token=$1',[tk]));
+  normalizePhone(negocio);
+  validateLocation(negocio);
   let tema = d.tema;
   let logo = d.logo_data_url;
   if (p.logo_data_url !== undefined) logo = p.logo_data_url;
+  if(p.logo_data_url) {
+    try { const bytes=Buffer.from(p.logo_data_url.split(',')[1],'base64'); const size=imageSize(bytes);
+      if(bytes.length>200000||!['png','jpg','webp'].includes(size.type??'')||size.width<32||size.height<32||size.width>4096||size.height>4096) throw new Error();
+    } catch { throw invalid('Logotipo inválido: usa PNG, JPG o WEBP de hasta 200 KB y entre 32 y 4096 px por lado.'); }
+  }
   if (p.colores_logo || p.logo_data_url !== undefined || (p.negocio?.nombre && !d.tema)) {
-    tema = deriveTheme(logo ? p.colores_logo ?? [] : [], negocio.nombre ?? 'Negocio');
+    tema = deriveTheme(p.colores_logo ?? [], negocio.nombre ?? 'Negocio');
   }
   await db.withPlatform((tx) =>
     tx.query(
@@ -162,18 +208,19 @@ export async function updateDraft(db: Database, tk: string, body: unknown) {
 // ---------------------------------------------------------------------------
 // Catálogo
 // ---------------------------------------------------------------------------
-export async function uploadCatalog(db: Database, tk: string, buf: Buffer, filename: string) {
+export async function uploadCatalog(db: Database, tk: string, buf: Buffer, filename: string, sheetName?: string) {
   const d = await loadDraft(db, tk);
   editable(d);
   if (buf.length > 5 * 1024 * 1024) throw invalid('El archivo supera 5 MB.');
-  const hoja = await readSheet(buf, filename);
+  const hoja = await readSheet(buf, filename, sheetName);
   const { mapeo } = await inferMapping(hoja);
   const porDefecto = d.clasificacion.sector === 'restaurante' || d.clasificacion.sector === 'taller' ? 'PRODUCTO' : 'SERVICIO';
   let filas: ReturnType<typeof applyMapping> = [];
   let error: string | null = null;
   try { filas = applyMapping(hoja, mapeo, porDefecto); } catch (e) { error = (e as Error).message; }
   await db.withPlatform((tx) => tx.query(`UPDATE onboarding_draft SET hoja_pendiente=$2, actualizado_en=now() WHERE token=$1`, [tk, JSON.stringify({ hoja, mapeo, archivo: filename })]));
-  return { archivo: filename, hoja: hoja.hoja, fila_encabezado: hoja.filaEncabezado, encabezados: hoja.encabezados, mapeo, filas, error, total: hoja.filas.length };
+  // muestra: primeras filas tal como vienen en el archivo, para reconocer cada columna al mapearla.
+  return { archivo: filename, hoja: hoja.hoja, hojas: hoja.hojas, fila_encabezado: hoja.filaEncabezado, encabezados: hoja.encabezados, muestra: hoja.filas.slice(0, 3), mapeo, filas, error, total: hoja.filas.length };
 }
 
 const MapeoInput = z.array(z.object({ columna: z.string(), campo: z.enum(CAMPOS_DESTINO), confianza: z.number().optional() }));
@@ -190,6 +237,8 @@ export async function previewCatalog(db: Database, tk: string, mapeoIn: unknown)
 }
 
 const FilaConfirmada = z.object({
+  fila: z.number().int().optional(),
+  incluir: z.boolean().optional(),
   tipo: z.enum(['PRODUCTO', 'SERVICIO']),
   nombre: z.string().trim().min(1).max(120),
   categoria: z.string().max(60).nullable().optional(),
@@ -202,16 +251,31 @@ const FilaConfirmada = z.object({
 
 /** Confirmación explícita (D-06). El mapeo usado queda para auditoría. */
 export async function confirmCatalog(db: Database, tk: string, body: unknown) {
-  const d = await loadDraft(db, tk);
-  editable(d);
-  const b = z.object({ filas: z.array(FilaConfirmada).max(2000), mapeo: MapeoInput.optional(), origen: z.enum(['archivo', 'manual']) }).parse(body);
+ return db.withPlatform(async tx=>{
+  const d=(await tx.query('SELECT * FROM onboarding_draft WHERE token=$1 FOR UPDATE',[tk])).rows[0];
+  if(!d)throw notFound(); editable(d);
+  const b = z.object({ filas: z.array(z.any()).min(1,'No hay registros para guardar.').max(2000), duplicados:z.enum(['omitir','actualizar']), mapeo: MapeoInput.optional(), origen: z.enum(['archivo', 'manual']) }).parse(body);
+  const rows:any[]=[...(d.catalogo??[])], reporte:any[]=[];
+  const key=(f:any)=>String(f.sku||f.nombre).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+  let importados=0,omitidos=0,rechazados=0;
+  for(const [i,raw] of b.filas.entries()){
+    const fila=raw.fila??i+1;
+    if(raw.incluir===false){omitidos++;reporte.push({fila,estado:'OMITIDO',motivo:'Excluido al revisar'});continue;}
+    const valid=FilaConfirmada.safeParse(raw);
+    if(!valid.success){rechazados++;reporte.push({fila,estado:'RECHAZADO',motivo:valid.error.issues.map(x=>`${x.path.join('.')}: ${x.message}`).join('; ')});continue;}
+    const f=valid.data, index=rows.findIndex(x=>key(x)===key(f)||x.nombre.toLocaleLowerCase()===f.nombre.toLocaleLowerCase());
+    if(index>=0&&b.duplicados==='omitir'){omitidos++;reporte.push({fila,estado:'OMITIDO',motivo:'Ya existe en el borrador'});continue;}
+    if(index>=0)rows[index]=f;else rows.push(f);
+    importados++;reporte.push({fila,estado:'GUARDADO',motivo:index>=0?'Actualizado en el borrador':'Añadido al borrador'});
+  }
+  if(rows.length>2000)throw invalid('El catálogo admite hasta 2000 registros.');
   const mapping = b.origen === 'archivo'
-    ? { archivo: d.hoja_pendiente?.archivo, inferido: d.hoja_pendiente?.mapeo, confirmado: b.mapeo, filas: b.filas.length, confirmado_en: new Date().toISOString() }
+    ? { archivo: d.hoja_pendiente?.archivo??d.import_mapping?.archivo, inferido: d.hoja_pendiente?.mapeo, confirmado: b.mapeo, filas: rows.length, confirmado_en: new Date().toISOString() }
     : { origen: 'manual', filas: b.filas.length };
-  await db.withPlatform((tx) =>
-    tx.query(`UPDATE onboarding_draft SET catalogo=$2, import_mapping=$3, hoja_pendiente=NULL, actualizado_en=now() WHERE token=$1`, [tk, JSON.stringify(b.filas), JSON.stringify(mapping)]),
-  );
-  return publicDraft(await loadDraft(db, tk));
+  const resumen={importados,omitidos,rechazados,reporte};
+  await tx.query(`UPDATE onboarding_draft SET catalogo=$2, import_mapping=$3, actualizado_en=now() WHERE token=$1`, [tk, JSON.stringify(rows), JSON.stringify({...mapping,resumen})]);
+  return {...publicDraft({...d,catalogo:rows,import_mapping:{...mapping,resumen}}),resumen};
+ });
 }
 
 // ---------------------------------------------------------------------------
@@ -229,7 +293,9 @@ export async function startCheckout(db: Database, tk: string, correlacion = uuid
   if (!n.nombre) faltan.push('nombre');
   if (!n.email) faltan.push('email');
   if (!n.slug) faltan.push('subdominio');
-  if (d.clasificacion?.factura_electronica && (!n.nit || !nitValido(n.nit))) faltan.push('nit');
+  if (!d.email_verificado_en || d.email_verificado !== n.email) faltan.push('correo_verificado');
+  if (d.clasificacion?.factura_electronica && (!n.nit || !n.nit_dv || !nitValido(`${n.nit}-${n.nit_dv}`))) faltan.push('nit');
+  if (d.clasificacion?.factura_electronica && (!n.pais || !n.departamento || !n.municipio || !n.direccion)) faltan.push('direccion');
   const facturacion: FacturacionGuardada | null = n.facturacion?.documento_cifrado ? n.facturacion : null;
   if (cuenta.proveedor === 'wompi' && !facturacion) faltan.push('facturacion');
   if (faltan.length) throw new AppError('VALIDATION', 'Faltan datos para continuar.', { faltan });
@@ -240,6 +306,8 @@ export async function startCheckout(db: Database, tk: string, correlacion = uuid
     if (slugTomado) throw new AppError('CONFLICT', 'Ese subdominio ya está en uso. Elige otro.', { faltan: ['subdominio'] });
     // Lock the draft so concurrent clicks cannot create different checkouts.
     const locked = (await tx.query(`SELECT * FROM onboarding_draft WHERE token=$1 FOR UPDATE`, [tk])).rows[0];
+    if (JSON.stringify(locked.negocio) !== JSON.stringify(d.negocio) || locked.email_verificado !== locked.negocio.email) throw new AppError('CONFLICT','Los datos cambiaron. Revisa el registro antes de pagar.');
+    await reserveSlug(tx, n.slug, tk, MINUTOS_CHECKOUT);
     if (locked.estado === 'APROVISIONADO') throw new AppError('CONFLICT', 'Esta empresa ya fue creada.');
     // Ya pagado: nunca se genera un segundo cobro para la misma alta.
     const aprobado = (await tx.query(`SELECT referencia, monto, modalidad FROM payment WHERE draft_token=$1 AND estado='APROBADO' LIMIT 1`, [tk])).rows[0];
@@ -386,4 +454,24 @@ export async function retryProvisioning(db: Database, tk: string, correlacion: s
   const r = await aprovisionarConReintento(db, tk, correlacion);
   if (!r.tenantId) throw new AppError('CONFLICT', r.error ?? 'No pudimos crear el espacio todavía.');
   return { ok: true };
+}
+
+export async function reanalyzeDraft(db: Database, tk: string, descripcion: unknown) {
+  const texto = z.string().trim().min(15).max(2000).parse(descripcion);
+  const propuesta = await classifyBusiness(texto);
+  return db.withPlatform(async tx => {
+    const d = (await tx.query('SELECT * FROM onboarding_draft WHERE token=$1 FOR UPDATE',[tk])).rows[0];
+    if(!d) throw notFound();
+    editable(d);
+    const c:any = { ...propuesta, confirmados: d.clasificacion.confirmados ?? [], conflictos: [] };
+    for(const k of c.confirmados) {
+      if(JSON.stringify(c[k]) !== JSON.stringify(d.clasificacion[k]) && c[k] != null) c.conflictos.push({ campo:k, valor:d.clasificacion[k], sugerencia:c[k] });
+      c[k]=d.clasificacion[k]; c.estados[k]='confirmado';
+    }
+    if(c.tipo_negocio && !sectorTypes(c.sector).includes(c.tipo_negocio)) { c.tipo_negocio=null; c.estados.tipo_negocio='pendiente'; }
+    c.otro_descripcion=d.clasificacion.otro_descripcion;
+    const rec=recommendPlan(c);
+    await tx.query('UPDATE onboarding_draft SET descripcion=$2,clasificacion=$3,recomendacion=$4,plan_codigo=$5,actualizado_en=now() WHERE token=$1',[tk,texto,JSON.stringify(c),JSON.stringify(rec),rec.plan]);
+    return publicDraft({...d,descripcion:texto,clasificacion:c,recomendacion:rec,plan_codigo:rec.plan});
+  });
 }

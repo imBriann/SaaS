@@ -125,3 +125,13 @@ export function cliente(app: FastifyInstance) {
   };
   return { call, get cookie() { return cookie; }, set cookie(v: string) { cookie = v; } };
 }
+
+/** Completa la verificación real por correo en una base de prueba. */
+export async function verificarAlta(E: Env, tk: string) {
+ const d=(await E.app.inject({method:'GET',url:`/api/onboarding/borradores/${tk}`})).json();
+ const enviado=await E.app.inject({method:'POST',url:`/api/onboarding/borradores/${tk}/correo/enviar`});
+ if(enviado.statusCode!==200)throw new Error(enviado.body);
+ const codigo=await codigoDelCorreo(E.db,d.negocio.email);
+ const verificado=await E.app.inject({method:'POST',url:`/api/onboarding/borradores/${tk}/correo/verificar`,payload:{codigo}});
+ if(verificado.statusCode!==200)throw new Error(verificado.body);
+}

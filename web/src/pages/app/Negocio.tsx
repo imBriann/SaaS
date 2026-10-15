@@ -1,3 +1,4 @@
+import { ImportSummary } from '../../components/ImportSummary';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, cop, descargar, fecha, fechaHora, fechaLarga, hora, hoyLocal, zona } from '../../api';
@@ -184,6 +185,8 @@ export function Ventas() {
 }
 
 function NuevaVenta({ onCerrar, onGuardada }: { onCerrar: () => void; onGuardada: (id: string) => void }) {
+  const responsables=useApi<any[]>(()=>api.get('/api/t/equipo/responsables'),[]);
+  const [responsable,setResponsable]=useState('');
   const [qCliente, setQCliente] = useState('');
   const qc = useRetardo(qCliente);
   const clientes = useApi<any>(() => api.get(`/api/t/clientes?por_pagina=30${qc ? `&q=${encodeURIComponent(qc)}` : ''}`), [qc]);
@@ -198,9 +201,10 @@ function NuevaVenta({ onCerrar, onGuardada }: { onCerrar: () => void; onGuardada
   const faltaStock = items.find((i) => { const p = prod(i.product_id); return p?.controla_stock && i.cantidad > p.stock; });
   return (
     <Modal titulo="Registrar venta" onCerrar={onCerrar} pie={<><span className="tenue" style={{ marginRight: 'auto' }}>Total <b>{cop(total)}</b> (IVA incluido)</span><button className="btn" onClick={onCerrar}>Cancelar</button>
-      <button className="btn primario" disabled={ocupado || !cliente || !items.length || !!faltaStock} onClick={async () => { const r = await run(() => api.post('/api/t/ventas', { customer_id: cliente.id, items }), 'Venta registrada. La factura se emite en segundo plano.', { silencioso: true }); if (r) onGuardada(r.id); }}>Registrar</button></>}>
+      <button className="btn primario" disabled={ocupado || !cliente || !items.length || !!faltaStock} onClick={async () => { const r = await run(() => api.post('/api/t/ventas', { customer_id: cliente.id, items, responsable_id:responsable||null }), 'Venta registrada. La factura se emite en segundo plano.', { silencioso: true }); if (r) onGuardada(r.id); }}>Registrar</button></>}>
       {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
-      <Campo etiqueta="Cliente">
+      <Campo etiqueta="Persona responsable de la venta" ayuda="Opcional. Permite atribuir la actividad y calcular la comisión configurada."><select className="input" value={responsable} onChange={e=>setResponsable(e.target.value)}><option value="">Sin atribuir</option>{responsables.data?.map(p=><option value={p.id} key={p.id}>{p.nombre}</option>)}</select></Campo>
+        <Campo etiqueta="Cliente">
         {cliente ? <span className="fila entre"><b>{cliente.nombre}</b><button type="button" className="btn peq sutil" onClick={() => setCliente(null)}>Cambiar</button></span> : <>
           <input className="input" type="search" placeholder="Busca por nombre, teléfono o documento" value={qCliente} onChange={(e) => setQCliente(e.target.value)} />
           <div className="opciones-busqueda" role="listbox" aria-label="Clientes encontrados">{clientes.data?.clientes?.slice(0, 6).map((c: any) => <button type="button" role="option" aria-selected="false" key={c.id} onClick={() => setCliente(c)}>{c.nombre}<span className="tenue peq-txt">{c.telefono ?? c.numero_documento ?? ''}</span></button>)}
@@ -428,10 +432,13 @@ const CAMPOS_MAPEO: [string, string][] = [['nombre', 'Nombre'], ['precio', 'Prec
 function ImportarCatalogo({ onCerrar, onHecho }: { onCerrar: () => void; onHecho: () => void }) {
   const [prev, setPrev] = useState<any>(null);
   const [filas, setFilas] = useState<any[]>([]);
-  const [duplicados, setDuplicados] = useState<'omitir' | 'actualizar'>('omitir');
+  const [duplicados, setDuplicados] = useState('');
+  const [resumen,setResumen]=useState<any>(null);
+  const [file,setFile]=useState<File|null>(null);
   const { run, ocupado, error } = useAccion();
-  const subir = async (f: File) => {
-    const r = await run(() => api.upload('/api/t/productos/importar/archivo', f), undefined, { silencioso: true });
+  const subir = async (f: File, hoja?:string) => {
+    setFile(f);setResumen(null);
+    const r = await run(() => api.upload(`/api/t/productos/importar/archivo${hoja?`?hoja=${encodeURIComponent(hoja)}`:''}`, f), undefined, { silencioso: true });
     if (r) { setPrev(r); setFilas(r.filas.map((x: any) => ({ ...x, incluir: x.estado === 'OK' }))); }
   };
   const cambiarMapeo = async (col: string, campo: string) => {
@@ -442,14 +449,15 @@ function ImportarCatalogo({ onCerrar, onHecho }: { onCerrar: () => void; onHecho
   const elegidas = filas.filter((f) => f.incluir && f.nombre && f.precio !== null);
   const repetidas = elegidas.filter((f) => f.existente).length;
   const confirmar = async () => {
-    const r = await run(() => api.post('/api/t/productos/importar/confirmar', { archivo: prev.archivo, duplicados, filas: elegidas.map((f) => ({ tipo: f.tipo, nombre: f.nombre, categoria: f.categoria, precio: Number(f.precio), iva_pct: f.iva_pct ?? 0, duracion_min: f.duracion_min, stock: f.stock, sku: f.sku })) }), undefined, { silencioso: true });
-    if (r) { onHecho(); }
+    const r = await run(() => api.post('/api/t/productos/importar/confirmar', { archivo: prev.archivo, duplicados: duplicados || 'omitir', filas: filas.map((f) => ({ fila:f.fila, incluir:f.incluir, tipo: f.tipo, nombre: f.nombre, categoria: f.categoria, precio: f.precio, iva_pct: f.iva_pct ?? 0, duracion_min: f.duracion_min, stock: f.stock, sku: f.sku })) }), undefined, { silencioso: true });
+    if (r) { setResumen(r); }
   };
+  if(resumen)return <Modal titulo="Resultado de la importación" onCerrar={onHecho}><ImportSummary resumen={resumen} onContinue={onHecho}/></Modal>;
   return (
-    <Modal titulo="Importar catálogo" onCerrar={onCerrar} pie={prev ? <><span className="tenue" style={{ marginRight: 'auto' }}>{elegidas.length} filas seleccionadas</span><button className="btn" onClick={() => { setPrev(null); setFilas([]); }}>Otro archivo</button><button className="btn primario" disabled={ocupado || !elegidas.length} onClick={confirmar}>Importar {elegidas.length}</button></> : <button className="btn" onClick={onCerrar}>Cancelar</button>}>
+    <Modal titulo="Importar catálogo" onCerrar={onCerrar} pie={prev ? <><span className="tenue" style={{ marginRight: 'auto' }}>{elegidas.length} filas seleccionadas</span><button className="btn" onClick={() => { setPrev(null); setFilas([]); }}>Otro archivo</button><button className="btn primario" disabled={ocupado || !elegidas.length || (repetidas > 0 && !duplicados)} onClick={confirmar}>Importar {elegidas.length}</button></> : <button className="btn" onClick={onCerrar}>Cancelar</button>}>
       {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message} Nada se guardó.</div>}
       {!prev ? (
-        <div className="col" style={{ gap: 12 }}>
+        <div className="col" style={{ gap: 12 }} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(!ocupado&&e.dataTransfer.files[0])subir(e.dataTransfer.files[0]);}}>
           <p className="sec">Sube un archivo .xlsx o .csv con tus productos y servicios. Detectamos las columnas; tú revisas antes de guardar.</p>
           <label className="btn primario" style={{ alignSelf: 'flex-start' }}><Icon n="subir" className="" size={16} />{ocupado ? 'Leyendo…' : 'Elegir archivo'}<input type="file" accept=".xlsx,.csv" className="sr" onChange={(e) => e.target.files?.[0] && subir(e.target.files[0])} /></label>
           <a className="peq-txt" href="/api/onboarding/plantilla-catalogo.xlsx">Descargar una plantilla de ejemplo</a>
@@ -457,13 +465,14 @@ function ImportarCatalogo({ onCerrar, onHecho }: { onCerrar: () => void; onHecho
       ) : (
         <div className="col" style={{ gap: 12 }}>
           <span className="tenue peq-txt">{prev.archivo} · encabezado en la fila {prev.fila_encabezado} · {prev.total} filas</span>
-          <div className="fila envolver" style={{ gap: 8 }}>{prev.mapeo.map((m: any) => (
+          <Campo etiqueta="Hoja a importar"><select className="input" value={prev.hoja} disabled={ocupado} onChange={e=>file&&subir(file,e.target.value)}>{(prev.hojas??[prev.hoja]).map((h:string)=><option key={h}>{h}</option>)}</select></Campo><div className="fila envolver" style={{ gap: 8 }}>{prev.mapeo.map((m: any) => (
             <label key={m.columna} className="campo" style={{ minWidth: 140, flex: '1 1 140px' }}><span className="cortar">«{m.columna}»</span>
-              <select className="input" value={m.campo} onChange={(e) => cambiarMapeo(m.columna, e.target.value)}>{CAMPOS_MAPEO.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+              <select className="input" value={m.campo} disabled={ocupado} onChange={(e) => cambiarMapeo(m.columna, e.target.value)}>{CAMPOS_MAPEO.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
           ))}</div>
           {prev.error && <div className="bloqueado">{prev.error}</div>}
+          {/* Solo se pide decidir cuando hay duplicados reales. */}
           {repetidas > 0 && (
-            <fieldset className="opciones-dup"><legend>{repetidas} ya existen en tu catálogo (mismo nombre)</legend>
+            <fieldset className="opciones-dup"><legend>{repetidas === 1 ? '1 ya existe' : `${repetidas} ya existen`} en tu catálogo (mismo nombre). ¿Qué hacemos con {repetidas === 1 ? 'él' : 'ellos'}?</legend>
               <label className="fila"><input type="radio" name="dup" checked={duplicados === 'omitir'} onChange={() => setDuplicados('omitir')} />Dejarlos como están</label>
               <label className="fila"><input type="radio" name="dup" checked={duplicados === 'actualizar'} onChange={() => setDuplicados('actualizar')} />Actualizar su precio y datos</label>
             </fieldset>

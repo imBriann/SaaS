@@ -1,3 +1,4 @@
+import { verificarAlta } from './helpers.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { setup, api, type Env } from './helpers.js';
 import { signWebhook, verifyWebhook } from '../src/adapters/payments.js';
@@ -52,7 +53,7 @@ describe('Onboarding asistido', () => {
   it('datos del negocio con tema derivado del logotipo y contraste validado', async () => {
     const r = await E.app.inject({
       method: 'PATCH', url: `/api/onboarding/borradores/${tk}`,
-      payload: { negocio: { nombre: 'Barbería Los Pinos', email: 'dueno@lospinos.test', nit: '901456789-' + '0', ciudad: 'Pamplona', responsable: 'Jorge' }, colores_logo: ['#FFE066', '#FFFFFF'], logo_data_url: 'data:image/png;base64,iVBORw0KGgo=' },
+      payload: { negocio: { nombre: 'Barbería Los Pinos', email: 'dueno@lospinos.test', nit: '901456789', nit_dv: '0', ciudad: 'Pamplona', responsable: 'Jorge' }, colores_logo: ['#FFE066', '#FFFFFF'], logo_data_url: null },
     });
     const d = r.json();
     expect(d.negocio.slug).toBe('barberia-los-pinos');
@@ -81,7 +82,7 @@ describe('Onboarding asistido', () => {
     expect(d.catalogo).toBeNull();
     // Confirmación explícita con la fila corregida por el usuario
     const filas = p.filas.map((f: any) => ({ tipo: f.tipo, nombre: f.nombre, categoria: f.categoria, precio: f.precio ?? 45000, iva_pct: 0, duracion_min: f.duracion_min }));
-    const c = await post(`/api/onboarding/borradores/${tk}/catalogo/confirmar`, { filas, mapeo: p.mapeo, origen: 'archivo' });
+    const c = await post(`/api/onboarding/borradores/${tk}/catalogo/confirmar`, { filas, mapeo: p.mapeo, origen: 'archivo', duplicados:'omitir' });
     expect(c.statusCode).toBe(200);
     expect(c.json().catalogo).toHaveLength(4);
     expect(c.json().import_mapping.archivo).toBe('precios.csv');
@@ -89,7 +90,8 @@ describe('Onboarding asistido', () => {
 
   it('pago → webhook duplicado ×3 → exactamente un tenant, un administrador, catálogo importado', async () => {
     const nitOk = '901456789-' + String((await import('../src/adapters/fiscal.js')).digitoVerificacionNit('901456789'));
-    await E.app.inject({ method: 'PATCH', url: `/api/onboarding/borradores/${tk}`, payload: { negocio: { nit: nitOk, slug: 'lospinos' } } });
+    await E.app.inject({ method: 'PATCH', url: `/api/onboarding/borradores/${tk}`, payload: { negocio: { nit: '901456789', nit_dv:nitOk.split('-')[1], slug: 'lospinos', pais:'CO',departamento:'54',municipio:'54518',direccion:'Calle 10 # 3-20' } } });
+    await verificarAlta(E,tk);
     const pago = await post(`/api/onboarding/borradores/${tk}/pago`, {});
     expect(pago.statusCode).toBe(200);
     const { referencia, monto } = pago.json();
@@ -184,6 +186,8 @@ describe('Cierre del alta: el estado sale del servidor, no de la navegación', (
     const tk = d.token;
     await E.app.inject({ method: 'PATCH', url: `/api/onboarding/borradores/${tk}`, payload: { negocio: { nombre: 'Gimnasio Cierre', email: 'dueno@cierre.test', slug: 'cierre' } } });
 
+    await post(`/api/onboarding/borradores/${tk}/catalogo/confirmar`,{origen:'manual',duplicados:'omitir',filas:[{nombre:'Clase real',tipo:'SERVICIO',precio:10000}]});
+    await verificarAlta(E,tk);
     // Borrador sin pago iniciado: no es «esperando confirmación».
     let st = await estado(tk);
     expect(st.pago).toBeNull();
@@ -211,9 +215,9 @@ describe('Cierre del alta: el estado sale del servidor, no de la navegación', (
     expect(faseCierre(tk, st, null)).toBe('listo');
     const cot = (await E.app.inject({ method: 'GET', url: `/api/onboarding/borradores/${tk}` })).json().cotizacion;
     expect(st.panel.modulos).toEqual([...cot.modulos].sort());
-    expect(st.panel.catalogo.origen).toBe('ejemplo');
-    expect(st.panel.catalogo.total).toBe(6);
-    expect(st.panel.catalogo.muestra).toHaveLength(4);
+    expect(st.panel.catalogo.origen).toBe('propio');
+    expect(st.panel.catalogo.total).toBe(1);
+    expect(st.panel.catalogo.muestra).toHaveLength(1);
     expect(st.panel.logo_data_url).toBeNull();
     expect(st.panel.tema.origen).toBe('monograma');
     expect(await E.db.withPlatform(async (tx) => (await tx.query(`SELECT count(*)::int n FROM tenant WHERE slug='cierre'`)).rows[0].n)).toBe(1);

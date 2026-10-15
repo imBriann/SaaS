@@ -1,3 +1,4 @@
+import * as commissions from '../../modules/commissions.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Database, Tx } from '../../db/index.js';
@@ -75,13 +76,13 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
     await db.withTenant(ctx.tenantId, async () => { requirePerm(ctx, 'catalog:write'); requireWritable(ctx); });
     const f = await req.file();
     if (!f) throw invalid('Adjunta un archivo .xlsx o .csv.');
-    const hoja = await readSheet(await f.toBuffer(), f.filename);
+    const hoja = await readSheet(await f.toBuffer(), f.filename, req.query?.hoja);
     const { mapeo } = await inferMapping(hoja);
     let filas: ReturnType<typeof applyMapping> = [];
     let error: string | null = null;
     try { filas = applyMapping(hoja, mapeo, 'SERVICIO'); } catch (e) { error = (e as Error).message; }
     const existentes = await db.withTenant(ctx.tenantId, (tx) => catalog.marcarDuplicados(tx, ctx, filas.map((x) => x.nombre)));
-    return { archivo: f.filename, hoja: hoja.hoja, fila_encabezado: hoja.filaEncabezado, encabezados: hoja.encabezados, mapeo, error, total: hoja.filas.length, filas: filas.map((x, i) => ({ ...x, existente: existentes[i] })), datos: { encabezados: hoja.encabezados, filas: hoja.filas.slice(0, 2000), numeros: hoja.numeros, filaEncabezado: hoja.filaEncabezado, hoja: hoja.hoja } };
+    return { archivo: f.filename, hoja: hoja.hoja, hojas: hoja.hojas, fila_encabezado: hoja.filaEncabezado, encabezados: hoja.encabezados, mapeo, error, total: hoja.filas.length, filas: filas.map((x, i) => ({ ...x, existente: existentes[i] })), datos: { encabezados: hoja.encabezados, filas: hoja.filas.slice(0, 2000), numeros: hoja.numeros, filaEncabezado: hoja.filaEncabezado, hoja: hoja.hoja } };
   });
   rx('post', '/productos/importar/vista-previa', async (ctx, req) => {
     const b = z.object({ datos: z.object({ encabezados: z.array(z.string()), filas: z.array(z.array(z.string())).max(2000), numeros: z.array(z.number()), filaEncabezado: z.number(), hoja: z.string() }), mapeo: z.array(z.object({ columna: z.string(), campo: z.string(), confianza: z.number().optional() })) }).parse(req.body);
@@ -112,6 +113,10 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('patch', '/agenda/citas/:id', (tx, ctx, req) => agenda.updateAppointmentState(tx, ctx, req.params.id, String(req.body?.estado)));
   r('post', '/agenda/citas/:id/reprogramar', (tx, ctx, req) => agenda.rescheduleAppointment(tx, ctx, req.params.id, req.body));
 
+  r('get','/equipo/responsables',(tx,ctx)=>commissions.eligible(tx,ctx));
+  r('get','/equipo/comisiones',(tx,ctx)=>commissions.settings(tx,ctx));
+  r('patch','/equipo/comisiones',(tx,ctx,req)=>commissions.save(tx,ctx,req.body));
+  r('get','/equipo/comisiones/informe',(tx,ctx,req)=>commissions.report(tx,ctx,req.query.fecha));
   // --- Ventas
   r('get', '/ventas', (tx, ctx, req) => orders.listOrders(tx, ctx, { estado_fiscal: req.query?.estado_fiscal, q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina, pago: req.query?.pago }));
   r('get', '/ventas.csv', async (tx, ctx, req, reply) => { descarga(reply, 'ventas.csv'); return exportsMod.exportOrders(tx, ctx, req.query?.desde, req.query?.hasta); });

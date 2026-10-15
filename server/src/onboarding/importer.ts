@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { llm } from '../ai/llm/index.js';
 import { invalid } from '../lib/errors.js';
 import { normalizeText } from '../lib/util.js';
+import { mapColumnsHeuristic } from '../ai/llm/mock.js';
 
 /**
  * Importación de catálogo desde hoja de cálculo (RF-019, D-05, D-06).
@@ -25,6 +26,7 @@ export interface Hoja {
   /** Número de fila en el archivo original de cada fila de datos (para mostrarlo al usuario). */
   numeros: number[];
   hoja: string;
+  hojas?: string[];
 }
 
 function cellText(v: ExcelJS.CellValue): string {
@@ -55,6 +57,7 @@ function parseCsv(text: string): string[][] {
       row.push(cur.trim()); rows.push(row); row = []; cur = '';
     } else cur += ch;
   }
+  if (q) throw invalid('El CSV tiene comillas sin cerrar. Corrige el archivo y vuelve a cargarlo.');
   if (cur || row.length) { row.push(cur.trim()); rows.push(row); }
   return rows;
 }
@@ -63,7 +66,8 @@ function parseCsv(text: string): string[][] {
  * Lee la hoja con más filas útiles y localiza la fila de encabezados aunque venga
  * desplazada (títulos, celdas combinadas, filas vacías arriba).
  */
-export async function readSheet(buf: Buffer, filename: string): Promise<Hoja> {
+export async function readSheet(buf: Buffer, filename: string, sheetName?: string): Promise<Hoja> {
+  if(buf.length>5*1024*1024) throw invalid('El archivo supera 5 MB.');
   let tablas: { nombre: string; filas: string[][]; nums: number[] }[] = [];
   if (/\.csv$/i.test(filename)) {
     const todas = parseCsv(buf.toString('utf8').replace(/^﻿/, ''));
@@ -77,7 +81,8 @@ export async function readSheet(buf: Buffer, filename: string): Promise<Hoja> {
       const nums: number[] = [];
       ws.eachRow({ includeEmpty: false }, (r, n) => {
         const vals: string[] = [];
-        for (let c = 1; c <= Math.min(ws.columnCount, 30); c++) vals.push(cellText(r.getCell(c).value));
+        if(ws.columnCount>30||ws.rowCount>10000)throw invalid('La hoja supera los l?mites de lectura: 30 columnas y 10000 filas totales.');
+        for (let c = 1; c <= ws.columnCount; c++) vals.push(cellText(r.getCell(c).value));
         if (vals.some((v) => v !== '')) { filas.push(vals); nums.push(n); }
       });
       tablas.push({ nombre: ws.name, filas, nums });
@@ -85,7 +90,7 @@ export async function readSheet(buf: Buffer, filename: string): Promise<Hoja> {
   } else {
     throw invalid('Formato no soportado. Usa .xlsx o .csv.');
   }
-  const t = tablas.sort((a, b) => b.filas.length - a.filas.length)[0];
+  const t = sheetName ? tablas.find(t=>t.nombre===sheetName) : tablas.sort((a, b) => b.filas.length - a.filas.length)[0];
   if (!t || t.filas.length < 2) throw invalid('El archivo no tiene filas de datos.');
   // Encabezado: la primera fila (de las 10 primeras) con ≥2 celdas de texto no numérico.
   let idx = 0;
@@ -95,9 +100,11 @@ export async function readSheet(buf: Buffer, filename: string): Promise<Hoja> {
     if (textos.length >= 2 && sig >= 2) { idx = i; break; }
   }
   const ancho = Math.max(...t.filas.slice(idx).map((r) => r.length));
-  const encabezados = Array.from({ length: ancho }, (_, i) => t.filas[idx][i] || `Columna ${i + 1}`);
-  const filas = t.filas.slice(idx + 1).map((r) => Array.from({ length: ancho }, (_, i) => r[i] ?? '')).slice(0, 2000);
-  return { encabezados, filas, filaEncabezado: t.nums[idx], numeros: t.nums.slice(idx + 1, idx + 1 + filas.length), hoja: t.nombre };
+  if(t.filas.length-idx-1>2000 || ancho>30) throw invalid('Admitimos hasta 2000 filas y 30 columnas. Divide el archivo para importar todos los datos sin recortes.');
+  const seen=new Set<string>();
+  const encabezados = Array.from({ length: ancho }, (_, i) => {const base=t.filas[idx][i] || `Columna ${i + 1}`;let value=base;let n=2;while(seen.has(value))value=`${base} (${n++})`;seen.add(value);return value;});
+  const filas = t.filas.slice(idx + 1).map((r) => Array.from({ length: ancho }, (_, i) => r[i] ?? ''));
+  return { encabezados, filas, filaEncabezado: t.nums[idx], numeros: t.nums.slice(idx + 1, idx + 1 + filas.length), hoja: t.nombre, hojas: tablas.map(t=>t.nombre) };
 }
 
 /** El modelo ve encabezados y una muestra de 5 filas; nunca el archivo completo. */
@@ -112,8 +119,9 @@ export async function inferMapping(h: Hoja): Promise<{ mapeo: Mapeo; tokens: num
     user: `<encabezados>${JSON.stringify(h.encabezados)}</encabezados>\n<muestra>${JSON.stringify(muestra)}</muestra>`,
     schema: MapeoSchema,
     datos: { encabezados: h.encabezados, muestra },
-  });
-  const raw = (r.data?.mapeo ?? []) as Mapeo;
+  }).catch(()=>({data:null,tokens:0}));
+  const fallback=mapColumnsHeuristic(h).mapeo;
+  const raw = (r.data?.mapeo?.length ? r.data.mapeo : fallback) as Mapeo;
   // Normalización en código: una entrada por encabezado y campos únicos.
   const usados = new Set<string>();
   const mapeo: Mapeo = h.encabezados.map((col) => {
@@ -158,13 +166,20 @@ export interface FilaPrevia {
 
 /** Aplica el mapeo a TODAS las filas en código. Las filas dudosas se marcan, no se descartan. */
 export function applyMapping(h: Hoja, mapeo: Mapeo, sectorPorDefecto: 'PRODUCTO' | 'SERVICIO' = 'SERVICIO'): FilaPrevia[] {
-  const col = (campo: CampoDestino) => h.encabezados.findIndex((_, i) => mapeo[i]?.campo === campo);
+  const usados=new Set<string>();
+  for(const m of mapeo) {if(!h.encabezados.includes(m.columna)||!CAMPOS_DESTINO.includes(m.campo))throw invalid('El mapeo contiene una columna o campo desconocido.');if(m.campo!=='ignorar'&&usados.has(m.campo))throw invalid('Cada campo debe corresponder a una sola columna.');if(m.campo!=='ignorar')usados.add(m.campo);}
+  const col = (campo: CampoDestino) => h.encabezados.findIndex(head => mapeo.find(m=>m.columna===head)?.campo === campo);
   const ci = Object.fromEntries(CAMPOS_DESTINO.map((c) => [c, col(c)])) as Record<CampoDestino, number>;
   if (ci.nombre < 0) throw invalid('Indica qué columna contiene el nombre del producto o servicio.');
   if (ci.precio < 0) throw invalid('Indica qué columna contiene el precio.');
+  const vistos=new Set<string>();
   return h.filas.map((r, i) => {
     const problemas: string[] = [];
-    const nombre = (r[ci.nombre] ?? '').trim().slice(0, 120);
+    const nombre = (r[ci.nombre] ?? '').trim();
+    if(nombre.length>120)problemas.push('Nombre de más de 120 caracteres');
+    const key=normalizeText(ci.sku>=0&&r[ci.sku]?r[ci.sku]:nombre);
+    if(vistos.has(key))problemas.push('Duplicado en el archivo');
+    if(key)vistos.add(key);
     const precioRaw = r[ci.precio] ?? '';
     const precio = parsePrecio(precioRaw);
     if (!nombre) problemas.push('Sin nombre');
@@ -172,9 +187,14 @@ export function applyMapping(h: Hoja, mapeo: Mapeo, sectorPorDefecto: 'PRODUCTO'
     const tipoRaw = ci.tipo >= 0 ? normalizeText(r[ci.tipo] ?? '') : '';
     const tipo: 'PRODUCTO' | 'SERVICIO' = /prod|articulo|bien/.test(tipoRaw) ? 'PRODUCTO' : /serv/.test(tipoRaw) ? 'SERVICIO' : ci.stock >= 0 && r[ci.stock] ? 'PRODUCTO' : sectorPorDefecto;
     const dur = ci.duracion_min >= 0 ? parseInt(r[ci.duracion_min], 10) : NaN;
+    if(tipoRaw&&!/^(producto|servicio|bien|articulo)s?$/.test(tipoRaw))problemas.push('Tipo desconocido: usa Producto o Servicio');
+    if(ci.duracion_min>=0&&r[ci.duracion_min]&&(!/^\d+$/.test(r[ci.duracion_min])||dur<1||dur>600))problemas.push('Duración: usa entre 1 y 600 minutos enteros');
     const stock = ci.stock >= 0 && r[ci.stock] !== '' ? Number(String(r[ci.stock]).replace(',', '.')) : null;
     const iva = ci.iva_pct >= 0 ? Number(String(r[ci.iva_pct]).replace('%', '').replace(',', '.')) : 0;
     const ivaOk = [0, 5, 19].includes(iva) ? iva : 0;
+    if(stock!==null&&(!Number.isFinite(stock)||stock<0))problemas.push('Existencias: usa un número mayor o igual a cero');
+    if(ci.categoria>=0&&r[ci.categoria]?.length>60)problemas.push('Categoría de más de 60 caracteres');
+    if(ci.sku>=0&&r[ci.sku]?.length>40)problemas.push('Código de más de 40 caracteres');
     if (ci.iva_pct >= 0 && r[ci.iva_pct] && ivaOk !== iva) problemas.push(`IVA no reconocido: «${r[ci.iva_pct]}» (se usa 0 %)`);
     const vacia = r.every((c) => !c);
     return {
@@ -189,7 +209,7 @@ export function applyMapping(h: Hoja, mapeo: Mapeo, sectorPorDefecto: 'PRODUCTO'
       problemas,
       estado: (vacia || (!nombre && precio === null) ? 'OMITIR' : problemas.length ? 'REVISAR' : 'OK') as FilaPrevia['estado'],
     };
-  }).filter((f) => f.estado !== 'OMITIR');
+  });
 }
 
 /** Plantilla descargable (siempre existe la vía manual, D-06). */

@@ -305,6 +305,8 @@ export const HANDLERS: Record<string, Handler> = {
 
   mantenimiento: async (db) => {
     await db.withPlatform(async (tx) => {
+      await tx.query('DELETE FROM subdomain_reservation WHERE expira_en<=now()');
+      await tx.query("DELETE FROM onboarding_email_code WHERE creado_en < now()-interval '1 day'");
       await tx.query(`UPDATE pending_action SET estado='EXPIRADA' WHERE estado='PENDIENTE' AND expira_en < now()`);
       await tx.query(`UPDATE payment_link SET estado='EXPIRADO', actualizado_en=now() WHERE estado='ABIERTO' AND expira_en < now()`);
       await tx.query(`UPDATE invitation SET estado='EXPIRADA' WHERE estado='PENDIENTE' AND expira_en < now()`);
@@ -431,6 +433,7 @@ export function startWorker(db: Database): () => Promise<void> {
         ultimoCiclo = Date.now();
         const hora = new Date().toISOString().slice(0, 13);
         await db.withPlatform(async (tx) => {
+          await tx.query('DELETE FROM subdomain_reservation WHERE expira_en<=now()');
           await enqueue(tx, null, 'ciclo_suscripcion', {}, { claveUnica: `ciclo:${hora}` });
           await enqueue(tx, null, 'cerrar_inactivas', {}, { claveUnica: `inactivas:${hora}` });
           await enqueue(tx, null, 'mantenimiento', {}, { claveUnica: `mant:${hora}` });

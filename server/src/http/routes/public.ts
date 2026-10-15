@@ -1,10 +1,14 @@
+import { SECTOR_CATALOG } from '../../onboarding/sectors.js';
+import { countries, divisions, cities } from '../../onboarding/location.js';
+import { availability, domainInfo } from '../../onboarding/subdomain.js';
+import { sendDraftCode, verifyDraftCode } from '../../onboarding/verification.js';
 import type { FastifyInstance } from 'fastify';
 import { MODULE_CATALOG, quoteModules } from '../../onboarding/pricing.js';
 import type { Database } from '../../db/index.js';
 import { AppError, invalid, notFound } from '../../lib/errors.js';
 import { cop, token } from '../../lib/util.js';
 import { config, integraciones } from '../../config.js';
-import { cookieSesion, memberships, SESSION_COOKIE, sessionToken } from '../context.js';
+import { cookieBorrar, cookieSesion, memberships, SESSION_COOKIE, sessionToken } from '../context.js';
 import * as onboarding from '../../onboarding/service.js';
 import { catalogTemplate } from '../../onboarding/importer.js';
 import { cuentaPlataforma, mediosPagoWompi, signWebhook, verificarEventoWompi } from '../../adapters/payments.js';
@@ -69,14 +73,14 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
 
   app.post('/api/auth/logout', async (req, reply) => {
     await auth.destroySession(db, sessionToken(req));
-    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    reply.clearCookie(SESSION_COOKIE, cookieBorrar());
     return { ok: true };
   });
 
   app.post('/api/auth/logout-todas', async (req, reply) => {
     if (!req.user) throw new AppError('UNAUTHENTICATED', 'Sin sesión.');
     await auth.logoutEverywhere(db, req.user);
-    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    reply.clearCookie(SESSION_COOKIE, cookieBorrar());
     return { ok: true };
   });
 
@@ -97,6 +101,12 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   app.get('/api/invitaciones/:tk', async (req: any) => team.invitationInfo(db, String(req.params.tk)));
   app.post('/api/invitaciones/:tk/aceptar', async (req: any) => team.acceptInvitation(db, String(req.params.tk), { password: req.body?.password }, req.correlacion));
 
+  app.get('/api/onboarding/catalogos', async () => ({ sectores: SECTOR_CATALOG, paises: countries, dominio: domainInfo() }));
+  app.get('/api/onboarding/territorios', async (req:any) => req.query?.departamento ? cities(String(req.query.pais),String(req.query.departamento)) : divisions(String(req.query?.pais ?? 'CO')));
+  app.get('/api/onboarding/subdominio', async (req:any) => availability(db,String(req.query?.slug ?? ''),String(req.query?.tk ?? '')));
+  app.post('/api/onboarding/borradores/:tk/analizar', async (req:any) => onboarding.reanalyzeDraft(db,req.params.tk,req.body?.descripcion));
+  app.post('/api/onboarding/borradores/:tk/correo/enviar', async (req:any) => sendDraftCode(db,req.params.tk,req.ip));
+  app.post('/api/onboarding/borradores/:tk/correo/verificar', async (req:any) => verifyDraftCode(db,req.params.tk,req.body?.codigo));
   // ------------------------------------------------------------------ onboarding
   app.post('/api/onboarding/borradores', async (req: any) => onboarding.createDraft(db, req.body?.descripcion));
   app.get('/api/onboarding/borradores/:tk', async (req: any) => onboarding.getDraft(db, req.params.tk));
@@ -104,7 +114,7 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   app.post('/api/onboarding/borradores/:tk/catalogo/archivo', async (req: any) => {
     const f = await req.file();
     if (!f) throw invalid('Adjunta un archivo .xlsx o .csv.');
-    return onboarding.uploadCatalog(db, req.params.tk, await f.toBuffer(), f.filename);
+    return onboarding.uploadCatalog(db, req.params.tk, await f.toBuffer(), f.filename, req.query?.hoja);
   });
   app.post('/api/onboarding/borradores/:tk/catalogo/vista-previa', async (req: any) => onboarding.previewCatalog(db, req.params.tk, req.body?.mapeo));
   app.post('/api/onboarding/borradores/:tk/catalogo/confirmar', async (req: any) => onboarding.confirmCatalog(db, req.params.tk, req.body));

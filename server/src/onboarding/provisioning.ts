@@ -1,3 +1,5 @@
+import { reserveSlug } from './subdomain.js';
+import { SECTOR_CATALOG } from './sectors.js';
 import type { Tx } from '../db/index.js';
 import type { SectorTemplate } from '../templates/schema.js';
 import { loadTemplates, MODULOS } from '../templates/index.js';
@@ -68,6 +70,8 @@ export interface NuevoTenant {
   logo_data_url?: string | null;
   catalogo?: CatalogRow[] | null;
   recursos?: string[] | null;
+  /** Actividad real elegida en el alta (puede no tener plantilla propia). */
+  actividad?: { sector: string; tipo_negocio?: string | null; descripcion?: string | null } | null;
   whatsapp_phone_number_id?: string | null;
   /** Términos del pago que activa la empresa. Sin ellos: un mes comercial (demostración y semillas). */
   suscripcion?: TerminosSuscripcion | null;
@@ -101,7 +105,9 @@ async function uniqueSlug(tx: Tx, slug: string): Promise<string> {
 }
 
 export async function createTenantFromTemplate(tx: Tx, d: NuevoTenant, etapa: (e: string) => Promise<void> = async () => {}) {
-  const tpl = await latestTemplate(tx, d.sector);
+  if(!SECTOR_CATALOG.some(s=>s.id===d.sector))throw new Error('Sector desconocido');
+  // Sectores sin plantilla propia usan la plantilla general (neutral), nunca la de otra actividad.
+  const tpl = await latestTemplate(tx, d.sector) ?? await latestTemplate(tx, 'general');
   if (!tpl) throw new Error(`No existe plantilla para el sector ${d.sector}`);
   const plan = (await tx.query(`SELECT * FROM plan WHERE codigo=$1`, [d.plan])).rows[0];
   if (!plan) throw new Error('Plan inexistente');
@@ -110,9 +116,12 @@ export async function createTenantFromTemplate(tx: Tx, d: NuevoTenant, etapa: (e
   const slug = await uniqueSlug(tx, d.slug || d.nombre);
   const tema = d.tema ?? deriveTheme(null, d.nombre);
   await tx.query(
-    `INSERT INTO tenant (id, slug, nombre, nit, ciudad, email_contacto, telefono, sector, sector_version, plan_codigo, tema, logo_data_url, whatsapp_phone_number_id, whatsapp_estado)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, CASE WHEN $13::text IS NULL THEN 'SIN_CONFIGURAR' WHEN $13::text LIKE 'sim-%' THEN 'SIMULADO' ELSE 'PENDIENTE_VERIFICAR' END)`,
-    [tenantId, slug, d.nombre, d.nit ?? null, d.ciudad ?? null, d.email, d.telefono ?? null, tpl.sector, tpl.version, d.plan, JSON.stringify(tema), d.logo_data_url ?? null, d.whatsapp_phone_number_id ?? null],
+    `INSERT INTO tenant (id, slug, nombre, nit, ciudad, email_contacto, telefono, sector, sector_version, plan_codigo, tema, logo_data_url, whatsapp_phone_number_id, whatsapp_estado, registro_datos)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, CASE WHEN $13::text IS NULL THEN 'SIN_CONFIGURAR' WHEN $13::text LIKE 'sim-%' THEN 'SIMULADO' ELSE 'PENDIENTE_VERIFICAR' END, $14)`,
+    // tenant.sector = plantilla aplicada (la política de riesgo y el escalamiento se resuelven con ella);
+    // la actividad real queda en registro_datos para mostrarla y describir el negocio a los agentes.
+    [tenantId, slug, d.nombre, d.nit ?? null, d.ciudad ?? null, d.email, d.telefono ?? null, tpl.sector, tpl.version, d.plan, JSON.stringify(tema), d.logo_data_url ?? null, d.whatsapp_phone_number_id ?? null,
+      JSON.stringify({ actividad: d.actividad ?? { sector: d.sector } })],
   );
   await etapa('empresa_creada');
 
@@ -167,11 +176,14 @@ export async function createTenantFromTemplate(tx: Tx, d: NuevoTenant, etapa: (e
   );
 
   // Recursos agendables.
-  const recursos = d.recursos?.length ? d.recursos.map((n) => ({ nombre: n, horario: tpl.recursos_ejemplo[0]?.horario ?? {} })) : tpl.recursos_ejemplo;
+  // La agenda necesita al menos un recurso para reservar. Sin recursos indicados se crea uno neutro
+  // («Agenda principal»), nunca un empleado inventado: el equipo se configura después del alta.
+  const horario = tpl.recursos_ejemplo[0]?.horario ?? {};
+  const recursos = d.recursos?.length ? d.recursos.map((n) => ({ nombre: n, horario })) : d.recursos ? [{ nombre: 'Agenda principal', horario }] : tpl.recursos_ejemplo;
   for (const r of recursos) await tx.query(`INSERT INTO resource (id, tenant_id, nombre, horario) VALUES ($1,$2,$3,$4)`, [uuidv7(), tenantId, r.nombre, JSON.stringify(r.horario)]);
 
   // Catálogo: el importado por el usuario o, si no hay, el de ejemplo (editable).
-  const catalogo: CatalogRow[] = d.catalogo?.length ? d.catalogo : tpl.catalogo_ejemplo;
+  const catalogo: CatalogRow[] = d.catalogo ?? tpl.catalogo_ejemplo;
   for (const c of catalogo) {
     const controla = c.tipo === 'PRODUCTO' && (c.controla_stock ?? c.stock != null);
     await tx.query(
@@ -209,14 +221,16 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
     `SELECT id, referencia, monto, monto_referencia, modalidad, acceso_dias, plan_codigo FROM payment WHERE draft_token=$1 AND estado='APROBADO' ORDER BY verificado_en NULLS LAST, creado_en LIMIT 1`, [draftToken])).rows[0];
   const plan = pago?.plan_codigo ?? d.plan_codigo;
   const n = d.negocio ?? {};
+  await reserveSlug(tx, n.slug, draftToken, 30);
   const etapas: { etapa: string; en: string }[] = [{ etapa: 'pago_verificado', en: new Date().toISOString() }];
   const r = await createTenantFromTemplate(
     tx,
     {
-      nombre: n.nombre, slug: n.slug || n.nombre, nit: n.nit, ciudad: n.ciudad, email: n.email, telefono: n.telefono,
-      plan, sector: d.clasificacion.sector && d.clasificacion.sector !== 'otro' ? d.clasificacion.sector : 'barberia',
+      nombre: n.nombre, slug: n.slug || n.nombre, nit: n.nit ? `${n.nit}-${n.nit_dv}` : null, ciudad: n.ciudad, email: n.email, telefono: n.telefono,
+      plan, sector: d.clasificacion.sector ?? 'otro',
       admin: { nombre: n.responsable || n.nombre, email: n.email },
-      tema: d.tema, logo_data_url: d.logo_data_url, catalogo: d.catalogo, recursos: n.recursos,
+      tema: d.tema, logo_data_url: d.logo_data_url, catalogo: d.catalogo ?? [], recursos: n.recursos ?? [],
+      actividad: { sector: d.clasificacion.sector ?? 'otro', tipo_negocio: d.clasificacion.tipo_negocio ?? null, descripcion: d.clasificacion.otro_descripcion || null },
       suscripcion: pago ? {
         modalidad: pago.modalidad, accesoDias: pago.acceso_dias ?? null, precioPagado: Number(pago.monto),
         montoReferencia: pago.monto_referencia == null ? null : Number(pago.monto_referencia), paymentId: pago.id,
@@ -233,7 +247,7 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
   const acceso = { url: urlEmpresa(tenant.slug), modalidad: sus.modalidad, vigente_hasta: new Date(sus.periodo_fin).toISOString(), monto_pagado: pago ? Number(pago.monto) : null, referencia: pago?.referencia ?? null };
   const cierre = {
     nombre: tenant.nombre, slug: tenant.slug, tema: tenant.tema, logo_data_url: tenant.logo_data_url, modulos, acceso,
-    catalogo: { origen: d.catalogo?.length ? 'propio' : 'ejemplo', total: productos.length, muestra: productos.slice(0, 4).map((x: any) => ({ ...x, precio: Number(x.precio) })) },
+    catalogo: { origen: d.catalogo?.length ? 'propio' : 'vacio', total: productos.length, muestra: productos.slice(0, 4).map((x: any) => ({ ...x, precio: Number(x.precio) })) },
   };
   // Documentos del pago (comprobante y ZIP) y, al terminarlos, el correo de confirmación: en la misma
   // transacción, así que si el alta se revierte no queda nada encolado.

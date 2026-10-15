@@ -229,7 +229,7 @@ export async function toggleAgent(tx: Tx, ctx: Ctx, configuracion: string, activ
 export async function settings(tx: Tx, ctx: Ctx) {
   requirePerm(ctx, 'tenant:configure');
   const personas = (await tx.query(
-    `SELECT u.id, u.nombre, u.email, r.clave AS rol, r.nombre AS rol_nombre, ut.activo, ut.disponible, ut.creado_en,
+    `SELECT u.id, coalesce(ut.nombre_visible,u.nombre) AS nombre, u.email, r.clave AS rol, r.nombre AS rol_nombre, ut.activo, ut.disponible, ut.creado_en,
             EXISTS (SELECT 1 FROM role_permission rp WHERE rp.role_id=r.id AND rp.permiso='case:manage') AS atiende_casos
      FROM user_tenant ut JOIN users u ON u.id=ut.user_id JOIN role r ON r.id=ut.role_id ORDER BY ut.activo DESC, ut.creado_en`,
   )).rows;
@@ -298,10 +298,11 @@ export async function updateMember(tx: Tx, ctx: Ctx, userId: string, body: unkno
   requirePerm(ctx, 'user:manage');
   requireWritable(ctx);
   if (!isUuid(userId)) throw notFound();
-  const d = z.object({ rol: z.string().optional(), activo: z.boolean().optional(), disponible: z.boolean().optional() }).parse(body);
+  const d = z.object({ nombre:z.string().trim().min(2).max(80).optional(), rol: z.string().optional(), activo: z.boolean().optional(), disponible: z.boolean().optional() }).parse(body);
   const m = (await tx.query(`SELECT ut.user_id, ut.activo, r.clave, r.nombre AS rol_nombre FROM user_tenant ut JOIN role r ON r.id=ut.role_id WHERE ut.user_id=$1 FOR UPDATE OF ut`, [userId])).rows[0];
   if (!m) throw notFound();
   if (userId === ctx.actor.id && (d.activo === false || (d.rol && d.rol !== m.clave))) throw new AppError('CONFLICT', 'No puedes quitarte tu propio acceso de administración.');
+  if(d.nombre) await tx.query('UPDATE user_tenant SET nombre_visible=$2 WHERE user_id=$1',[userId,d.nombre]);
   let rolNuevo: string | null = null;
   if (d.rol) {
     const r = (await tx.query(`SELECT id, es_agente, nombre FROM role WHERE clave=$1`, [d.rol])).rows[0];

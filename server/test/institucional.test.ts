@@ -1,3 +1,4 @@
+import { verificarAlta } from './helpers.js';
 import { createHash } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setup, login, api, CRED, type Env } from './helpers.js';
@@ -51,11 +52,12 @@ export const FACTURACION = (slug: string) => ({ nombre: `Contratante ${slug}`, t
 
 async function borrador(slug: string, conFacturacion = true) {
   const d = (await post('/api/onboarding/borradores', { descripcion: 'Tengo una barbería pequeña en Ocaña, atiendo yo solo con citas por WhatsApp.' })).json();
-  await E.app.inject({ method: 'PATCH', url: `/api/onboarding/borradores/${d.token}`, payload: { negocio: { nombre: `Empresa ${slug}`, email: `dueno@${slug}.test`, slug, nit: `901222333-${digitoVerificacionNit('901222333')}` } } });
+  await E.app.inject({ method: 'PATCH', url: `/api/onboarding/borradores/${d.token}`, payload: { negocio: { nombre: `Empresa ${slug}`, email: `dueno@${slug}.test`, slug, nit: '901222333', nit_dv:String(digitoVerificacionNit('901222333')) } } });
   if (conFacturacion) {
     const f = await E.app.inject({ method: 'PATCH', url: `/api/onboarding/borradores/${d.token}`, payload: { facturacion: FACTURACION(slug) } });
     if (f.statusCode !== 200) throw new Error(`facturación: ${f.body}`);
   }
+  await verificarAlta(E,d.token);
   return d.token as string;
 }
 

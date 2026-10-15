@@ -14,7 +14,8 @@
     "test:postgres": "node scripts/pruebas-postgres.mjs",
     "migrar": "tsx src/db/migrar.ts",
     "respaldo": "tsx src/db/respaldo.ts",
-    "correo:prueba": "tsx src/email/prueba.ts"
+    "correo:prueba": "tsx src/email/prueba.ts",
+    "operador": "tsx src/seed/operador.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
@@ -22,9 +23,12 @@
     "@fastify/cookie": "^11.1.2",
     "@fastify/multipart": "^10.1.1",
     "@fastify/static": "^10.1.4",
+    "country-state-city": "^3.2.1",
     "exceljs": "^4.4.0",
     "fastify": "^5.12.5",
+    "image-size": "^2.0.4",
     "jszip": "^3.10.2",
+    "libphonenumber-js": "^1.13.15",
     "nodemailer": "^10.1.0",
     "pdfkit": "^0.20.2",
     "pg": "^8.23.0",

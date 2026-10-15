@@ -1,3 +1,4 @@
+import { record as recordCommission } from './commissions.js';
 import { z } from 'zod';
 import type { Tx } from '../db/index.js';
 import { type Ctx, requirePerm, requireWritable } from '../core/context.js';
@@ -10,6 +11,7 @@ import { registerMovement } from './catalog.js';
 import { createCreditNote } from './fiscal.js';
 
 export const OrderInput = z.object({
+  responsable_id: z.uuid().optional().nullable(),
   customer_id: z.uuid(),
   items: z.array(z.object({
     product_id: z.uuid(),
@@ -64,6 +66,7 @@ export async function insertOrder(
       await registerMovement(tx, ctx, { product_id: l.p.id, tipo: 'SALIDA', cantidad: l.cantidad, motivo: `Venta #${numero}`, order_id: id }, { skipPerm: true });
     }
   }
+  await recordCommission(tx,ctx,id,d.responsable_id,lineas.map(l=>({product_id:l.p.id,base:l.c.base})));
   await publish(tx, ctx, 'venta_registrada', { order_id: id, numero, total: aPesos(tot.total) });
   return { id, numero, total: aPesos(tot.total), descuento: aPesos(tot.descuento), cliente: c.nombre, items: lineas.map((l) => ({ nombre: l.p.nombre, cantidad: l.cantidad, total: aPesos(l.c.total) })) };
 }

@@ -267,32 +267,51 @@ const SECTORES: Record<string, RegExp[]> = {
   servicios: [/consultorio/, /estetica/, /\bspa\b/, /\bunas\b/, /manicure/, /veterinari/, /odontolog/, /asesori/, /peluqueria canina/],
 };
 
+const ROLES = 'barberos?|emplead[oa]s?|personas?|trabajador(?:a|es|as)?|entrenador(?:a|es|as)?|meser[oa]s?|mecanicos?|estilistas?|colaborador(?:a|es|as)?|asesor(?:a|es|as)?|medic[oa]s?|doctor(?:a|es|as)?|auxiliar(?:es)?|odontolog[oa]s?|enfermer[oa]s?|terapeutas?|psicolog[oa]s?|profesor(?:a|es|as)?|docentes?|vendedor(?:a|es|as)?|cociner[oa]s?|ayudantes?|cajer[oa]s?|domiciliari[oa]s?|asistentes?|recepcionistas?|manicuristas?|socios?|instructor(?:a|es|as)?|tecnicos?|operari[oa]s?';
+const NUM = '\\d{1,3}|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cincuenta|cien';
+
+/**
+ * Clasificación por reglas cuando no hay modelo de lenguaje. Devuelve, por campo, la frase
+ * LITERAL del texto en la que se apoya (evidencia), para que la persona vea de dónde salió.
+ */
 export function classifyHeuristic(descripcion: string) {
-  const t = normalizeText(descripcion);
+  const original = descripcion.normalize('NFC');
+  // Misma longitud que el original (cada letra con tilde queda en una sola letra): los índices coinciden.
+  const t = original.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const literal = (m: RegExpMatchArray | null) => (m && m.index !== undefined ? original.slice(m.index, m.index + m[0].length).trim() : undefined);
+  const evidencia: Record<string, string> = {};
   let sector = 'otro', mejor = 0;
   for (const [s, res] of Object.entries(SECTORES)) {
     const n = res.filter((r) => r.test(t)).length;
     if (n > mejor) { mejor = n; sector = s; }
   }
+  // Personas: se suman todas las menciones («dos médicos y una auxiliar» = 3).
   let personas: number | null = null;
-  if (/\b(solo yo|yo solo|yo sola|sola yo|unipersonal|atiendo yo)\b/.test(t)) personas = 1;
-  const m = t.match(/\b(\d{1,3}|un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|treinta)\s+(barberos|empleados|personas|trabajadores|entrenadores|meseros|mecanicos|estilistas|colaboradores|asesores)/);
-  if (m) personas = /^\d+$/.test(m[1]) ? Number(m[1]) : NUM_PAL[m[1]];
-  const tamano = personas == null ? '2_5' : personas <= 1 ? 'unipersonal' : personas <= 5 ? '2_5' : personas <= 15 ? '6_15' : 'mas_15';
+  const solo = t.match(/\b(solo yo|yo solo|yo sola|sola yo|unipersonal|atiendo yo)\b/);
+  if (solo) { personas = 1; evidencia.tamano = literal(solo)!; }
+  const menciones = [...t.matchAll(new RegExp(`\\b(${NUM})\\s+(?:${ROLES})\\b`, 'g'))];
+  if (menciones.length) {
+    personas = menciones.reduce((n, m) => n + (/^\d+$/.test(m[1]) ? Number(m[1]) : NUM_PAL[m[1]] ?? 0), 0) + (/\b(y yo|conmigo|mas yo)\b/.test(t) ? 1 : 0);
+    evidencia.tamano = menciones.map((m) => literal(m)).join(' · ');
+  }
+  const tamano = personas == null || personas < 1 ? null : personas <= 1 ? 'unipersonal' : personas <= 5 ? '2_5' : personas <= 15 ? '6_15' : 'mas_15';
   let porMes: number | null = null;
-  const v = t.match(/(\d{1,5})\s+(mensajes|chats|clientes|conversaciones|pedidos|citas)\s+(al|por|a la|cada)?\s*(dia|diarios|semana|mes)/);
-  if (v) porMes = Number(v[1]) * (/semana/.test(v[4]) ? 4 : /mes/.test(v[4]) ? 1 : 30);
-  const volumen = porMes == null ? (/muchos mensajes|no doy abasto|mucho movimiento/.test(t) ? 'medio' : 'bajo') : porMes < 300 ? 'bajo' : porMes < 1500 ? 'medio' : 'alto';
-  const factura = /factur|dian|\biva\b|responsable/.test(t);
+  const v = t.match(/(\d{1,5})\s+(mensajes|chats|conversaciones|clientes)\s+(?:al|por|a la|cada)?\s*(dia|diarios|semana|semanales|mes|mensuales)/);
+  if (v) { porMes = Number(v[1]) * (/semana/.test(v[3]) ? 4 : /mes/.test(v[3]) ? 1 : 30); evidencia.volumen_conv_mes = literal(v)!; }
+  const volumen = porMes == null ? null : porMes < 300 ? 'bajo' : porMes < 1500 ? 'medio' : 'alto';
+  const noFactura = t.match(/no (?:necesito|quiero|requiero|uso|emito)[^.]{0,40}factur\w*/);
+  const siFactura = t.match(/(?:necesit\w*|quier\w*|requier\w*|emitir|empezar a|tengo que)[^.]{0,40}factur\w*(?:\s+electronic\w*)?|factur\w*\s+electronic\w*|\bdian\b/);
+  const factura = noFactura ? false : siFactura ? true : null;
+  if (factura !== null) evidencia.factura_electronica = literal(noFactura ?? siFactura)!;
   const modulos = new Set(['clientes', 'catalogo', 'ventas', 'conversaciones', 'ia']);
-  if (/cita|turno|reserva|agenda/.test(t) || ['barberia', 'gimnasio', 'servicios'].includes(sector)) modulos.add('agenda');
-  if (/inventario|vendo|productos|stock|bodega/.test(t) || ['restaurante', 'taller'].includes(sector)) modulos.add('inventario');
+  if (/cita|turno|reserva|agenda/.test(t) || ['barberia', 'gimnasio', 'servicios', 'salud', 'mascotas'].includes(sector)) modulos.add('agenda');
+  if (/inventario|vendo|productos|stock|bodega/.test(t) || ['restaurante', 'taller', 'comercio', 'alimentos'].includes(sector)) modulos.add('inventario');
   if (factura) modulos.add('facturacion');
   if (sector === 'gimnasio') modulos.add('membresias');
-  if (sector === 'barberia' && /comision/.test(t)) modulos.add('comisiones');
+  if (/comision/.test(t)) modulos.add('comisiones');
   const confianza = sector === 'otro' ? 0.35 : mejor >= 2 ? 0.9 : 0.72;
   return {
-    sector, tamano, volumen_conv_mes: volumen, modulos_sugeridos: [...modulos], factura_electronica: factura, confianza,
+    sector, tamano, volumen_conv_mes: volumen, modulos_sugeridos: [...modulos], factura_electronica: factura, confianza, evidencia,
     justificacion: `Detecté ${sector === 'otro' ? 'un negocio que no encaja en los sectores disponibles' : `un negocio del sector ${sector}`}` +
       `${personas ? ` con ${personas} persona(s)` : ''}${porMes ? ` y cerca de ${porMes} conversaciones al mes` : ''}${factura ? ', que necesita factura electrónica' : ''}.`,
   };
