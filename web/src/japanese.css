@@ -52,7 +52,7 @@ button, a, input, select, textarea { touch-action: manipulation; }
 .app :is(.sub, .msg-texto, .detalle-celda, .contexto-txt, .hilo-soporte) { overflow-wrap: anywhere; }
 .app .tabla-wrap { max-width: 100%; overscroll-behavior-x: contain; }
 .app .input { max-width: 100%; }
-.system-description p { font-size: 15px; }
+.system-description p { font-size: 17px; }
 @media (max-width: 1000px) {
   .app .pagina { padding: 28px 24px 100px; }
   .app .barra-movil { height: 64px; }
@@ -70,17 +70,17 @@ button, a, input, select, textarea { touch-action: manipulation; }
   .system-piece::before, .system-piece::after, .piece-edge, .system-foundation { display: block; }
   .system-core { display: flex; }
   .piece-face { padding: 18px 12px; }
-  .piece-face > span { font-size: 17px; }
+  .piece-face > span { font-size: 15px; }
   .piece-face > svg { width: 30px; height: 30px; }
   .system-caption { margin: 0; }
-  .system-controls button { font-size: 15px; min-height: 48px; }
+  .system-controls button { font-size: 16px; min-height: 48px; }
   .system-controls .scene-arrow { margin-right: 4px; }
   .system-description { min-height: 120px; padding-top: 20px; }
-  .system-description strong { font-size: 19px; }
-  .system-description p { font-size: 15px; line-height: 1.65; }
+  .system-description strong { font-size: 20px; }
+  .system-description p { font-size: 16px; line-height: 1.65; }
   .is-flat .system-platform { transform: translate(-50%, -50%) scale(.64); }
   .is-flat .system-piece::before, .is-flat .system-piece::after, .is-flat .piece-edge { display: none; }
-  .hero-assurance { font-size: 13px; }
+  .hero-assurance { font-size: 14px; }
   .app .pagina { padding: 24px 16px calc(100px + env(safe-area-inset-bottom)); }
   .app .cabecera { gap: 18px; padding-bottom: 22px; margin-bottom: 22px; }
   .app .cabecera > div:first-child { width: 100%; }
@@ -118,7 +118,7 @@ button, a, input, select, textarea { touch-action: manipulation; }
   .om-section h2 { font-size: 30px; }
   .om-closing h2 { font-size: 38px; }
   .site-menu { width: 44px; height: 44px; }
-  .site-footer p, .footer-bottom, .footer-bottom a { font-size: 13px; }
+  .site-footer p, .footer-bottom, .footer-bottom a { font-size: 15px; }
   .onboarding .onboarding-layout > form.tarjeta { padding: 20px !important; }
 }
 @media (max-width: 360px) {

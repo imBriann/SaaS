@@ -19,6 +19,31 @@ try {
     await page.evaluate(() => document.fonts.ready);
     await page.locator('.system-piece').first().waitFor();
     check(await page.locator('.system-piece').count() === 6, `${width}: seis módulos accesibles`);
+    const respira = () => page.locator('.system-piece').nth(1).evaluate(e => ({ nombre: getComputedStyle(e).animationName, z: getComputedStyle(e).translate }));
+    await page.waitForTimeout(1600);
+    const r1 = await respira(); await page.waitForTimeout(1200); const r2 = await respira();
+    check(r1.nombre.includes('piece-breathe') && r1.z !== r2.z, `${width}: las tarjetas respiran sin pisar la transición de selección`);
+    const menores = await page.evaluate(() => {
+      const raices = ['.om-hero', '.om-how', '.om-modules', '.om-trust', '.om-support', '.om-closing'];
+      const pequenos = [];
+      for (const raiz of raices) for (const el of document.querySelectorAll(`${raiz} *`)) {
+        if (el.closest('[aria-hidden=true], .system-platform, .module-art, .sr-only, svg')) continue;
+        const directo = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim());
+        if (!directo) continue;
+        const size = parseFloat(getComputedStyle(el).fontSize);
+        if (size < 14) pequenos.push(`${el.className || el.tagName}: ${size}px`);
+      }
+      return pequenos;
+    });
+    check(menores.length === 0, `${width}: ningún texto de la landing baja de 14 px (${menores.slice(0, 4).join(' | ')})`);
+    await page.locator('.om-support').scrollIntoViewIfNeeded();
+    check(await page.getByRole('tab').count() === 2, `${width}: ayuda con dos pestañas reales`);
+    check(await page.getByRole('tab', { name: /Asistente de tu empresa/ }).getAttribute('aria-selected') === 'true', `${width}: la ayuda abre con un ejemplo visible`);
+    await page.getByRole('tab', { name: /Equipo de Omnegia/ }).click();
+    check(await page.getByRole('tabpanel').innerText().then(t => t.includes('No logro conectar WhatsApp')), `${width}: la pestaña del equipo abre su ejemplo`);
+    check(await page.getByRole('tab', { name: /Equipo de Omnegia/ }).evaluate(e => e.getBoundingClientRect().height >= 44), `${width}: pestañas con objetivo táctil suficiente`);
+    await page.keyboard.press('ArrowLeft');
+    check(await page.getByRole('tab', { name: /Asistente de tu empresa/ }).getAttribute('aria-selected') === 'true', `${width}: pestañas navegables con flechas`);
     if (width <= 900) {
       const selector = page.getByRole('button', { name: 'Explorar Agenda', exact: true });
       await selector.click();
@@ -27,7 +52,7 @@ try {
     }
     for (const name of ['Conversaciones', 'Agenda', 'Ventas', 'Clientes', 'Inventario', 'Asistente IA']) {
       const button = page.getByRole('button', { name, exact: true });
-      await button.click();
+      await button.click({ force: true }); // las tarjetas respiran: nunca están «estables» para Playwright
       check(await button.getAttribute('aria-pressed') === 'true', `${width}: seleccionar ${name}`);
       check(await page.locator('.system-piece[aria-pressed=true]').count() === 1, `${width}: selección individual coherente`);
     }
@@ -39,7 +64,7 @@ try {
     check(pos >= 37, `${width}: elevación tridimensional aplicada`);
     await page.getByRole('button', { name: 'Control', exact: true }).click();
     await page.getByRole('button', { name: 'Atención', exact: true }).click();
-    await page.getByRole('button', { name: 'Ventas', exact: true }).click();
+    await page.getByRole('button', { name: 'Ventas', exact: true }).click({ force: true });
     await page.waitForTimeout(550);
     check(await page.getByRole('button', { name: 'Operación', exact: true }).getAttribute('aria-pressed') === 'true', `${width}: cambios rápidos conservan categoría y módulo`);
     const lift = await page.getByRole('button', { name: 'Ventas', exact: true }).evaluate(e => new DOMMatrix(getComputedStyle(e).transform).m43);
@@ -73,6 +98,7 @@ try {
   check(await video.evaluate(v => Math.abs(v.duration - 120) < 1), 'Video de dos minutos con duración y navegación disponibles');
   await page.waitForTimeout(1200);
   check(await video.evaluate(v => v.currentTime > 0 && !v.paused), 'El video se reproduce al abrirlo');
+  check(await video.evaluate(v => v.webkitAudioDecodedByteCount > 0 && v.volume < 1), 'El video trae su banda sonora, con volumen inicial moderado');
   await page.getByRole('button', { name: /1:30.*Permisos y auditoría/ }).click();
   await page.waitForFunction(() => { const v = document.querySelector('video'); return v.currentTime >= 90 && !v.seeking && v.readyState >= 2; });
   await page.waitForTimeout(1250);
@@ -93,7 +119,7 @@ try {
   await page.getByRole('button', { name: 'Agenda', exact: true }).focus();
   await page.keyboard.press('Enter');
   check(await page.getByRole('button', { name: 'Agenda', exact: true }).getAttribute('aria-pressed') === 'true', 'Tarjetas utilizables con teclado');
-  check(await page.locator('.system-piece.is-selected').evaluate(e => getComputedStyle(e).transform === 'none'), 'Movimiento reducido conserva selección sin elevación');
+  check(await page.locator('.system-piece.is-selected').evaluate(e => getComputedStyle(e).transform === 'none' && getComputedStyle(e).animationName === 'none'), 'Movimiento reducido conserva selección sin elevación ni bucle');
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${out}/reduced-motion.png` });
   check(report.errors.length === 0, 'Sin excepciones JavaScript');

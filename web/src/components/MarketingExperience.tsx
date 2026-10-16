@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Icon } from './icons';
 import { SystemScene } from './SystemScene';
 import { ProductTour } from './ProductTour';
+import { SupportExplorer } from './SupportExplorer';
 
 export const MODULE_COPY: Record<string, { nombre: string; beneficio: string; detalle: string }> = {
   conversaciones: { nombre: 'Conversaciones', beneficio: 'Cada conversación, con contexto.', detalle: 'Reúne los mensajes de WhatsApp y el historial del cliente. Tu equipo puede continuar la atención cuando haga falta.' },
@@ -55,7 +56,7 @@ export function MarketingExperience() {
         <span className="trust-preview-note">Ejemplo ilustrativo de permisos y auditoría</span>
       </div>
     </div></section>
-    <section className="om-support"><div className="om-section support-inner"><div><h2>Ayuda para el día a día.<br /><span>Personas para acompañarte.</span></h2><p>Consulta al asistente desde tu panel. Si necesitas ayuda del equipo de Omnegia, abre una solicitud y sigue las respuestas y el estado de tu caso en el mismo lugar.</p><Link to="/ayuda" className="text-link">Conocer las opciones de ayuda <Icon n="flecha" size={18} className="" /></Link></div><div className="support-path" aria-label="Opciones de asistencia"><span><Icon n="ia" size={22} className="" />Asistente de tu empresa</span><i aria-hidden="true" /><span><Icon n="persona" size={22} className="" />Equipo de Omnegia</span><small>Abre una solicitud y sigue tu caso desde el panel.</small></div></div></section>
+    <section className="om-support"><div className="om-section support-inner"><div><h2>Ayuda para el día a día.<br /><span>Personas para acompañarte.</span></h2><p>Consulta al asistente desde tu panel. Si necesitas ayuda del equipo de Omnegia, abre una solicitud y sigue las respuestas y el estado de tu caso en el mismo lugar.</p><Link to="/ayuda" className="text-link">Conocer las opciones de ayuda <Icon n="flecha" size={18} className="" /></Link></div><SupportExplorer /></div></section>
     <Closing />
   </>;
 }

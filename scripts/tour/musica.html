@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Banda sonora del recorrido de Omnegia</title>
+<!-- Música original, sintetizada con Web Audio: sin muestras ni grabaciones de terceros.
+     96 BPM → un compás dura 2,5 s y cada capítulo de 10 s son exactamente 4 compases,
+     así que cada cambio de sección cae en el cambio de escena. -->
+</head>
+<body>
+<script>
+const SR = 48000, DUR = 120, BPM = 96, BEAT = 60 / BPM, BAR = BEAT * 4;
+const f = m => 440 * 2 ** ((m - 69) / 12);
+// Acordes (MIDI). Progresión principal Am–F–C–G; la sección B usa F–G–Em–Am y el cierre resuelve en C.
+const CH = { Am: [57, 60, 64, 71], F: [53, 57, 60, 67], C: [52, 55, 60, 64], G: [55, 59, 62, 69], Em: [52, 55, 59, 66] };
+const BAJO = { Am: 45, F: 41, C: 48, G: 43, Em: 40 };
+const A = ['Am', 'F', 'C', 'G'], B = ['F', 'G', 'Em', 'Am'], FIN = ['F', 'G', 'C', 'C'];
+// Qué suena en cada capítulo (4 compases cada uno).
+const SECCION = [
+  { prog: A, pad: 1, arp: .5, intro: 1 },                                         // 0 Bienvenida: se abre el filtro
+  { prog: A, pad: 1, arp: 1, kick: 1, hat: 1, bass: 1 },                           // 1 Configuración: entra el pulso
+  { prog: A, pad: 1, arp: 1, kick: 1, hat: 1, bass: 1, clap: 1 },                  // 2 Catálogo
+  { prog: A, pad: 1, arp: 1, kick: 1, hat: 2, bass: 1, clap: 1 },                  // 3 Activación
+  { prog: B, pad: 1, arp: 1, kick: 1, hat: 1, bass: 2, clap: 1, pluck: 1 },        // 4 Atención: sección B
+  { prog: B, pad: 1, arp: 1, kick: 1, hat: 2, bass: 2, clap: 1, pluck: 1 },        // 5 Agenda
+  { prog: A, pad: 1, arp: 1, kick: 1, hat: 2, bass: 2, clap: 1, lead: 1 },         // 6 Ventas: melodía
+  { prog: A, pad: 1, arp: 1, kick: 1, hat: 2, bass: 2, clap: 1, lead: 1 },         // 7 Inventario
+  { prog: A, pad: 1.3, arp: 1, hat: .5, sparkle: 1 },                              // 8 Asistente: respiro
+  { prog: A, pad: 1, arp: 1, kick: 1, hat: 1, bass: 1, build: 1 },                 // 9 Permisos: subida
+  { prog: A, pad: 1, arp: 1, kick: 1, hat: 3, bass: 2, clap: 1, lead: 1 },         // 10 Facturación: todo
+  { prog: FIN, pad: 1, arp: 1, kick: 1, hat: 2, bass: 2, clap: 1, lead: 1, fin: 1 }, // 11 Cierre
+];
+// Motivo de la melodía sobre Am–F–C–G: [tiempo, nota, duración] por compás.
+const MOTIVO = [
+  [[0, 76, 1.5], [1.5, 74, .5], [2, 72, 1], [3, 71, 1]],
+  [[0, 72, 1.5], [1.5, 69, .5], [2, 72, 1], [3, 74, 1]],
+  [[0, 76, 1.5], [1.5, 79, .5], [2, 76, 1], [3, 72, 1]],
+  [[0, 74, 2], [2, 71, 1], [3, 74, 1]],
+];
+
+function ruido(ctx, seg = 2) {
+  const b = ctx.createBuffer(1, SR * seg, SR), d = b.getChannelData(0);
+  let s = 7; for (let i = 0; i < d.length; i++) { s = (s * 16807) % 2147483647; d[i] = s / 1073741823.5 - 1; }
+  return b;
+}
+function impulso(ctx, seg, caida) {
+  const b = ctx.createBuffer(2, SR * seg, SR);
+  for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); let s = 11 + c * 97; for (let i = 0; i < d.length; i++) { s = (s * 16807) % 2147483647; d[i] = (s / 1073741823.5 - 1) * Math.pow(1 - i / d.length, caida); } }
+  return b;
+}
+
+async function componer(sfx = []) {
+  const ctx = new OfflineAudioContext(2, SR * DUR, SR);
+  const NOISE = ruido(ctx);
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 3.5; comp.attack.value = .004; comp.release.value = .25; comp.knee.value = 8;
+  const master = ctx.createGain(); master.connect(comp); comp.connect(ctx.destination);
+  master.gain.setValueAtTime(0, 0); master.gain.linearRampToValueAtTime(.85, 1.2); master.gain.setValueAtTime(.85, DUR - 1.6); master.gain.linearRampToValueAtTime(0, DUR - .05);
+  const rev = ctx.createConvolver(); rev.buffer = impulso(ctx, 3.4, 2.6); const revOut = ctx.createGain(); revOut.gain.value = .32; rev.connect(revOut); revOut.connect(master);
+  const dly = ctx.createDelay(2); dly.delayTime.value = BEAT * .75; const fb = ctx.createGain(); fb.gain.value = .32; const dlyLp = ctx.createBiquadFilter(); dlyLp.frequency.value = 2800;
+  const dlyOut = ctx.createGain(); dlyOut.gain.value = .22; dly.connect(fb); fb.connect(dly); dly.connect(dlyLp); dlyLp.connect(dlyOut); dlyOut.connect(master);
+  // Bus de música con un ligero «sidechain» que deja respirar al bombo.
+  const musica = ctx.createGain(); musica.connect(master);
+  const env = (g, t, a, v, d) => { g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + a); g.gain.exponentialRampToValueAtTime(.0001, t + a + d); };
+  const salida = (nodo, { pan = 0, reverb = 0, delay = 0, bus = master } = {}) => {
+    const p = ctx.createStereoPanner(); p.pan.value = pan; nodo.connect(p); p.connect(bus);
+    if (reverb) { const s = ctx.createGain(); s.gain.value = reverb; p.connect(s); s.connect(rev); }
+    if (delay) { const s = ctx.createGain(); s.gain.value = delay; p.connect(s); s.connect(dly); }
+  };
+
+  function kick(t, v = .95) {
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(44, t + .12);
+    env(g, t, .002, v, .42); o.connect(g); salida(g); o.start(t); o.stop(t + .5);
+    musica.gain.setValueAtTime(.55, t); musica.gain.linearRampToValueAtTime(1, t + .22);
+  }
+  function hat(t, v = .1, abierto = false) {
+    const s = ctx.createBufferSource(), h = ctx.createBiquadFilter(), g = ctx.createGain(); s.buffer = NOISE; h.type = 'highpass'; h.frequency.value = 7500;
+    env(g, t, .001, v, abierto ? .2 : .045); s.connect(h); h.connect(g); salida(g, { pan: .25 }); s.start(t, (t * 7.31) % 1.5); s.stop(t + .3);
+  }
+  function clap(t, v = .32) {
+    const s = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain(); s.buffer = NOISE; bp.type = 'bandpass'; bp.frequency.value = 1600; bp.Q.value = .9;
+    g.gain.setValueAtTime(0, t); [0, .011, .022].forEach(d => { g.gain.setValueAtTime(v, t + d); g.gain.exponentialRampToValueAtTime(v * .3, t + d + .01); });
+    g.gain.exponentialRampToValueAtTime(.0001, t + .2); s.connect(bp); bp.connect(g); salida(g, { reverb: .35 }); s.start(t, (t * 3.7) % 1.5); s.stop(t + .3);
+  }
+  function bajo(t, nota, dur, v = .26) {
+    const o = ctx.createOscillator(), sub = ctx.createOscillator(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+    o.type = 'sawtooth'; o.frequency.value = f(nota); sub.frequency.value = f(nota - 12); lp.frequency.setValueAtTime(900, t); lp.frequency.exponentialRampToValueAtTime(260, t + dur); lp.Q.value = 3;
+    const gs = ctx.createGain(); gs.gain.value = .9; sub.connect(gs); gs.connect(g); o.connect(lp); lp.connect(g);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + .006); g.gain.setValueAtTime(v, t + dur - .05); g.gain.linearRampToValueAtTime(0, t + dur);
+    salida(g, { bus: musica }); o.start(t); sub.start(t); o.stop(t + dur + .02); sub.stop(t + dur + .02);
+  }
+  function pad(t, notas, dur, v, corte) {
+    const lp = ctx.createBiquadFilter(), g = ctx.createGain(); lp.frequency.setValueAtTime(corte[0], t); lp.frequency.linearRampToValueAtTime(corte[1], t + dur); lp.Q.value = .7;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + .5); g.gain.setValueAtTime(v, t + dur - .1); g.gain.linearRampToValueAtTime(0, t + dur + .6);
+    notas.forEach((n, i) => [-7, 7].forEach(cents => { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f(n); o.detune.value = cents + i; o.connect(lp); o.start(t); o.stop(t + dur + .7); }));
+    lp.connect(g); salida(g, { reverb: .5, bus: musica });
+  }
+  function pluck(t, nota, v = .08, pan = 0, brillo = 3200) {
+    const o = ctx.createOscillator(), lp = ctx.createBiquadFilter(), g = ctx.createGain(); o.type = 'square'; o.frequency.value = f(nota);
+    lp.frequency.setValueAtTime(brillo, t); lp.frequency.exponentialRampToValueAtTime(500, t + .2); env(g, t, .003, v, .26);
+    o.connect(lp); lp.connect(g); salida(g, { pan, delay: .5, reverb: .2, bus: musica }); o.start(t); o.stop(t + .35);
+  }
+  function campana(t, nota, dur, v = .11, pan = 0) {
+    const g = ctx.createGain(); env(g, t, .006, v, Math.max(.6, dur * 1.4));
+    [[1, 1], [2, .28], [3.01, .1], [4.2, .04]].forEach(([r, a]) => { const o = ctx.createOscillator(), ga = ctx.createGain(); o.frequency.value = f(nota) * r; ga.gain.value = a; o.connect(ga); ga.connect(g); o.start(t); o.stop(t + dur * 1.6 + .8); });
+    salida(g, { pan, reverb: .45, delay: .3, bus: musica });
+  }
+  function subida(t0, t1, v = .2) {
+    const s = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain(); s.buffer = NOISE; s.loop = true; bp.type = 'bandpass'; bp.Q.value = 2.5;
+    bp.frequency.setValueAtTime(300, t0); bp.frequency.exponentialRampToValueAtTime(7000, t1); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(v, t1); g.gain.linearRampToValueAtTime(0, t1 + .03);
+    s.connect(bp); bp.connect(g); salida(g, { reverb: .3 }); s.start(t0); s.stop(t1 + .05);
+  }
+  function soplo(t, v = .09) {
+    const s = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain(), p = ctx.createStereoPanner(); s.buffer = NOISE; bp.type = 'bandpass'; bp.Q.value = 1.2;
+    bp.frequency.setValueAtTime(600, t); bp.frequency.exponentialRampToValueAtTime(4200, t + .45); bp.frequency.exponentialRampToValueAtTime(1200, t + .8);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + .4); g.gain.linearRampToValueAtTime(0, t + .85);
+    p.pan.setValueAtTime(-.7, t); p.pan.linearRampToValueAtTime(.7, t + .85); s.connect(bp); bp.connect(g); g.connect(p); p.connect(master); s.start(t, .3); s.stop(t + .9);
+  }
+  function impacto(t, v = .9) {
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(30, t + .9); env(g, t, .003, v, 1.6); o.connect(g); salida(g); o.start(t); o.stop(t + 1.8);
+    const s = ctx.createBufferSource(), lp = ctx.createBiquadFilter(), gn = ctx.createGain(); s.buffer = NOISE; lp.frequency.setValueAtTime(5000, t); lp.frequency.exponentialRampToValueAtTime(300, t + .6);
+    env(gn, t, .002, v * .45, .7); s.connect(lp); lp.connect(gn); salida(gn, { reverb: .9 }); s.start(t); s.stop(t + 1);
+  }
+  function clic(t) {
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(2400, t); o.frequency.exponentialRampToValueAtTime(1400, t + .03); env(g, t, .001, .1, .05); o.connect(g); salida(g, { pan: .3, reverb: .1 }); o.start(t); o.stop(t + .08);
+  }
+  function pop(t) {
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'triangle'; o.frequency.setValueAtTime(700, t); o.frequency.exponentialRampToValueAtTime(1500, t + .07); env(g, t, .002, .13, .16); o.connect(g); salida(g, { reverb: .3, delay: .2 }); o.start(t); o.stop(t + .25);
+  }
+  function sello(t) {
+    impacto(t, .55);
+    const s = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain(); s.buffer = NOISE; bp.type = 'bandpass'; bp.frequency.value = 900; env(g, t, .001, .35, .12); s.connect(bp); bp.connect(g); salida(g, { reverb: .4 }); s.start(t); s.stop(t + .2);
+  }
+
+  for (let c = 0; c < 12; c++) {
+    const S = SECCION[c], t0 = c * 10;
+    for (let b = 0; b < 4; b++) {
+      const tb = t0 + b * BAR, acorde = S.prog[b], notas = CH[acorde], compasGlobal = c * 4 + b;
+      const finCierre = S.fin && b >= 2;
+      if (S.pad && !(S.fin && b === 3)) pad(tb, notas, BAR, .022 * S.pad, S.intro ? [300 + b * 500, 800 + b * 600] : finCierre ? [1200, 500] : [1500, 2400]);
+      if (S.arp && !finCierre) {
+        const arp = [0, 1, 2, 3, 2, 1, 2, 3].map(i => notas[i] + 12);
+        for (let k = 0; k < 16; k++) { if (S.intro && b < 2) break; pluck(tb + k * BEAT / 4, arp[k % 8], (S.intro ? .045 : .06) * S.arp * (k % 4 === 0 ? 1.2 : 1), k % 2 ? .35 : -.35, S.intro ? 1800 + b * 600 : 3200); }
+      }
+      if (S.bass && !finCierre) for (let k = 0; k < 8; k++) { const oct = S.bass === 2 && k % 2 ? 12 : 0; bajo(tb + k * BEAT / 2, BAJO[acorde] + oct, BEAT / 2 - .02, .24); }
+      if (S.kick && !finCierre) for (let k = 0; k < 4; k++) { if (S.build && b === 3) break; kick(tb + k * BEAT); }
+      if (S.clap && !finCierre) [1, 3].forEach(k => clap(tb + k * BEAT));
+      if (S.hat && !finCierre) for (let k = 0; k < 8; k++) {
+        if (S.hat === .5 && k % 2 === 0) continue;
+        const t = tb + k * BEAT / 2; if (k % 2) hat(t, .1 * Math.min(1, S.hat), S.hat === 3 && k % 4 === 3); else if (S.hat >= 2) hat(t, .06);
+        if (S.hat >= 2) hat(t + BEAT / 4, .035);
+      }
+      if (S.lead && !finCierre) MOTIVO[b].forEach(([o, n, d]) => campana(tb + o * BEAT, n, d * BEAT, .1, .1));
+      if (S.pluck) [[0, 1], [1.5, 2], [2.5, 3], [3, 2]].forEach(([o, i]) => campana(tb + o * BEAT, notas[i] + 24, BEAT * .6, .045, o % 2 ? .5 : -.5));
+      if (S.sparkle) for (let k = 0; k < 6; k++) { const n = notas[(compasGlobal * 5 + k * 3) % 4] + 24 + (k % 3 === 0 ? 12 : 0); campana(tb + ((k * 5 + compasGlobal) % 16) * BEAT / 4, n, BEAT, .045, (k % 3 - 1) * .6); }
+      if (S.build && b === 3) { for (let k = 0; k < 16; k++) clap(tb + k * BEAT / 4, .08 + .2 * k / 16); }
+    }
+    if (S.intro) { subida(t0 + 6.2, t0 + 9.98, .14); }
+    if (S.build) { subida(t0 + 6.2, t0 + 9.98, .2); }
+    if (c > 0) soplo(t0 - .55, c === 1 || c === 10 ? .05 : .085);
+    if (c === 1 || c === 10) impacto(t0, .7);
+  }
+  // Cierre: subida corta, golpe y acorde final de Do mayor con campanas que se abren.
+  const tf = 116.875;
+  subida(115, tf - .02, .22); impacto(tf, 1);
+  pad(tf, [48, 55, 60, 64, 67, 72], 2.4, .03, [2600, 900]);
+  bajo(tf, 36, 2.6, .3);
+  [72, 76, 79, 84].forEach((n, i) => campana(tf + i * BEAT / 2, n, BEAT * 2, .1, (i - 1.5) * .3));
+  for (const s of sfx) ({ click: clic, pop, sello })[s.tipo]?.(s.t);
+
+  const buf = await ctx.startRendering();
+  // Estadísticas para comprobar niveles sin escuchar: pico y RMS por capítulo.
+  const L = buf.getChannelData(0), R = buf.getChannelData(1); let pico = 0; const rms = [];
+  for (let c = 0; c < 12; c++) { let s = 0; const a = c * 10 * SR, z = a + 10 * SR; for (let i = a; i < z; i++) { const m = (L[i] + R[i]) / 2; s += m * m; pico = Math.max(pico, Math.abs(L[i]), Math.abs(R[i])); } rms.push(+(20 * Math.log10(Math.sqrt(s / (z - a)) + 1e-9)).toFixed(1)); }
+  return { buf, pico: +pico.toFixed(3), rms };
+}
+
+// Graba la mezcla en Opus/WebM. MediaRecorder trabaja en tiempo real (2 min), sin recodificar fuera del navegador.
+window.grabar = async sfx => {
+  const { buf, pico, rms } = await componer(sfx);
+  const ctx = new AudioContext({ sampleRate: SR }); await ctx.resume();
+  const dest = ctx.createMediaStreamDestination(); dest.channelCount = 2;
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(dest);
+  const rec = new MediaRecorder(dest.stream, { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 160000 }); const partes = [];
+  rec.ondataavailable = e => e.data.size && partes.push(e.data);
+  const fin = new Promise(r => { rec.onstop = r; });
+  // La fuente arranca primero: la mezcla empieza en silencio (fundido), así no se acumula retraso frente al video.
+  src.start(); rec.start(1000);
+  await new Promise(r => { src.onended = r; });
+  await new Promise(r => setTimeout(r, 250)); rec.stop(); await fin;
+  const datos = new Uint8Array(await new Blob(partes).arrayBuffer());
+  let bin = ''; for (let i = 0; i < datos.length; i += 32768) bin += String.fromCharCode(...datos.subarray(i, i + 32768));
+  return { audio: btoa(bin), pico, rms };
+};
+window.analizar = async sfx => { const { pico, rms } = await componer(sfx); return { pico, rms }; };
+</script>
+</body>
+</html>

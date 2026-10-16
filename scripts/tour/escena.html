@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Recorrido ilustrado de Omnegia</title>
+<!-- Escena del video «Así funciona Omnegia». Todo se anima con CSS y se posiciona con seek(t):
+     cada fotograma es determinista. La renderiza scripts/generate-product-tour.mjs.
+     Cada capítulo tiene montaje propio (composición, cámara y transición) para que el video no se repita.
+     Los elementos con data-sfx marcan efectos de sonido que scripts/tour/musica.html sincroniza. -->
+<style>
+@font-face { font-family: Outfit; src: url('/web/public/fonts/outfit-variable.ttf'); font-weight: 100 900; }
+:root { --ink: #0a0f1f; --violet: #6d5ef8; --cyan: #22d3ee; --pink: #ec4899; --orange: #f97316; --lav: #cfc9ff; --ease: cubic-bezier(.23, 1, .32, 1); --grad: linear-gradient(120deg, #22d3ee, #6d5ef8 60%, #ec4899); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1280px; height: 720px; overflow: hidden; background: #000; }
+body { font-family: Outfit, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+#v { position: relative; width: 1280px; height: 720px; overflow: hidden; background: var(--ink); color: #f4f2ff; }
+.ic { display: inline-block; width: 1em; height: 1em; flex: none; }
+.ic svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Fondo: resplandores de marca, retícula en movimiento y partículas */
+.bg { position: absolute; inset: 0; }
+.bg-glow { position: absolute; inset: -80px; background: radial-gradient(760px 560px at 76% 34%, #6d5ef85c, transparent 70%), radial-gradient(560px 460px at 6% 96%, #22d3ee26, transparent 70%), radial-gradient(520px 360px at 98% 102%, #ec489938, transparent 70%); animation: glow 14s ease-in-out infinite alternate; }
+@keyframes glow { from { transform: translate(-30px, 10px) scale(1); } to { transform: translate(30px, -20px) scale(1.08); } }
+.bg-grid { position: absolute; inset: 0 -91px; background: repeating-linear-gradient(90deg, transparent 0 89px, #8f9bd01c 90px 91px), repeating-linear-gradient(0deg, transparent 0 89px, #8f9bd012 90px 91px); -webkit-mask-image: radial-gradient(ellipse 70% 80% at 60% 48%, #000 0, transparent 78%); animation: grid 7s linear infinite; }
+@keyframes grid { to { transform: translateX(91px); } }
+.dot { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #c5bfff; opacity: 0; animation: float 9s linear infinite; }
+@keyframes float { 0% { transform: translateY(40px); opacity: 0; } 15%, 80% { opacity: .55; } 100% { transform: translateY(-620px); opacity: 0; } }
+
+/* Marco permanente */
+.top { position: absolute; left: 64px; right: 64px; top: 34px; display: flex; align-items: center; justify-content: space-between; z-index: 30; }
+.top img { width: 176px; display: block; animation: fade .8s ease both; animation-delay: 2s; }
+.count { font-size: 21px; color: #c4cbe2; letter-spacing: .01em; font-variant-numeric: tabular-nums; animation: fade .8s ease both; animation-delay: 2s; }
+.count b { color: #fff; font-weight: 600; }
+.foot { position: absolute; left: 64px; right: 64px; bottom: 30px; z-index: 30; }
+.segs { display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; }
+.segs span { height: 4px; border-radius: 4px; background: #ffffff22; overflow: hidden; }
+.segs i { display: block; height: 100%; background: var(--grad); transform-origin: left; animation: fill 10s linear both; animation-delay: calc(var(--n) * 10s); }
+@keyframes fill { from { transform: scaleX(0); } }
+.legend { margin-top: 12px; font-size: 17px; color: #8f99b8; display: flex; justify-content: space-between; }
+.sweep { position: absolute; top: -40px; bottom: -40px; width: 380px; left: -760px; z-index: 25; pointer-events: none; background: linear-gradient(100deg, transparent, #8f84ff38 45%, #22d3ee30 55%, transparent); transform: skewX(-18deg); animation: sweep 1s cubic-bezier(.5, 0, .2, 1) both; animation-delay: var(--at); }
+@keyframes sweep { to { transform: translateX(2300px) skewX(-18deg); } }
+
+/* Capítulo y transiciones: fundido, acercamiento, subida o barrido lateral */
+.ch { position: absolute; inset: 0; opacity: 0; animation: chap 10s linear both; animation-delay: var(--t0); }
+@keyframes chap { 0% { opacity: 0; } 4% { opacity: 1; } 95% { opacity: 1; } 100% { opacity: 0; } }
+.ch.t-zoom { animation-name: chapZoom; } .ch.t-up { animation-name: chapUp; } .ch.t-left { animation-name: chapLeft; }
+@keyframes chapZoom { 0% { opacity: 0; transform: scale(1.16); animation-timing-function: cubic-bezier(.2, .8, .2, 1); } 6% { opacity: 1; transform: none; } 95% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.6, 0, .8, .4); } 100% { opacity: 0; transform: scale(.92); } }
+@keyframes chapUp { 0% { opacity: 0; transform: translateY(90px); animation-timing-function: cubic-bezier(.2, .8, .2, 1); } 6% { opacity: 1; transform: none; } 95% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.6, 0, .8, .4); } 100% { opacity: 0; transform: translateY(-90px); } }
+@keyframes chapLeft { 0% { opacity: 0; transform: translateX(160px); animation-timing-function: cubic-bezier(.2, .8, .2, 1); } 6% { opacity: 1; transform: none; } 95% { opacity: 1; transform: none; animation-timing-function: cubic-bezier(.6, 0, .8, .4); } 100% { opacity: 0; transform: translateX(-160px); } }
+.ch.last { animation-name: chapLast; }
+@keyframes chapLast { 0% { opacity: 0; transform: translateY(90px); animation-timing-function: cubic-bezier(.2, .8, .2, 1); } 6%, 100% { opacity: 1; transform: none; } }
+
+/* Texto del capítulo: tres composiciones (izquierda, espejo, centrada) y dos entradas de título */
+.copy { position: absolute; left: 64px; top: 168px; width: 500px; }
+.copy h1 { font-size: 58px; line-height: 1.05; font-weight: 520; letter-spacing: -.04em; text-wrap: balance; }
+.copy h1 .w { display: inline-block; margin-right: .22em; animation: word .8s var(--ease) both; animation-delay: calc(var(--t0) + var(--cd, 0s) + .2s + var(--k) * .08s); }
+.copy h1 .w > i { display: inline-block; font-style: normal; }
+.copy h1 .w.hl > i { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; padding-right: .04em; }
+@keyframes word { from { opacity: 0; transform: translateY(30px); filter: blur(10px); } }
+.mask .copy h1 .w { overflow: hidden; vertical-align: top; padding-bottom: .12em; margin-bottom: -.12em; animation: none; }
+.mask .copy h1 .w > i { animation: maskup .9s var(--ease) both; animation-delay: calc(var(--t0) + var(--cd, 0s) + .15s + var(--k) * .07s); }
+@keyframes maskup { from { transform: translateY(110%); } }
+.copy p { margin-top: 26px; font-size: 26px; line-height: 1.42; color: #d2d8ec; animation: up .9s var(--ease) both; animation-delay: calc(var(--t0) + var(--cd, 0s) + 1.1s); }
+.copy small { display: flex; gap: 10px; align-items: flex-start; margin-top: 26px; font-size: 19px; line-height: 1.4; color: var(--lav); animation: up .9s var(--ease) both; animation-delay: calc(var(--t0) + var(--cd, 0s) + 1.6s); }
+.copy small::before { content: ''; flex: none; width: 8px; height: 8px; margin-top: 8px; border-radius: 50%; background: var(--cyan); }
+.mir .copy { left: 716px; width: 500px; }
+.cen .copy { left: 120px; right: 120px; width: auto; top: 100px; text-align: center; }
+.cen .copy h1 { font-size: 52px; }
+.cen .copy p { font-size: 23px; max-width: 840px; margin: 14px auto 0; }
+.cen .copy small { justify-content: center; margin-top: 12px; font-size: 18px; }
+.art { position: absolute; left: 600px; top: 70px; width: 640px; height: 570px; perspective: 1500px; animation: artin 1s var(--ease) both; animation-delay: calc(var(--t0) + .15s); }
+.mir .art { left: 40px; animation-name: artinL; }
+@keyframes artin { from { opacity: 0; translate: 90px 0; scale: .94; } }
+@keyframes artinL { from { opacity: 0; translate: -90px 0; scale: .94; } }
+
+/* Utilidades de animación: --d es el retraso dentro del capítulo */
+.a, .x { animation-duration: .7s; animation-timing-function: var(--ease); animation-fill-mode: both; animation-delay: calc(var(--t0) + var(--d, 0s)); }
+.a { animation-name: up; }
+.a.l { animation-name: left; } .a.r { animation-name: right; } .a.p { animation-name: pop; } .a.f { animation-name: fade; }
+.x { animation-name: out; animation-duration: .35s; }
+@keyframes up { from { opacity: 0; transform: translateY(20px); } }
+@keyframes left { from { opacity: 0; transform: translateX(-26px); } }
+@keyframes right { from { opacity: 0; transform: translateX(40px); } }
+@keyframes pop { from { opacity: 0; transform: scale(.6); } 60% { transform: scale(1.07); } }
+@keyframes fade { from { opacity: 0; } }
+@keyframes out { to { opacity: 0; transform: translateY(-8px); } }
+.grow { transform-origin: left; animation: grow var(--dur, 1s) cubic-bezier(.4, 0, .2, 1) both; animation-delay: calc(var(--t0) + var(--d, 0s)); }
+@keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(var(--v, 1)); } }
+.pulse { animation: pulse 1.6s ease-in-out infinite; animation-delay: calc(var(--t0) + var(--d, 0s)); }
+@keyframes pulse { 50% { box-shadow: 0 0 0 10px #f9731626; } }
+
+/* Ventana de producto. La cámara se define por capítulo con --ry/--rx/--s/--tx */
+.win { position: absolute; inset: 22px 10px 22px 10px; border-radius: 20px; background: #f7f6fc; color: #1d2340; box-shadow: 0 70px 100px -34px #000d, 0 0 0 1px #ffffff2e, 0 0 90px -12px #6d5ef866; transform-style: preserve-3d; animation: drift 10s ease-in-out both; animation-delay: var(--t0); overflow: hidden; }
+@keyframes drift { from { transform: translateX(var(--tx0, 0)) rotateY(var(--ry0, -15deg)) rotateX(var(--rx0, 6deg)) scale(var(--s0, .96)); } to { transform: translateX(var(--tx1, 0)) rotateY(var(--ry1, -6deg)) rotateX(var(--rx1, 1.5deg)) scale(var(--s1, 1.02)); } }
+.win::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; background: linear-gradient(115deg, #ffffff40, transparent 32%); }
+.bar { height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 18px; background: #ebe8f9; border-bottom: 1px solid #dcd7f1; }
+.bar > i { width: 11px; height: 11px; border-radius: 50%; background: #cdc5ee; }
+.bar b { margin-left: 12px; font-size: 17px; font-weight: 520; color: #4a4468; }
+.wbody { display: grid; grid-template-columns: 64px minmax(0, 1fr); height: calc(100% - 48px); }
+.side { background: #141a2e; display: flex; flex-direction: column; align-items: center; gap: 12px; padding-top: 18px; }
+.si { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 11px; color: #8890b2; font-size: 21px; }
+.si.on { color: #fff; background: linear-gradient(135deg, #6d5ef8, #22a8d8); }
+.main { position: relative; padding: 22px 24px; min-width: 0; }
+.main h2 { display: flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 570; letter-spacing: -.02em; margin-bottom: 14px; }
+.main h2 .ic { color: var(--violet); font-size: 26px; }
+.lbl { font-size: 17px; color: #626a8a; margin: 12px 0 7px; }
+.mut { color: #626a8a; }
+.chip { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: 999px; font-size: 16px; font-weight: 540; background: #ebe8ff; color: #43359f; white-space: nowrap; }
+.chip .ic { font-size: 16px; }
+.chip.ok { background: #dcf4e6; color: #166038; } .chip.warn { background: #fdefcf; color: #7a4a00; } .chip.cy { background: #d6f3fa; color: #0d5a70; } .chip.bad { background: #fde0e3; color: #9b1c2c; }
+.card { background: #fff; border: 1px solid #e2def3; border-radius: 13px; box-shadow: 0 10px 24px -16px #3b2a9e66; }
+.row { display: flex; align-items: center; gap: 12px; padding: 12px 15px; font-size: 18px; }
+.row + .row { border-top: 1px solid #eeeaf8; }
+.ico { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 10px; background: #ece9ff; color: #5847df; font-size: 20px; }
+.row .sp { margin-left: auto; }
+.field { border: 2px solid #b9b0f4; background: #fff; border-radius: 13px; padding: 15px 17px; font-size: 20px; line-height: 1.42; color: #271f4a; min-height: 96px; box-shadow: 0 0 0 5px #6d5ef81f; }
+[data-type]::after { content: ''; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -.12em; background: var(--violet); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.btn { white-space: nowrap; display: inline-flex; align-items: center; gap: 9px; padding: 12px 20px; border-radius: 11px; background: linear-gradient(135deg, #6d5ef8, #4f3fe0); color: #fff; font-size: 18px; font-weight: 560; box-shadow: 0 14px 22px -12px #4f3fe0; }
+.cur { position: absolute; left: 0; top: 0; z-index: 40; width: 30px; height: 30px; opacity: 0; animation: cur var(--cd, 3s) cubic-bezier(.5, 0, .2, 1) both; animation-delay: calc(var(--t0) + var(--cs, 2s)); filter: drop-shadow(0 5px 6px #0005); }
+.cur svg { width: 100%; height: 100%; fill: #fff; stroke: #1d2340; stroke-width: 1.6; stroke-linejoin: round; }
+@keyframes cur { 0% { opacity: 0; transform: translate(var(--x0), var(--y0)); } 12% { opacity: 1; } 56% { transform: translate(var(--x1), var(--y1)) scale(1); } 62% { transform: translate(var(--x1), var(--y1)) scale(.86); } 70% { transform: translate(var(--x1), var(--y1)) scale(1); } 100% { opacity: 1; transform: translate(var(--x2), var(--y2)); } }
+.rip { position: absolute; z-index: 39; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; border: 3px solid #6d5ef8; opacity: 0; animation: rip .7s ease-out both; animation-delay: calc(var(--t0) + var(--rs)); }
+@keyframes rip { 0% { opacity: .9; transform: scale(.2); } 100% { opacity: 0; transform: scale(1.4); } }
+.chips { display: flex; flex-wrap: wrap; gap: 9px; }
+.chk { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; border: 2px solid #cfc9ee; background: #fff; color: transparent; font-size: 18px; animation: done .5s var(--ease) both; animation-delay: calc(var(--t0) + var(--d)); }
+@keyframes done { to { background: #2dc08a; border-color: #2dc08a; color: #fff; } }
+
+/* 0 · Apertura con el logo y plataforma isométrica */
+.intro { position: absolute; inset: 0; z-index: 6; display: grid; place-items: center; animation: introOut .8s cubic-bezier(.6, 0, .4, 1) both; animation-delay: 1.75s; }
+.intro img { width: 470px; animation: introIn 1.2s var(--ease) both; animation-delay: .15s; }
+.intro::before { content: ''; position: absolute; left: 50%; top: 50%; width: 300px; height: 300px; margin: -150px 0 0 -150px; border-radius: 50%; border: 2px solid #8b7bff; opacity: 0; animation: halo 1.6s ease-out both; animation-delay: .35s; }
+@keyframes introIn { from { opacity: 0; transform: scale(.72); filter: blur(14px); } }
+@keyframes introOut { to { opacity: 0; transform: scale(1.3); filter: blur(10px); } }
+.stage3d { position: absolute; left: 590px; top: 40px; width: 650px; height: 600px; perspective: 1600px; }
+.p3d { position: absolute; left: 50%; top: 50%; width: 408px; height: 408px; margin: -214px 0 0 -204px; transform-style: preserve-3d; transform: rotateX(54deg) rotateZ(-36deg); animation: spin 10s ease-in-out both; animation-delay: var(--t0); }
+@keyframes spin { from { transform: rotateX(62deg) rotateZ(-66deg) scale(.8); } to { transform: rotateX(52deg) rotateZ(-30deg) scale(1.12); } }
+.found { position: absolute; inset: -24px; border-radius: 16px; border: 1px solid #8a8fba; background: linear-gradient(135deg, #2e3756, #161d37); transform: translateZ(-26px); box-shadow: -26px 44px 64px -12px #000c, inset 0 0 0 9px #1e2742; animation: fade .8s ease both; animation-delay: calc(var(--t0) + var(--cd, 0s)); }
+.found::after { content: ''; position: absolute; inset: 14px; border: 1px solid #8a8fba40; border-radius: 8px; background: repeating-linear-gradient(0deg, transparent 0 133px, #a39ad536 134px 135px), repeating-linear-gradient(90deg, transparent 0 133px, #a39ad536 134px 135px); }
+.ring { position: absolute; border: 1px dashed #a69bd750; border-radius: 50%; transform: translateZ(-20px); animation: ringspin 40s linear infinite; }
+@keyframes ringspin { to { rotate: 360deg; } }
+.tile { position: absolute; width: 120px; height: 120px; left: calc(var(--x) * 144px); top: calc(var(--y) * 144px); transform-style: preserve-3d; transform: translateZ(14px); animation: tilerise 1.2s var(--ease) both, lift 2.6s ease-in-out both; animation-delay: calc(var(--t0) + var(--cd, 0s) + .3s + var(--k) * .12s), calc(var(--t0) + var(--ld, 99s)); }
+@keyframes tilerise { from { transform: translateZ(460px); opacity: 0; } 35% { opacity: 1; } to { transform: translateZ(14px); } }
+@keyframes lift { 0%, 100% { translate: 0 0 0; } 14%, 86% { translate: 0 0 46px; } }
+.face { position: absolute; inset: 0; border-radius: 12px; border: 1px solid #fffa; background: linear-gradient(135deg, #e6e5f7, #a4a5c9); color: #232b49; padding: 15px 11px; display: flex; flex-direction: column; justify-content: space-between; font-size: 15px; font-weight: 580; box-shadow: inset 0 1px 0 #fff; }
+.face .ic { font-size: 32px; }
+.face > * { position: relative; z-index: 1; animation: litcolor 2.6s ease-in-out both; animation-delay: calc(var(--t0) + var(--ld, 99s)); }
+.face::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(135deg, #8b7bff, #28c3ee); opacity: 0; animation: litface 2.6s ease-in-out both; animation-delay: calc(var(--t0) + var(--ld, 99s)); }
+@keyframes litface { 0%, 100% { opacity: 0; } 14%, 86% { opacity: 1; } }
+@keyframes litcolor { 0%, 100% { color: #232b49; } 14%, 86% { color: #fff; } }
+.tile::before { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 14px; background: #7a76a0; transform-origin: top; transform: rotateX(-90deg); border-radius: 0 0 5px 5px; }
+.tile::after { content: ''; position: absolute; top: 0; bottom: 0; right: 100%; width: 14px; background: #46466a; transform-origin: right; transform: rotateY(-90deg); }
+.core { position: absolute; width: 120px; height: 120px; left: 144px; top: 144px; transform-style: preserve-3d; transform: translateZ(58px); animation: tilerise 1.2s var(--ease) both; animation-delay: calc(var(--t0) + var(--cd, 0s) + .1s); }
+.core .face { background: linear-gradient(135deg, #fff, #e5e2ff); align-items: center; justify-content: center; gap: 4px; box-shadow: 0 0 60px #8b7bffaa, inset 0 1px 0 #fff; }
+.core img { width: 62px; height: 62px; }
+.core .face span { font-size: 14px; color: #3a2f78; }
+.caps { position: absolute; left: 0; right: 0; bottom: 26px; display: grid; place-items: center; height: 64px; }
+.caps b { grid-area: 1 / 1; font-size: 34px; font-weight: 540; letter-spacing: -.02em; padding: 8px 24px; border-radius: 999px; background: #ffffff14; border: 1px solid #ffffff2e; opacity: 0; animation: cap 2.6s ease-in-out both; animation-delay: calc(var(--t0) + var(--ld)); }
+@keyframes cap { 0% { opacity: 0; transform: translateY(14px); } 14%, 84% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-10px); } }
+
+/* 3 · Escalera de tarjetas flotantes */
+.stairs { position: absolute; left: 610px; top: 92px; width: 620px; height: 540px; perspective: 1300px; }
+.st-in { position: absolute; inset: 0; transform-style: preserve-3d; animation: stairs 10s ease-in-out both; animation-delay: var(--t0); }
+@keyframes stairs { from { transform: rotateX(32deg) rotateY(-28deg) rotateZ(5deg) scale(.88); } to { transform: rotateX(12deg) rotateY(-12deg) rotateZ(1deg) scale(1); } }
+.stc { position: absolute; left: calc(var(--i) * 30px); top: calc(var(--i) * 124px); width: 520px; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; align-items: start; padding: 18px 20px; background: #fff; color: #1d2340; border-radius: 16px; box-shadow: 0 34px 50px -26px #000d, 0 0 0 1px #ffffff40; translate: 0 0 calc(var(--i) * 34px); }
+.stc strong { display: block; font-size: 21px; font-weight: 570; line-height: 34px; }
+.stc p { font-size: 17px; color: #626a8a; line-height: 1.35; }
+.stc .chips { margin-top: 8px; }
+.st-glow { position: absolute; left: -40px; top: -20px; width: 600px; height: 560px; background: radial-gradient(closest-side, #6d5ef84d, transparent); transform: translateZ(-60px); }
+
+/* 4 · Teléfono con WhatsApp y tarjetas que salen de él */
+.phone-stage { position: absolute; left: 600px; top: 52px; width: 650px; height: 610px; perspective: 1400px; }
+.phone { position: absolute; left: 10px; top: 0; width: 300px; height: 590px; padding: 12px; border-radius: 46px; background: #0c1122; border: 2px solid #3d4670; box-shadow: 0 60px 90px -30px #000e, inset 0 0 0 2px #1d2440; transform-style: preserve-3d; animation: drift 10s ease-in-out both; animation-delay: var(--t0); }
+.scr { height: 100%; border-radius: 35px; overflow: hidden; background: #f3f1fa; color: #1d2340; display: flex; flex-direction: column; }
+.ph-head { display: flex; align-items: center; gap: 10px; padding: 34px 16px 14px; background: #fff; border-bottom: 1px solid #e6e2f4; }
+.ph-head b { display: block; font-size: 18px; font-weight: 600; }
+.ph-head small { font-size: 14px; color: #0d8a6a; }
+.ph-body { padding: 14px 12px; }
+.ph-body .bub { font-size: 16px; max-width: 92%; }
+.fcard { position: absolute; width: 290px; padding: 16px 18px; background: #fff; color: #1d2340; border-radius: 16px; box-shadow: 0 34px 60px -26px #000e, 0 0 0 1px #ffffff40; }
+.fcard::before { content: ''; position: absolute; right: 100%; top: 50%; width: 46px; border-top: 2px dashed #9d92f7; }
+.fcard::after { content: ''; position: absolute; left: -52px; top: calc(50% - 5px); width: 10px; height: 10px; border-radius: 50%; background: var(--cyan); }
+.fcard h3 { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 580; margin-bottom: 10px; }
+.fcard h3 .ic { color: var(--violet); font-size: 20px; }
+.fcard p { font-size: 16px; color: #626a8a; line-height: 1.4; }
+
+/* 5 · Agenda en plano amplio */
+.wide { position: absolute; left: 150px; top: 282px; width: 980px; height: 372px; perspective: 1600px; animation: fade 1s ease both; animation-delay: calc(var(--t0) + .2s); }
+.cal { display: grid; grid-template-columns: 64px repeat(5, 1fr); gap: 7px; font-size: 16px; position: relative; }
+.cal .h { text-align: center; color: #626a8a; padding: 3px 0; font-weight: 540; }
+.cal .h.today { color: #fff; background: #6d5ef8; border-radius: 9px; }
+.cal .t { color: #8087a6; font-size: 15px; padding-top: 6px; }
+.cal .s { height: 60px; border-radius: 10px; background: #fff; border: 1px dashed #dcd8ee; position: relative; }
+.ev { position: absolute; inset: 3px; border-radius: 8px; padding: 7px 10px; font-size: 16px; line-height: 1.2; font-weight: 560; color: #fff; background: linear-gradient(135deg, #6d5ef8, #4f3fe0); box-shadow: 0 10px 16px -10px #4f3fe0; }
+.ev.b { background: linear-gradient(135deg, #1ca7cc, #2ac4e8); color: #06323f; box-shadow: 0 10px 16px -10px #1ca7cc; }
+.ev small { display: block; font-weight: 450; font-size: 14px; opacity: .85; }
+.nowline { position: absolute; left: 64px; right: 0; height: 2px; background: #ec4899; opacity: .75; animation: now 4s ease-in-out both; animation-delay: calc(var(--t0) + 1.4s); }
+.nowline::before { content: ''; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: #ec4899; }
+@keyframes now { from { top: 30px; } to { top: 222px; } }
+
+/* 7 · Inventario */
+.bar-h { height: 14px; border-radius: 8px; background: #ebe8ff; overflow: hidden; position: relative; }
+.bar-h i { position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(90deg, #6d5ef8, #22d3ee); }
+.bar-h i.warn { background: linear-gradient(90deg, #f97316, #fbbf24); }
+.bar-h u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #1d2340; }
+
+/* 8 · Asistente en panel oscuro */
+.win.dark { background: linear-gradient(165deg, #1d2346, #12152e 75%); color: #eef0ff; box-shadow: 0 70px 100px -34px #000e, 0 0 0 1px #8b7bff55, 0 0 120px -30px #6d5ef8; }
+.win.dark::after { background: linear-gradient(115deg, #ffffff14, transparent 30%); }
+.orb-head { display: flex; align-items: center; gap: 16px; padding: 24px 26px 18px; border-bottom: 1px solid #ffffff1a; }
+.orb { position: relative; width: 64px; height: 64px; border-radius: 50%; background: conic-gradient(from 0deg, #22d3ee, #6d5ef8, #ec4899, #22d3ee); animation: orbspin 3.5s linear infinite; }
+.orb::after { content: ''; position: absolute; inset: 7px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffffffcc, #6d5ef8 45%, #1d2346 80%); }
+@keyframes orbspin { to { rotate: 360deg; } }
+.orb-head b { display: block; font-size: 22px; font-weight: 570; }
+.orb-head small { font-size: 16px; color: #aab2d6; }
+.dk-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 13px; }
+.bub { max-width: 86%; padding: 12px 16px; font-size: 18px; line-height: 1.4; border-radius: 15px 15px 15px 4px; background: #fff; border: 1px solid #e2def3; align-self: flex-start; }
+.bub.me { align-self: flex-end; border: 0; border-radius: 15px 15px 4px 15px; color: #fff; background: linear-gradient(135deg, #6d5ef8, #4f3fe0); }
+.dark .bub:not(.me) { background: #252c58; border-color: #3a4378; color: #eef0ff; }
+.dark .tool { display: flex; align-items: center; gap: 12px; padding: 12px 16px; font-size: 18px; border: 1px dashed #7f76d6; border-radius: 12px; color: #d9d6ff; }
+.dark .slot { display: flex; gap: 14px; padding: 9px 12px; margin-top: 7px; border-radius: 9px; background: #1b2147; font-size: 17px; }
+.dark .slot b { color: #9fe7ff; }
+.dark .chip { background: #2c3366; color: #d9d6ff; } .dark .chip.ok { background: #183f33; color: #93e6b6; }
+
+/* 9 · Permisos: dos paneles que se abren como un libro */
+.book { position: absolute; left: 110px; top: 292px; width: 1060px; height: 350px; perspective: 1600px; }
+.bk-in { position: absolute; inset: 0; transform-style: preserve-3d; animation: bookcam 10s ease-in-out both; animation-delay: var(--t0); }
+@keyframes bookcam { from { transform: rotateX(28deg) translateY(30px); } to { transform: rotateX(10deg); } }
+.bk { position: absolute; top: 6px; width: 500px; border-radius: 18px; background: #f7f6fc; color: #1d2340; overflow: hidden; box-shadow: 0 50px 80px -34px #000d, 0 0 0 1px #ffffff30; }
+.bk.l { left: 10px; transform-origin: right center; animation: bookl 1.5s var(--ease) both; animation-delay: calc(var(--t0) + .3s); transform: rotateY(16deg); }
+.bk.r { left: 550px; transform-origin: left center; animation: bookr 1.5s var(--ease) both; animation-delay: calc(var(--t0) + .3s); transform: rotateY(-16deg); }
+@keyframes bookl { from { opacity: 0; transform: rotateY(80deg); } }
+@keyframes bookr { from { opacity: 0; transform: rotateY(-80deg); } }
+.bk .row { font-size: 17px; padding: 11px 16px; }
+.toggle { width: 46px; height: 26px; border-radius: 26px; background: #d6d1ee; position: relative; margin-left: auto; flex: none; animation: tg .4s ease both; animation-delay: calc(var(--t0) + var(--d)); }
+.toggle::after { content: ''; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px #0003; animation: tgk .4s var(--ease) both; animation-delay: calc(var(--t0) + var(--d)); }
+.toggle.off, .toggle.off::after { animation: none; }
+@keyframes tg { to { background: #6d5ef8; } }
+@keyframes tgk { to { transform: translateX(20px); } }
+.lock { position: absolute; left: 530px; top: -6px; z-index: 2; width: 60px; height: 60px; margin-left: -30px; display: grid; place-items: center; border-radius: 50%; color: #fff; font-size: 28px; background: linear-gradient(135deg, #6d5ef8, #22a8d8); box-shadow: 0 0 0 8px #6d5ef833, 0 20px 30px -12px #000; transform: translateZ(60px); }
+
+/* 10 · Documento que se levanta y recibe el sello */
+.doc-stage { position: absolute; left: 630px; top: 54px; width: 610px; height: 600px; perspective: 1400px; }
+.doc-sh { position: absolute; inset: 0; transform-style: preserve-3d; animation: shake .45s linear both; animation-delay: calc(var(--t0) + 3.55s); }
+@keyframes shake { 15% { transform: translate(-7px, 5px); } 35% { transform: translate(6px, -4px); } 55% { transform: translate(-4px, 3px); } 75% { transform: translate(2px, -1px); } 100% { transform: none; } }
+.doc { position: absolute; left: 150px; top: 20px; width: 400px; height: 452px; padding: 28px; border-radius: 10px; background: #fff; color: #1d2340; box-shadow: 0 70px 100px -40px #000e, 0 0 0 1px #ffffff40; animation: docin 1.4s var(--ease) both, docdrift 10s ease-in-out both; animation-delay: calc(var(--t0) + .2s), var(--t0); }
+@keyframes docin { from { opacity: 0; translate: 0 160px; rotate: x 72deg; } }
+@keyframes docdrift { from { transform: rotateY(-18deg) rotateX(8deg); } to { transform: rotateY(-6deg) rotateX(2deg); } }
+.doc-h { display: flex; gap: 12px; align-items: center; padding-bottom: 18px; border-bottom: 2px solid #eeeaf8; }
+.doc-h b { display: block; font-size: 21px; font-weight: 580; }
+.doc-h small { font-size: 16px; color: #626a8a; }
+.doc .item { display: flex; justify-content: space-between; margin-top: 16px; font-size: 18px; }
+.doc .ln { height: 12px; margin-top: 16px; border-radius: 6px; background: #ebe8f7; }
+.doc .tot { display: flex; justify-content: space-between; margin-top: 26px; padding-top: 16px; border-top: 2px solid #eeeaf8; font-size: 18px; font-weight: 580; }
+.stamp2 { position: absolute; right: 30px; top: 128px; padding: 6px 18px; font-size: 34px; font-weight: 700; letter-spacing: .14em; color: #c2410c; border: 4px solid #f08a4b; border-radius: 10px; background: #fff7ef; transform: rotate(-10deg); animation: stampin .45s cubic-bezier(.3, 0, .2, 1) both; animation-delay: calc(var(--t0) + 3.2s); }
+@keyframes stampin { from { opacity: 0; transform: scale(2.8) rotate(-24deg); } 70% { opacity: 1; transform: scale(.94) rotate(-10deg); } to { transform: scale(1) rotate(-10deg); } }
+.pipe { display: flex; align-items: center; gap: 8px; margin-top: 26px; }
+.pipe .chip { background: #ece9f7; color: #8087a6; animation: lit .5s ease both; animation-delay: calc(var(--t0) + var(--d)); }
+@keyframes lit { to { background: #dcf4e6; color: #166038; } }
+.pipe .lnk { flex: 1; height: 3px; border-radius: 3px; background: #e2def3; }
+
+/* 11 · Soporte y cierre */
+.tick { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; position: relative; padding-bottom: 14px; }
+.tick::before { content: ''; position: absolute; left: 16px; top: 34px; bottom: -2px; width: 2px; background: #dcd7f1; }
+.tick:last-child::before { display: none; }
+.tick strong { display: block; font-size: 19px; font-weight: 560; line-height: 34px; }
+.tick p { font-size: 16px; color: #626a8a; line-height: 1.35; }
+.finale { position: absolute; inset: 0; z-index: 20; display: grid; place-content: center; justify-items: center; text-align: center; gap: 18px; background: radial-gradient(900px 600px at 50% 46%, #231d5e, #0a0f1f 72%); opacity: 0; animation: finin 1.2s ease both; animation-delay: calc(var(--t0) + 6.7s); }
+@keyframes finin { to { opacity: 1; } }
+.finale .halo { position: absolute; left: 50%; top: 40%; width: 220px; height: 220px; margin: -110px 0 0 -110px; border-radius: 50%; border: 2px solid #8b7bff; opacity: 0; animation: halo 3.2s ease-out infinite; animation-delay: calc(var(--t0) + 6.875s + var(--h) * 1s); }
+@keyframes halo { 0% { opacity: .7; transform: scale(.5); } 100% { opacity: 0; transform: scale(3.2); } }
+.finale img { position: relative; width: 150px; animation: logo-in 1.3s var(--ease) both; animation-delay: calc(var(--t0) + 6.875s); }
+@keyframes logo-in { from { opacity: 0; transform: scale(.5) rotate(-16deg); } }
+.finale h2 { position: relative; font-size: 68px; font-weight: 520; letter-spacing: -.04em; line-height: 1.05; max-width: 960px; text-wrap: balance; animation: up 1s var(--ease) both; animation-delay: calc(var(--t0) + 7.5s); }
+.finale h2 em { font-style: normal; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.finale p { position: relative; font-size: 27px; color: #cfd5ea; animation: up 1s var(--ease) both; animation-delay: calc(var(--t0) + 8.1s); }
+.finale .cta { position: relative; margin-top: 10px; display: inline-flex; gap: 14px; align-items: center; padding: 18px 34px; border-radius: 14px; background: #cfc9ff; color: #21164e; font-size: 26px; font-weight: 560; box-shadow: 0 20px 50px -18px #8b7bff; animation: pop .9s var(--ease) both; animation-delay: calc(var(--t0) + 8.7s); }
+.typing { display: flex; gap: 6px; padding: 14px 16px; width: 70px; align-self: flex-end; background: #ece9ff; border-radius: 15px 15px 4px 15px; animation: typing 1.3s ease both; animation-delay: calc(var(--t0) + var(--d)); }
+.typing i { width: 8px; height: 8px; border-radius: 50%; background: #6d5ef8; animation: bounce .9s ease-in-out infinite; }
+.typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes typing { 0% { opacity: 0; max-height: 0; padding-block: 0; margin-top: -11px; } 10%, 85% { opacity: 1; max-height: 50px; padding-block: 14px; margin-top: 0; } 100% { opacity: 0; max-height: 0; padding-block: 0; margin-top: -11px; } }
+@keyframes bounce { 50% { transform: translateY(-5px); } }
+.thread { display: flex; flex-direction: column; gap: 11px; min-width: 0; }
+.av { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 15px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #f97316, #ec4899); }
+.av.v { background: linear-gradient(135deg, #6d5ef8, #22d3ee); }
+</style>
+</head>
+<body>
+<div id="v">
+  <div class="bg"><div class="bg-glow"></div><div class="bg-grid"></div></div>
+  <div class="top"><img src="/web/public/marca/logo-negativo.svg" alt=""><div class="count" id="count"></div></div>
+
+  <!-- 0 · Bienvenida: el logo abre y la plataforma se arma pieza por pieza -->
+  <section class="ch" data-ch="0" style="--cd:1.8s">
+    <div class="intro"><img src="/web/public/marca/logo-negativo.svg" alt=""></div>
+    <div class="copy"></div>
+    <div class="stage3d"><div class="p3d">
+      <div class="found"></div>
+      <div class="ring" style="inset:-86px"></div><div class="ring" style="inset:-150px;animation-direction:reverse"></div>
+      <div class="tile" style="--x:0;--y:0;--k:0;--ld:4.1s"><div class="face"><i class="ic" data-i="conversaciones"></i><span>Conversaciones</span></div></div>
+      <div class="tile" style="--x:1;--y:0;--k:1;--ld:6s"><div class="face"><i class="ic" data-i="agenda"></i><span>Agenda</span></div></div>
+      <div class="tile" style="--x:2;--y:1;--k:2;--ld:6s"><div class="face"><i class="ic" data-i="ventas"></i><span>Ventas</span></div></div>
+      <div class="tile" style="--x:0;--y:1;--k:3;--ld:4.1s"><div class="face"><i class="ic" data-i="clientes"></i><span>Clientes</span></div></div>
+      <div class="tile" style="--x:1;--y:2;--k:4;--ld:6s"><div class="face"><i class="ic" data-i="inventario"></i><span>Inventario</span></div></div>
+      <div class="tile" style="--x:2;--y:2;--k:5;--ld:7.6s"><div class="face"><i class="ic" data-i="ia"></i><span>Asistente IA</span></div></div>
+      <div class="core"><div class="face"><img src="/web/public/marca/isologo.svg" alt=""><span>Tu negocio</span></div></div>
+    </div>
+    <div class="caps"><b style="--ld:4.1s">Atención</b><b style="--ld:6s">Operación</b><b style="--ld:7.6s">Control</b></div></div>
+  </section>
+
+  <!-- 1 · Configuración: ventana a la derecha, escritura en vivo y clic -->
+  <section class="ch t-zoom" data-ch="1">
+    <div class="copy"></div>
+    <div class="art"><div class="win">
+      <div class="bar"><i></i><i></i><i></i><b>Omnegia · Configura tu empresa</b></div>
+      <div class="wbody"><div class="side"><span class="si on"><i class="ic" data-i="plataforma"></i></span><span class="si"><i class="ic" data-i="nota"></i></span><span class="si"><i class="ic" data-i="clientes"></i></span></div>
+      <div class="main">
+        <h2><i class="ic" data-i="ia"></i>Cuéntanos cómo trabajas</h2>
+        <div class="field"><span data-type="Tengo un estudio de asesoría. Atiendo con citas y vendo paquetes por WhatsApp." data-s="1" data-cps="30"></span></div>
+        <div class="lbl a" style="--d:4.2s">Funciones sugeridas para tu empresa</div>
+        <div class="chips">
+          <span class="chip ok a p" style="--d:4.6s"><i class="ic" data-i="ok"></i>Clientes</span><span class="chip ok a p" style="--d:4.85s"><i class="ic" data-i="ok"></i>Catálogo</span>
+          <span class="chip a p" style="--d:5.1s"><i class="ic" data-i="agenda"></i>Agenda</span><span class="chip a p" style="--d:5.35s"><i class="ic" data-i="conversaciones"></i>Conversaciones</span>
+          <span class="chip a p" style="--d:5.6s"><i class="ic" data-i="ventas"></i>Ventas</span><span class="chip a p" style="--d:5.85s"><i class="ic" data-i="ia"></i>Asistente IA</span>
+        </div>
+        <div class="a" style="--d:6.8s;margin-top:20px"><span class="btn">Revisar mi propuesta<i class="ic" data-i="flecha"></i></span></div>
+        <div class="cur" style="--cs:6.9s;--cd:2.6s;--x0:420px;--y0:340px;--x1:130px;--y1:372px;--x2:260px;--y2:420px"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2 4 7-3 1-4-7-5 4z"/></svg></div>
+        <div class="rip" data-sfx="click" data-at="8.35" style="--rs:8.35s;left:130px;top:372px"></div>
+      </div></div>
+    </div></div>
+  </section>
+
+  <!-- 2 · Catálogo: espejo, la ventana entra por la izquierda -->
+  <section class="ch t-left mir mask" data-ch="2" style="--ry0:16deg;--ry1:5deg">
+    <div class="copy"></div>
+    <div class="art"><div class="win">
+      <div class="bar"><i></i><i></i><i></i><b>Omnegia · Catálogo</b></div>
+      <div class="wbody"><div class="side"><span class="si"><i class="ic" data-i="plataforma"></i></span><span class="si on"><i class="ic" data-i="inventario"></i></span><span class="si"><i class="ic" data-i="clientes"></i></span></div>
+      <div class="main">
+        <h2><i class="ic" data-i="subir"></i>Carga tu catálogo</h2>
+        <div class="card row a" style="--d:.5s;border:2px dashed #b9b0f4;background:#faf9ff">
+          <span class="ico"><i class="ic" data-i="nota"></i></span><div style="flex:1"><div>catalogo.xlsx</div><div class="bar-h" style="margin-top:7px;height:9px"><i class="grow" style="--d:1s;--dur:1.5s"></i></div></div>
+          <span class="chip ok a p sp" style="--d:2.7s"><i class="ic" data-i="ok"></i>Leído</span>
+        </div>
+        <div class="chips a" style="--d:3.1s;margin:12px 0;align-items:center"><span class="mut" style="font-size:17px">Columnas detectadas</span><span class="chip cy a p" style="--d:3.3s"><i class="ic" data-i="ok"></i>Nombre</span><span class="chip cy a p" style="--d:3.5s"><i class="ic" data-i="ok"></i>Tipo</span><span class="chip cy a p" style="--d:3.7s"><i class="ic" data-i="ok"></i>Duración</span></div>
+        <div class="card">
+          <div class="row a l" style="--d:4.2s"><span class="ico"><i class="ic" data-i="agenda"></i></span>Servicio de asesoría<span class="mut sp">60 minutos</span></div>
+          <div class="row a l" style="--d:4.55s"><span class="ico"><i class="ic" data-i="agenda"></i></span>Sesión de seguimiento<span class="mut sp">30 minutos</span></div>
+          <div class="row a l" style="--d:4.9s"><span class="ico"><i class="ic" data-i="inventario"></i></span>Producto de ejemplo<span class="mut sp">disponible</span></div>
+        </div>
+        <div class="a" style="--d:5.8s;margin-top:14px"><span class="btn x" style="--d:7.3s">Confirmar catálogo<i class="ic" data-i="ok"></i></span></div>
+        <div class="cur" style="--cs:5.9s;--cd:2.4s;--x0:430px;--y0:150px;--x1:110px;--y1:388px;--x2:300px;--y2:420px"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2 4 7-3 1-4-7-5 4z"/></svg></div>
+        <div class="rip" data-sfx="click" data-at="7.25" style="--rs:7.25s;left:110px;top:388px"></div>
+        <div class="card row a p" data-sfx="pop" data-at="7.5" style="--d:7.5s;position:absolute;left:24px;bottom:22px;background:#17603a;color:#fff;border:0;width:300px"><i class="ic" data-i="ok" style="font-size:24px"></i><div><div style="font-weight:600">Catálogo listo</div><div style="font-size:15px;opacity:.85">3 elementos cargados</div></div></div>
+      </div></div>
+    </div></div>
+  </section>
+
+  <!-- 3 · Activación: escalera de tarjetas flotantes, sin ventana -->
+  <section class="ch t-up" data-ch="3">
+    <div class="copy"></div>
+    <div class="stairs"><div class="st-in">
+      <div class="st-glow"></div>
+      <div class="stc a p" style="--i:0;--d:.6s"><span class="chk" style="--d:1.5s"><i class="ic" data-i="ok"></i></span><div><strong>Revisa la propuesta</strong><p>Módulos, datos e importes antes del pago.</p></div></div>
+      <div class="stc a p" style="--i:1;--d:2s"><span class="chk" style="--d:2.9s"><i class="ic" data-i="ok"></i></span><div><strong>Confirma el pago</strong><p>El panel se crea cuando se confirma.</p></div></div>
+      <div class="stc a p" style="--i:2;--d:3.4s"><span class="chk" style="--d:4.3s"><i class="ic" data-i="ok"></i></span><div><strong>Se crea tu panel</strong><div class="chips"><span class="chip ok a p" data-sfx="pop" data-at="4.5" style="--d:4.5s"><i class="ic" data-i="plataforma"></i>Tu espacio está listo</span></div></div></div>
+      <div class="stc a p" style="--i:3;--d:5.4s"><span class="chk" style="--d:99s"><i class="ic" data-i="ok"></i></span><div><strong>Conecta lo que falta</strong><div class="chips"><span class="chip warn a p" style="--d:6.3s"><i class="ic" data-i="conversaciones"></i>WhatsApp · pendiente</span><span class="chip warn a p" style="--d:6.6s"><i class="ic" data-i="ia"></i>IA · pendiente</span><span class="chip warn a p" style="--d:6.9s"><i class="ic" data-i="suscripcion"></i>Cobros</span></div></div></div>
+    </div></div>
+  </section>
+
+  <!-- 4 · Atención y clientes: teléfono con la conversación y tarjetas que salen de él -->
+  <section class="ch t-zoom mask" data-ch="4" style="--ry0:22deg;--ry1:10deg;--rx0:4deg;--rx1:1deg;--s0:.94;--s1:1">
+    <div class="copy"></div>
+    <div class="phone-stage">
+      <div class="phone"><div class="scr">
+        <div class="ph-head"><span class="av">C</span><div><b>Cliente de ejemplo</b><small>WhatsApp</small></div></div>
+        <div class="ph-body thread">
+          <div class="bub a" style="--d:.9s">Hola, quiero reservar una cita</div>
+          <div class="typing" style="--d:1.8s"><i></i><i></i><i></i></div>
+          <div class="bub me a" style="--d:3s">Revisemos la disponibilidad</div>
+          <div class="bub a" style="--d:4.4s">¿Puede ser el martes en la mañana?</div>
+          <div class="bub me a" style="--d:6.4s">Sí: martes a las 9:00 con Ana</div>
+        </div>
+      </div></div>
+      <div class="fcard a r" style="--d:3.6s;left:370px;top:110px"><h3><i class="ic" data-i="clientes"></i>Historial del cliente</h3><div class="chips"><span class="chip">2 citas</span><span class="chip">1 pedido</span></div></div>
+      <div class="fcard a r" style="--d:5.2s;left:370px;top:330px"><h3><i class="ic" data-i="persona"></i>Lo atiende una persona</h3><p>Tu equipo retoma la conversación con todo el contexto.</p></div>
+    </div>
+  </section>
+
+  <!-- 5 · Agenda: título centrado y plano amplio, la cámara baja sobre la mesa -->
+  <section class="ch t-up cen" data-ch="5" style="--ry0:0deg;--ry1:0deg;--rx0:26deg;--rx1:7deg;--s0:.92;--s1:1">
+    <div class="copy"></div>
+    <div class="wide"><div class="win">
+      <div class="bar"><i></i><i></i><i></i><b>Omnegia · Agenda del equipo</b><span style="margin-left:auto;display:flex;gap:8px"><span class="chip" style="padding:4px 11px;font-size:15px">Ana · Asesoría</span><span class="chip cy" style="padding:4px 11px;font-size:15px">Luis · Seguimiento</span></span></div>
+      <div class="main" style="padding:16px 22px">
+        <div class="cal">
+          <span></span><span class="h a f" style="--d:.5s">Lunes</span><span class="h today a f" style="--d:.55s">Martes</span><span class="h a f" style="--d:.6s">Miércoles</span><span class="h a f" style="--d:.65s">Jueves</span><span class="h a f" style="--d:.7s">Viernes</span>
+          <span class="t">09:00</span><span class="s"></span><span class="s"><div class="ev a p" style="--d:1.4s">Asesoría<small>Ana</small></div></span><span class="s"></span><span class="s"><div class="ev b a p" style="--d:2.9s">Seguimiento<small>Luis</small></div></span><span class="s"></span>
+          <span class="t">11:00</span><span class="s"><div class="ev b a p" style="--d:2.2s">Seguimiento<small>Luis</small></div></span><span class="s"><div class="ev b a p" style="--d:1.8s">Seguimiento<small>Luis</small></div></span><span class="s"></span><span class="s"></span><span class="s"><div class="ev a p" style="--d:3.3s">Asesoría<small>Ana</small></div></span>
+          <span class="t">15:00</span><span class="s"><div class="ev a p" style="--d:2.6s">Asesoría<small>Ana</small></div></span><span class="s"><div class="ev a p" style="--d:2.2s">Asesoría<small>Ana</small></div></span><span class="s"><div class="ev b a p" style="--d:3.6s">Seguimiento<small>Luis</small></div></span><span class="s"></span><span class="s"></span>
+          <div class="nowline"></div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- 6 · Ventas y comisiones: espejo -->
+  <section class="ch t-left mir" data-ch="6" style="--ry0:18deg;--ry1:6deg;--rx0:-3deg;--rx1:2deg">
+    <div class="copy"></div>
+    <div class="art"><div class="win">
+      <div class="bar"><i></i><i></i><i></i><b>Omnegia · Ventas</b></div>
+      <div class="wbody"><div class="side"><span class="si"><i class="ic" data-i="plataforma"></i></span><span class="si on"><i class="ic" data-i="ventas"></i></span><span class="si"><i class="ic" data-i="clientes"></i></span></div>
+      <div class="main">
+        <h2><i class="ic" data-i="ventas"></i>Pedidos</h2>
+        <div class="card">
+          <div class="row a l" style="--d:.5s"><span class="ico"><i class="ic" data-i="ventas"></i></span>Pedido de ejemplo<span class="chip sp">Registrado</span></div>
+          <div class="row a l" style="--d:1.1s"><span class="ico"><i class="ic" data-i="suscripcion"></i></span>Pago<span class="sp" style="position:relative;width:190px;height:34px"><span class="chip warn x" style="--d:5.2s;position:absolute;right:0;top:0">Pendiente de confirmar</span><span class="chip ok a p" data-sfx="pop" data-at="5.5" style="--d:5.5s;position:absolute;right:0;top:0"><i class="ic" data-i="ok"></i>Pago confirmado</span></span></div>
+          <div class="row a l" style="--d:1.7s"><span class="ico"><i class="ic" data-i="persona"></i></span>Comisión<span class="chip cy sp">Según configuración</span></div>
+        </div>
+        <div class="lbl a" style="--d:2.4s">Comisiones del equipo</div>
+        <div class="card" style="padding:14px 16px;display:grid;gap:12px">
+          <div style="display:grid;grid-template-columns:60px 1fr;gap:12px;align-items:center;font-size:17px"><span>Ana</span><div class="bar-h" style="height:16px"><i class="grow" style="--d:2.8s;--dur:1.6s;--v:.78"></i></div></div>
+          <div style="display:grid;grid-template-columns:60px 1fr;gap:12px;align-items:center;font-size:17px"><span>Luis</span><div class="bar-h" style="height:16px"><i class="grow" style="--d:3.2s;--dur:1.6s;--v:.52"></i></div></div>
+        </div>
+      </div></div>
+    </div></div>
+  </section>
+
+  <!-- 7 · Inventario: la cámara se acerca hasta la alerta -->
+  <section class="ch t-zoom mask" data-ch="7" style="--ry0:-22deg;--ry1:-3deg;--rx0:8deg;--rx1:0deg;--s0:.86;--s1:1.1;--tx0:40px;--tx1:-30px">
+    <div class="copy"></div>
+    <div class="art"><div class="win">
+      <div class="bar"><i></i><i></i><i></i><b>Omnegia · Inventario</b></div>
+      <div class="wbody"><div class="side"><span class="si"><i class="ic" data-i="plataforma"></i></span><span class="si"><i class="ic" data-i="ventas"></i></span><span class="si on"><i class="ic" data-i="inventario"></i></span></div>
+      <div class="main">
+        <h2><i class="ic" data-i="inventario"></i>Existencias</h2>
+        <div class="card" style="padding:6px 0">
+          <div class="row a l" style="--d:.5s"><span class="ico"><i class="ic" data-i="inventario"></i></span><div style="width:130px">Producto A</div><div class="bar-h" style="flex:1"><i class="grow" style="--d:.9s;--dur:1.4s;--v:.8"></i><u style="left:25%"></u></div><b style="width:96px;text-align:right"><span data-count="24" data-s=".9" data-dur="1.4"></span> unid.</b></div>
+          <div class="row a l" style="--d:1s"><span class="ico"><i class="ic" data-i="inventario"></i></span><div style="width:130px">Producto B</div><div class="bar-h" style="flex:1"><i class="grow" style="--d:1.4s;--dur:1.4s;--v:.34"></i><u style="left:25%"></u></div><b style="width:96px;text-align:right"><span data-count="8" data-s="1.4" data-dur="1.4"></span> unid.</b></div>
+          <div class="row a l" style="--d:1.5s"><span class="ico" style="background:#fdefcf;color:#9a5b00"><i class="ic" data-i="alerta"></i></span><div style="width:130px">Producto C</div><div class="bar-h" style="flex:1"><i class="warn grow" style="--d:1.9s;--dur:1.4s;--v:.1"></i><u style="left:25%"></u></div><b style="width:96px;text-align:right"><span data-count="2" data-s="1.9" data-dur="1.4"></span> unid.</b></div>
+        </div>
+        <div class="a p" data-sfx="pop" data-at="4" style="--d:4s;margin-top:16px"><span class="chip warn pulse" style="--d:4s;font-size:18px;padding:10px 16px"><i class="ic" data-i="alerta"></i>Producto C · bajo el mínimo configurado</span></div>
+        <div class="lbl a" style="--d:4.8s;display:flex;align-items:center;gap:8px"><span style="width:2px;height:16px;background:#1d2340;display:inline-block"></span>Marca del mínimo por producto</div>
+      </div></div>
+    </div></div>
+  </section>
+
+  <!-- 8 · Asistente IA: panel oscuro con orbe -->
+  <section class="ch t-up" data-ch="8" style="--ry0:-8deg;--ry1:-14deg;--rx0:10deg;--rx1:3deg;--s0:.9;--s1:1">
+    <div class="copy"></div>
+    <div class="art"><div class="win dark">
+      <div class="orb-head"><span class="orb"></span><div><b>Asistente de tu empresa</b><small>Responde con tus permisos</small></div></div>
+      <div class="dk-body">
+        <div class="bub me" style="max-width:80%"><span data-type="¿Qué citas tenemos hoy?" data-s=".8" data-cps="22"></span></div>
+        <div class="tool a" style="--d:2.4s"><i class="ic" data-i="agenda" style="font-size:22px;color:#9fe7ff"></i>Consultar la agenda<span class="chip ok" style="margin-left:auto"><i class="ic" data-i="ok"></i>Permiso verificado</span></div>
+        <div class="bub a" style="--d:3.2s;max-width:96%"><strong style="font-size:19px">Hoy tienes 3 citas</strong>
+          <div class="slot a l" style="--d:3.7s"><b>09:00</b>Asesoría · Ana</div>
+          <div class="slot a l" style="--d:4.1s"><b>11:00</b>Seguimiento · Luis</div>
+          <div class="slot a l" style="--d:4.5s"><b>15:00</b>Asesoría · Ana</div>
+        </div>
+        <div class="chips a" style="--d:5.6s"><span class="chip"><i class="ic" data-i="nota"></i>Recibo de la herramienta guardado</span></div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- 9 · Permisos y auditoría: paneles que se abren como un libro -->
+  <section class="ch t-left cen mask" data-ch="9">
+    <div class="copy"></div>
+    <div class="book"><div class="bk-in">
+      <div class="bk l"><div class="bar"><i></i><i></i><i></i><b>Roles y permisos</b></div>
+        <div class="row a l" style="--d:1.3s"><span class="ico"><i class="ic" data-i="persona"></i></span>Equipo · consultar la agenda<span class="toggle" style="--d:2.2s"></span></div>
+        <div class="row a l" style="--d:1.6s"><span class="ico"><i class="ic" data-i="ia"></i></span>Asistente · consultar clientes<span class="toggle" style="--d:2.7s"></span></div>
+        <div class="row a l" style="--d:1.9s"><span class="ico"><i class="ic" data-i="persona"></i></span>Equipo · editar el catálogo<span class="toggle off"></span></div>
+      </div>
+      <div class="lock a p" data-sfx="pop" data-at="1.4" style="--d:1.4s"><i class="ic" data-i="candado"></i></div>
+      <div class="bk r"><div class="bar"><i></i><i></i><i></i><b>Registro de acciones</b></div>
+        <div class="row a r" style="--d:3.6s"><b class="mut" style="font-weight:520">10:02</b>Ana consultó la agenda<span class="chip ok sp"><i class="ic" data-i="ok"></i>Permitido</span></div>
+        <div class="row a r" style="--d:4.3s"><b class="mut" style="font-weight:520">10:05</b>El asistente consultó<span class="chip ok sp"><i class="ic" data-i="ok"></i>Permitido</span></div>
+        <div class="row a r" style="--d:5s"><b class="mut" style="font-weight:520">10:08</b>Luis intentó editar<span class="chip bad sp"><i class="ic" data-i="candado"></i>Sin permiso</span></div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- 10 · Facturación: el documento se levanta y recibe el sello de prueba -->
+  <section class="ch t-zoom" data-ch="10">
+    <div class="copy"></div>
+    <div class="doc-stage"><div class="doc-sh">
+      <div class="doc">
+        <div class="doc-h"><span class="ico" style="width:46px;height:46px;font-size:24px"><i class="ic" data-i="facturacion"></i></span><div><b>Documento de ejemplo</b><small>Entorno de pruebas · sandbox</small></div></div>
+        <div class="item a l" style="--d:1.3s"><span>Servicio de asesoría</span><span class="mut">1</span></div><div class="item a l" style="--d:1.5s"><span>Sesión de seguimiento</span><span class="mut">2</span></div>
+        <div class="ln grow" style="--d:1.7s;--v:.8"></div><div class="ln grow" style="--d:1.85s;--v:.55"></div>
+        <div class="tot a" style="--d:2.1s"><span>Estado</span><span class="mut">Consultable</span></div>
+        <div class="pipe"><span class="chip" style="--d:4.4s">Creado</span><span class="lnk"></span><span class="chip" style="--d:5s">En revisión</span><span class="lnk"></span><span class="chip" style="--d:5.6s">Consultable</span></div>
+        <span class="stamp2" data-sfx="sello" data-at="3.5">PRUEBA</span>
+      </div>
+    </div>
+      <div class="fcard a l" style="--d:6.2s;left:-40px;top:370px;background:#fff8ec;color:#5e3d05"><h3 style="color:#5e3d05"><i class="ic" data-i="integraciones" style="color:#b56a00"></i>Sin validez fiscal</h3><p style="color:#7a5410">La emisión real requiere conectar un proveedor tecnológico.</p></div>
+    </div>
+  </section>
+
+  <!-- 11 · Soporte y suscripción, con la tarjeta final -->
+  <section class="ch last mir" data-ch="11" style="--ry0:15deg;--ry1:6deg">
+    <div class="copy"></div>
+    <div class="art"><div class="win">
+      <div class="bar"><i></i><i></i><i></i><b>Omnegia · Soporte</b></div>
+      <div class="wbody"><div class="side"><span class="si"><i class="ic" data-i="plataforma"></i></span><span class="si"><i class="ic" data-i="suscripcion"></i></span><span class="si on"><i class="ic" data-i="soporte"></i></span></div>
+      <div class="main">
+        <div class="card row a" style="--d:.4s;gap:14px"><span class="ico"><i class="ic" data-i="suscripcion"></i></span><div><div style="font-weight:560">Tu suscripción</div><div class="mut" style="font-size:16px">Módulos y conexiones de tu empresa</div></div><span class="chip ok sp"><i class="ic" data-i="ok"></i>Activa</span></div>
+        <div class="lbl a" style="--d:1.2s;margin-top:16px">Solicitud de ejemplo · radicado guardado</div>
+        <div class="card" style="padding:16px 16px 4px">
+          <div class="tick a l" style="--d:1.6s"><span class="chk" style="--d:2s"><i class="ic" data-i="ok"></i></span><div><strong>Abierta</strong><p>La solicitud quedó registrada.</p></div></div>
+          <div class="tick a l" style="--d:2.6s"><span class="chk" style="--d:3s"><i class="ic" data-i="ok"></i></span><div><strong>En proceso</strong><p>El equipo atiende el caso.</p></div></div>
+          <div class="tick a l" style="--d:3.6s"><span class="chk" style="--d:4s"><i class="ic" data-i="ok"></i></span><div><strong>Respuesta del equipo</strong><p>Léela y contesta desde el panel.</p></div></div>
+        </div>
+      </div></div>
+    </div></div>
+    <div class="finale"><span class="halo" style="--h:0"></span><span class="halo" style="--h:1"></span><span class="halo" style="--h:2"></span>
+      <img src="/web/public/marca/isologo.svg" alt="">
+      <h2>Dale a tu negocio <em>su propio espacio.</em></h2>
+      <p>Configura tu negocio y revisa cada paso antes de contratar.</p>
+      <span class="cta">Crear mi espacio<i class="ic" data-i="flecha"></i></span>
+    </div>
+  </section>
+
+  <div class="foot"><div class="segs" id="segs"></div><div class="legend"><span id="seg-name"></span><span>Recorrido ilustrado · datos de ejemplo</span></div></div>
+</div>
+<script>
+const ICONS = {
+  conversaciones: 'M4 5h16v11H8l-4 4z', clientes: 'M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7M22 19v-1a4 4 0 0 0-3-3.87M16 3.13a3.5 3.5 0 0 1 0 6.75',
+  ventas: 'M3 3h2l2.4 12.1a2 2 0 0 0 2 1.6h8.2a2 2 0 0 0 2-1.6L21 7H6M10 21h.01M18 21h.01', inventario: 'M21 8l-9-5-9 5v8l9 5 9-5zM3 8l9 5 9-5M12 13v8',
+  agenda: 'M4 5h16v15H4zM4 10h16M9 3v4M15 3v4', facturacion: 'M6 2h9l5 5v15H6zM14 2v6h6M9 13h6M9 17h6',
+  ia: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z',
+  suscripcion: 'M2 7h20v12H2zM2 11h20M6 15h4', auditoria: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4', ok: 'M5 12l5 5L20 7',
+  alerta: 'M12 3l10 18H2zM12 10v4M12 17h.01', flecha: 'M5 12h14M13 6l6 6-6 6', persona: 'M20 21v-1a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v1M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  candado: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4', subir: 'M12 16V4M6 10l6-6 6 6M4 20h16', plataforma: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
+  nota: 'M4 4h16v12l-4 4H4zM16 20v-4h4M8 9h8M8 13h5', soporte: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM5.6 5.6l3.9 3.9M14.5 14.5l3.9 3.9M18.4 5.6l-3.9 3.9M9.5 14.5l-3.9 3.9',
+  integraciones: 'M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5',
+};
+document.querySelectorAll('[data-i]').forEach(e => { e.innerHTML = `<svg viewBox="0 0 24 24"><path d="${ICONS[e.dataset.i]}"/></svg>`; });
+const CHAPTERS = window.CHAPTERS || [];
+const T = 10;
+const bg = document.querySelector('.bg');
+for (let i = 0; i < 26; i++) { const d = document.createElement('span'); d.className = 'dot'; d.style.cssText = `left:${(i * 83 + 40) % 1280}px;top:${420 + (i * 47) % 300}px;animation-duration:${8 + (i % 5) * 2}s;animation-delay:${-(i % 9)}s;width:${3 + i % 3}px;height:${3 + i % 3}px`; bg.appendChild(d); }
+const host = document.getElementById('v');
+// El barrido de luz acompaña solo las transiciones laterales y de acercamiento.
+document.querySelectorAll('.ch.t-left, .ch.t-zoom').forEach(sec => { const s = document.createElement('div'); s.className = 'sweep'; s.style.setProperty('--at', `${+sec.dataset.ch * T - .35}s`); host.appendChild(s); });
+const segs = document.getElementById('segs');
+for (let i = 0; i < 12; i++) segs.insertAdjacentHTML('beforeend', `<span><i style="--n:${i}"></i></span>`);
+document.querySelectorAll('.ch').forEach(sec => {
+  const i = +sec.dataset.ch, c = CHAPTERS[i] || { title: 'Título', text: '', note: '' };
+  sec.style.setProperty('--t0', `${i * T}s`);
+  const words = c.title.split(' ');
+  sec.querySelector('.copy').innerHTML = `<h1>${words.map((w, k) => `<span class="w${k >= words.length - 1 ? ' hl' : ''}" style="--k:${k}"><i>${w}</i></span>`).join('')}</h1><p>${c.text}</p><small>${c.note}</small>`;
+});
+const t0De = e => +e.closest('.ch').dataset.ch * T;
+const typed = [...document.querySelectorAll('[data-type]')].map(e => ({ e, text: e.dataset.type, t0: t0De(e) + parseFloat(e.dataset.s), cps: +e.dataset.cps }));
+const counted = [...document.querySelectorAll('[data-count]')].map(e => ({ e, n: +e.dataset.count, t0: t0De(e) + parseFloat(e.dataset.s), dur: +e.dataset.dur }));
+const chapters = [...document.querySelectorAll('.ch')].map(sec => ({ sec, t0: +sec.dataset.ch * T }));
+const countEl = document.getElementById('count'), nameEl = document.getElementById('seg-name');
+let lastIndex = -1;
+window.efectos = () => [...document.querySelectorAll('[data-sfx]')].map(e => ({ tipo: e.dataset.sfx, t: t0De(e) + parseFloat(e.dataset.at) }));
+window.seek = t => {
+  // Primero la visibilidad: al pasar de display:none a visible el navegador crea animaciones nuevas.
+  for (const { sec, t0 } of chapters) sec.style.display = t >= t0 - .05 && t <= t0 + T + .05 ? '' : 'none';
+  document.getAnimations().forEach(a => { if (a.playState !== 'paused') a.pause(); a.currentTime = t * 1000; });
+  for (const x of typed) x.e.textContent = x.text.slice(0, Math.max(0, Math.floor((t - x.t0) * x.cps)));
+  for (const x of counted) { const p = Math.min(1, Math.max(0, (t - x.t0) / x.dur)); x.e.textContent = Math.round(x.n * (1 - Math.pow(1 - p, 3))); }
+  const idx = Math.min(11, Math.floor(t / T));
+  if (idx !== lastIndex) { lastIndex = idx; const c = CHAPTERS[idx] || { short: '' }; countEl.innerHTML = `<b>${String(idx + 1).padStart(2, '0')}</b> / 12`; nameEl.textContent = c.short; }
+};
+window.ready = document.fonts.ready.then(() => Promise.all([...document.images].map(i => i.decode().catch(() => {})))).then(() => { seek(0); return true; });
+</script>
+</body>
+</html>

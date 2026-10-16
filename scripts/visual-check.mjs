@@ -193,8 +193,8 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('http://localhost:5174/bienvenida');
   await page.locator('.system-piece').first().waitFor();
-  check(await page.locator('.system-piece').first().evaluate(el => getComputedStyle(el).animationName === 'none'), 'Escena: las transiciones de selección no compiten con un bucle');
-  await page.getByRole('button', { name: 'Agenda', exact: true }).click();
+  check(await page.locator('.system-piece').first().evaluate(el => getComputedStyle(el).animationName.includes('piece-breathe') && getComputedStyle(el).transitionProperty === 'transform'), 'Escena: la respiración (translate) convive con la transición de selección (transform)');
+  await page.getByRole('button', { name: 'Agenda', exact: true }).click({ force: true });
   check(await page.getByRole('button', { name: 'Agenda', exact: true }).getAttribute('aria-pressed') === 'true', 'Escena: selección individual de tarjeta');
   check(await page.getByRole('button', { name: /Pausar movimiento|Vista simple/ }).count() === 0, 'Escena: controles retirados');
   await page.setViewportSize({ width: 390, height: 844 });
