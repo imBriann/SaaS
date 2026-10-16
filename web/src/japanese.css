@@ -52,16 +52,6 @@ button, a, input, select, textarea { touch-action: manipulation; }
 .app :is(.sub, .msg-texto, .detalle-celda, .contexto-txt, .hilo-soporte) { overflow-wrap: anywhere; }
 .app .tabla-wrap { max-width: 100%; overscroll-behavior-x: contain; }
 .app .input { max-width: 100%; }
-.system-scene .system-piece { --lift: 12px; animation: module-breathe 7s ease-in-out infinite; animation-delay: calc(var(--i) * -1.1s); }
-.system-piece.is-lit { --lift: 42px; }
-@keyframes module-breathe {
-  0%, 100% { transform: translateZ(var(--lift)); }
-  50% { transform: translateZ(calc(var(--lift) + 16px)); }
-}
-.system-scene.is-paused .system-piece { animation-play-state: paused; }
-.system-scene.is-flat .system-piece { animation: none; }
-.system-foot { align-items: center; flex-wrap: wrap; font-size: 13px; gap: 8px 20px; }
-.system-foot button { min-height: 44px; display: inline-block; }
 .system-description p { font-size: 15px; }
 @media (max-width: 1000px) {
   .app .pagina { padding: 28px 24px 100px; }

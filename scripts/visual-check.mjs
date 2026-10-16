@@ -69,9 +69,10 @@ try {
     if (width === 1440) {
       await page.getByRole('button', { name: 'Operación' }).click();
       check(await page.getByText('De la cita a la venta.', { exact: true }).isVisible(), 'Escena: cambiar módulo actualiza la explicación');
-      await page.getByRole('button', { name: 'Vista simple', exact: true }).click();
-      check(await page.locator('.system-scene.is-flat').count() === 1, 'Alternativa de escena sin perspectiva');
-      await capture('scene-flat');
+      await page.getByRole('button', { name: 'Ventas', exact: true }).click();
+      check(await page.getByRole('button', { name: 'Ventas', exact: true }).getAttribute('aria-pressed') === 'true', 'Tarjetas de escena seleccionables');
+      check(await page.locator('.system-piece.is-selected').evaluate(el => getComputedStyle(el).transform === 'none'), 'Movimiento reducido ofrece una escena sin elevación');
+      await capture('scene-reduced');
     }
     if (width === 390) {
       await page.getByRole('button', { name: 'Abrir menú' }).click();
@@ -192,13 +193,13 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('http://localhost:5174/bienvenida');
   await page.locator('.system-piece').first().waitFor();
-  check(await page.locator('.system-piece').first().evaluate(el => getComputedStyle(el).animationIterationCount === 'infinite'), 'Escena: movimiento continuo en bucle');
-  await page.getByRole('button', { name: 'Pausar movimiento' }).click();
-  check(await page.locator('.system-piece').first().evaluate(el => getComputedStyle(el).animationPlayState === 'paused'), 'Escena: pausa el movimiento');
-  await page.getByRole('button', { name: 'Reanudar movimiento' }).click();
-  check(await page.locator('.system-piece').first().evaluate(el => getComputedStyle(el).animationPlayState === 'running'), 'Escena: reanuda el movimiento');
+  check(await page.locator('.system-piece').first().evaluate(el => getComputedStyle(el).animationName === 'none'), 'Escena: las transiciones de selección no compiten con un bucle');
+  await page.getByRole('button', { name: 'Agenda', exact: true }).click();
+  check(await page.getByRole('button', { name: 'Agenda', exact: true }).getAttribute('aria-pressed') === 'true', 'Escena: selección individual de tarjeta');
+  check(await page.getByRole('button', { name: /Pausar movimiento|Vista simple/ }).count() === 0, 'Escena: controles retirados');
   await page.setViewportSize({ width: 390, height: 844 });
-  check(await page.locator('.system-piece').first().evaluate(el => getComputedStyle(el).animationIterationCount === 'infinite'), 'Escena: bucle también en móvil');
+  await page.getByRole('button', { name: 'Inventario', exact: true }).click();
+  check(await page.getByRole('button', { name: 'Inventario', exact: true }).getAttribute('aria-pressed') === 'true', 'Escena: selección de tarjeta también en móvil');
   await capture('scene-mobile-motion');
   await page.setViewportSize({ width: 1440, height: 1000 });
   check(await page.getByRole('link', { name: 'Crear mi espacio' }).last().isVisible(), 'CTA visible mientras se anima la escena');

@@ -128,7 +128,7 @@ components:
 
 En móvil las tarjetas de producto se apilan con ilustración superior, las tablas etiquetadas se leen como registros y los controles principales tienen un mínimo de 48 px. La navegación inferior respeta el área segura. Las comprobaciones de anchura incluyen 320, 390, 768 y 1440 px.
 
-La escena de módulos mantiene el relieve en móvil. Sus piezas recorren un bucle suave de siete segundos con desfase; el usuario puede pausarlo o elegir una vista plana. La preferencia de movimiento reducido desactiva el bucle. El contenido no cambia automáticamente ni se anuncian ciclos a lectores de pantalla.
+La escena de módulos mantiene el relieve en móvil. Sus piezas son botones seleccionables: la elevación responde a la selección del módulo o de Atención, Operación y Control, sin bucle automático ni controles de pausa o vista simple. La preferencia de movimiento reducido ofrece una cuadrícula plana interactiva. El contenido cambia por acción del usuario y la explicación seleccionada se anuncia de forma discreta a lectores de pantalla.
 
 Las medidas y colores del registro anterior que contradigan esta sección quedan sustituidos por esta adaptación.
 
@@ -201,7 +201,7 @@ El sistema combina superficies tonales y bordes con sombras suaves. Las tarjetas
 - **Control base:** `0 1px 2px rgba(27, 27, 25, 0.05)`.
 - **Emergente:** `0 12px 32px -8px rgba(27, 27, 25, 0.18), 0 2px 6px rgba(27, 27, 25, 0.06)`.
 
-**The Relieve con alternativa Rule.** La escena conserva controles y explicación al pasar a vista plana; la profundidad no condiciona el acceso al contenido.
+**The Relieve con alternativa Rule.** La escena conserva selección y explicación en la cuadrícula plana de movimiento reducido y en el fallback de CSS 3D; la profundidad no condiciona el acceso al contenido.
 
 ## Shapes
 
@@ -225,9 +225,14 @@ Superficie clara, borde intermedio y mínimo de 42px; en móvil el texto sube a 
 La cabecera pública es adhesiva y admite fondo claro u oscuro, con ruta activa subrayada. El menú móvil cierra con Escape, navegación y pulsación exterior. El panel presenta contexto de empresa y filas de navegación; la activa usa tinte del acento contextual y peso 600. Sus controles aumentan de tamaño en móvil.
 
 ### Escena de módulos y ensamblaje
-`SystemScene` enlaza Atención, Operación y Control con botones de estado pulsado y explicación anunciada de forma discreta. El dibujo usa CSS 3D, sin WebGL ni bucle de renderizado; sus piezas decorativas no duplican contenido accesible. La llegada dura 1300ms con escalonamiento de 70ms y la selección cambia el relieve durante 650ms. La vista móvil a 600px utiliza una cuadrícula plana; también hay alternativa manual y fallback de soporte CSS.
+`SystemScene` enlaza Atención, Operación y Control con botones de estado pulsado y explicación anunciada de forma discreta. Cada módulo del dibujo también es un botón: seleccionarlo actualiza el grupo y muestra su explicación específica. El relieve usa CSS 3D, sin WebGL ni bucle automático. La elevación pasa de reposo (12px) a grupo activo (38px) y módulo seleccionado (72px) mediante una transición interrumpible de 500ms con `var(--ease-out)`. El indicador se desplaza en 250ms; las explicaciones combinan opacidad en 200ms y desplazamiento en 250ms. El móvil conserva la perspectiva; hasta 900px incluye además un selector legible de módulos en dos columnas, conectado al mismo estado. Movimiento reducido y falta de soporte CSS 3D ofrecen una cuadrícula plana interactiva de tres columnas, sin controles manuales de pausa o vista simple.
 
-`WorkspaceAssembly` muestra nombre, estado debajo y módulos asociados al estado del servidor. La animación de entrada no certifica el resultado de la operación. En movimiento reducido se anulan las animaciones de piezas y ensamblaje, y las transiciones globales se reducen a 0.01ms. La escena admite desplazamiento ligado al scroll solo en escritorio compatible y sin preferencia de movimiento reducido.
+`WorkspaceAssembly` muestra nombre, estado debajo y módulos asociados al estado del servidor. La animación de entrada no certifica el resultado de la operación. En movimiento reducido se anulan las animaciones de piezas y ensamblaje, y las transiciones globales se reducen a 0.01ms; la explicación de la escena conserva una transición breve de opacidad (150ms). La escena admite desplazamiento ligado al scroll solo en escritorio compatible y sin preferencia de movimiento reducido.
+
+### Recorrido de producto y confianza
+El recorrido se abre desde un botón secundario del héroe en el diálogo existente. El video ilustrado usa proporción 16:9, controles nativos, capítulos seleccionables, subtítulos en español y transcripción desplegable. El reproductor solo se monta al abrir el diálogo; el capítulo activo y su título, descripción y condición visible debajo del video acompañan la reproducción o la selección de capítulo. El texto identifica los datos como ejemplos y conserva las condiciones de configuración y de facturación en pruebas.
+
+La sección de confianza retoma tinta profunda y lavanda con planos superpuestos, bordes finos y sombra difusa. El recibo ilustrativo hace visibles permisos, herramientas y auditoría; se etiqueta como ejemplo, sin convertir la ilustración en una certificación. En móvil los planos se apilan y la perspectiva del recibo se retira. Esta composición pertenece a la landing y no impone una variante global de tarjeta.
 
 ## Do's and Don'ts
 

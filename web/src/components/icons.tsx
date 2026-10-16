@@ -1,5 +1,6 @@
 /** Iconografía mínima en línea (sin dependencias). Trazo 1.8, 24×24. */
 const P: Record<string, string> = {
+  play: 'M8 5l11 7-11 7z',
   inicio: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
   conversaciones: 'M4 5h16v11H8l-4 4z',
   clientes: 'M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7M22 19v-1a4 4 0 0 0-3-3.87M16 3.13a3.5 3.5 0 0 1 0 6.75',
