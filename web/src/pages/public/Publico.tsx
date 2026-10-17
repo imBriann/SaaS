@@ -287,12 +287,16 @@ export function Pago() {
   const o = d.oferta;
   const institucional = o?.modalidad === 'INSTITUCIONAL';
   const real = d.pasarela === 'wompi';
+  // Lo que falta y se completa en el paso de datos. La aceptación legal y la facturación se resuelven en esta misma pantalla.
+  const ETIQUETA: Record<string, string> = { nombre: 'el nombre del negocio', email: 'el correo del administrador', subdominio: 'la dirección web', correo_verificado: 'la verificación del correo', nit: 'el NIT con su dígito de verificación', telefono: 'el teléfono de contacto', direccion: 'el país, departamento, municipio y dirección del negocio' };
+  const faltanDatos: string[] = (d.faltantes_pago ?? []).filter((k: string) => ETIQUETA[k]);
   const aceptadoLegal = !!d.aceptacion_legal?.vigente || (legal.terminos && legal.privacidad && legal.inicio_servicio);
   const textoBoton = ocupado ? 'Preparando…' : d.pasarela === 'simulada' ? (directoDisponible ? 'Ir a la pasarela de prueba' : 'Ir al pago de prueba') : directoDisponible ? 'Pagar en la página de Wompi' : `Pagar ${cop(o?.monto ?? d.cotizacion.total)} con Wompi`;
   return <PublicoLayout paso={4}><section className="proposal-summary">
     <h1 className="onb-titulo">Revisa tu propuesta</h1>
     <p className="sec">Esta es la plataforma de {d.negocio?.nombre ?? 'tu negocio'}. Revisa las funciones y el desglose antes de continuar.</p>
     <Quote quote={d.cotizacion} modalidad={d.modalidad} />
+    {faltanDatos.length > 0 && <div className="aviso" role="alert"><Icon n="alerta" className="" size={16} /><span><b>Antes de pagar necesitamos {faltanDatos.map((k) => ETIQUETA[k]).join(', ')}.</b> Complétalo en el paso de datos y vuelve aquí: lo que ya escribiste se conserva. <Link className="enlace" to="/empezar/datos">Completar mis datos</Link></span></div>}
     {institucional && <dl className="resumen-pago" aria-label="Resumen de la contratación">
       <div><dt>Modalidad</dt><dd>Institucional</dd></div>
       <div><dt>Valor a pagar hoy</dt><dd>{cop(o.monto)} COP</dd></div>
@@ -325,10 +329,10 @@ export function Pago() {
       <span>Entiendo que se hará un cobro real de {cop(o?.monto ?? d.cotizacion.total)} COP{institucional ? ` por ${o.acceso_dias} días de acceso, sin renovación automática` : ''}.</span>
     </label>}
     {d.pago_disponible && <PagoDirecto d={d} monto={cop(o?.monto ?? d.cotizacion.total)} asegurar={asegurarAceptacion} onAprobado={() => nav('/empezar/listo')} alIniciar={setDirectoActivo} alCargar={setDirectoDisponible}
-      bloqueado={!aceptadoLegal || (real && !acepto) || (d.facturacion_requerida && !d.facturacion?.completa)} />}
+      bloqueado={faltanDatos.length > 0 || !aceptadoLegal || (real && !acepto) || (d.facturacion_requerida && !d.facturacion?.completa)} />}
     {directoDisponible && !directoActivo && <p className="tenue peq-txt" style={{ margin: 0 }}>¿Prefieres pagar en la página de Wompi? Es la otra opción, con los mismos medios de pago.</p>}
     <div className="fila envolver" style={{ gap: 8 }}>
-      {d.pago_disponible && !directoActivo && <button className={`btn ${directoDisponible ? '' : 'primario'} grande`} disabled={ocupado || !aceptadoLegal || (real && !acepto) || (d.facturacion_requerida && !d.facturacion?.completa)} onClick={activate}>{textoBoton}</button>}
+      {d.pago_disponible && !directoActivo && <button className={`btn ${directoDisponible ? '' : 'primario'} grande`} disabled={ocupado || faltanDatos.length > 0 || !aceptadoLegal || (real && !acepto) || (d.facturacion_requerida && !d.facturacion?.completa)} onClick={activate}>{textoBoton}</button>}
       {d.estado === 'BORRADOR' && <Link className="btn grande" to="/empezar">Ajustar funciones</Link>}
     </div>
     {real && <MediosPago />}

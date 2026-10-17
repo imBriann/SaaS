@@ -31,10 +31,14 @@ describe('Teléfono, ubicación y aceptación legal obligatorios antes de pagar'
     expect(sin.statusCode).toBe(400);
     expect(sin.json().error.details.faltan).toEqual(expect.arrayContaining(['telefono', 'direccion', 'aceptacion_legal']));
     expect(sin.json().error.details.faltan).not.toContain('nit');
+    // El mensaje dice qué falta (no solo «faltan datos») y el borrador lo informa para que la pantalla de pago lo muestre.
+    expect(sin.json().error.message).toMatch(/el teléfono de contacto.*el país, departamento, municipio y dirección del negocio/);
+    expect((await get(tk)).json().faltantes_pago).toEqual(expect.arrayContaining(['telefono', 'direccion', 'aceptacion_legal']));
 
     const parcial = await patch(tk, { negocio: { telefono_pais: 'CO', telefono_nacional: '300 123 4567' } });
     expect(parcial.json().negocio.telefono).toBe('+573001234567');
     expect((await post(`/api/onboarding/borradores/${tk}/pago`)).json().error.details.faltan).not.toContain('telefono');
+    expect((await get(tk)).json().faltantes_pago).not.toContain('telefono');
   });
 
   it('la aceptación guarda versión, fecha y huella del origen; sin marcar las dos casillas se rechaza', async () => {

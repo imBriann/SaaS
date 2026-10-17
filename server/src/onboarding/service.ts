@@ -40,6 +40,32 @@ import { imageSize } from 'image-size';
  */
 export { puedeContratar };
 
+/** Cómo se nombra, para la persona, lo que falta antes de pagar. */
+export const ETIQUETA_FALTANTE: Record<string, string> = {
+  nombre: 'el nombre del negocio', email: 'el correo del administrador', subdominio: 'la dirección web', correo_verificado: 'la verificación del correo',
+  nit: 'el NIT con su dígito de verificación', telefono: 'el teléfono de contacto', direccion: 'el país, departamento, municipio y dirección del negocio',
+  facturacion: 'los datos de facturación', aceptacion_legal: 'la aceptación de los términos y la política de datos',
+};
+
+/**
+ * Lo que falta para poder pagar. Teléfono y ubicación del comercio son obligatorios siempre; el NIT, solo si necesita
+ * facturación electrónica. Una alta empezada antes de que se exigieran los muestra aquí en vez de fallar al pagar.
+ */
+export function faltantesDePago(d: any, cuenta: { proveedor: string } | null): string[] {
+  const n = d.negocio ?? {};
+  const faltan: string[] = [];
+  if (!n.nombre) faltan.push('nombre');
+  if (!n.email) faltan.push('email');
+  if (!n.slug) faltan.push('subdominio');
+  if (!d.email_verificado_en || d.email_verificado !== n.email) faltan.push('correo_verificado');
+  if (d.clasificacion?.factura_electronica && (!n.nit || !n.nit_dv || !nitValido(`${n.nit}-${n.nit_dv}`))) faltan.push('nit');
+  if (!n.telefono) faltan.push('telefono');
+  if (!n.pais || !n.departamento || !n.municipio || !n.direccion) faltan.push('direccion');
+  if (!aceptacionVigente(d.aceptacion_legal)) faltan.push('aceptacion_legal');
+  if (cuenta?.proveedor === 'wompi' && !n.facturacion?.documento_cifrado) faltan.push('facturacion');
+  return faltan;
+}
+
 function publicDraft(d: any) {
   const cotizacion = d.recomendacion?.cotizacion ?? quoteClassification(d.clasificacion);
   const oferta = ofertaAlta(cotizacion.total);
@@ -48,6 +74,7 @@ function publicDraft(d: any) {
     correo_verificado: !!d.email_verificado_en && d.email_verificado === d.negocio?.email,
     aceptacion_legal: d.aceptacion_legal ? { version: d.aceptacion_legal.version, aceptado_en: d.aceptacion_legal.aceptado_en, vigente: aceptacionVigente(d.aceptacion_legal) } : null,
     legal_version: LEGAL.version,
+    faltantes_pago: faltantesDePago(d, cuentaPlataforma()),
     cotizacion,
     // Lo que se cobraría hoy al pagar (calculado en el servidor; el navegador no lo envía).
     oferta: { modalidad: oferta.modalidad, monto: oferta.monto, monto_referencia: oferta.montoReferencia, acceso_dias: oferta.accesoDias, concepto: oferta.concepto },
@@ -299,20 +326,10 @@ export async function startCheckout(db: Database, tk: string, correlacion = uuid
   // La modalidad institucional cobra dinero real: nunca con la pasarela simulada ni en pruebas.
   if (config.institucional.activo && (cuenta.proveedor !== 'wompi' || cuenta.entorno !== 'produccion')) throw new AppError('CONFLICT', 'El pago institucional no está habilitado.');
   if (d.estado === 'APROVISIONADO') throw new AppError('CONFLICT', 'Esta empresa ya fue creada.');
+  const faltan = faltantesDePago(d, cuenta);
+  if (faltan.length) throw new AppError('VALIDATION', `Faltan datos para continuar: ${faltan.map((k) => ETIQUETA_FALTANTE[k] ?? k).join(', ')}.`, { faltan });
   const n = d.negocio ?? {};
-  const faltan: string[] = [];
-  if (!n.nombre) faltan.push('nombre');
-  if (!n.email) faltan.push('email');
-  if (!n.slug) faltan.push('subdominio');
-  if (!d.email_verificado_en || d.email_verificado !== n.email) faltan.push('correo_verificado');
-  if (d.clasificacion?.factura_electronica && (!n.nit || !n.nit_dv || !nitValido(`${n.nit}-${n.nit_dv}`))) faltan.push('nit');
-  // Teléfono y ubicación del comercio son obligatorios siempre; el NIT, solo si necesita facturación electrónica.
-  if (!n.telefono) faltan.push('telefono');
-  if (!n.pais || !n.departamento || !n.municipio || !n.direccion) faltan.push('direccion');
-  if (!aceptacionVigente(d.aceptacion_legal)) faltan.push('aceptacion_legal');
   const facturacion: FacturacionGuardada | null = n.facturacion?.documento_cifrado ? n.facturacion : null;
-  if (cuenta.proveedor === 'wompi' && !facturacion) faltan.push('facturacion');
-  if (faltan.length) throw new AppError('VALIDATION', 'Faltan datos para continuar.', { faltan });
   const entorno = cuenta.proveedor === 'wompi' ? cuenta.entorno : null;
   // Wompi devuelve al mismo origen donde empezó el alta; en producción solo https (si no, el dominio público).
   const origen = origenRetorno(retorno);
