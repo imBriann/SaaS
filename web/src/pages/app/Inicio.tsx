@@ -4,6 +4,7 @@ import { api, cop, fechaLarga, hora, hoyLocal } from '../../api';
 import { Cabecera, useSesion } from '../../components/Layout';
 import { Cargando, CicloFiscal, Cifra, ErrorCarga, Estado, Medidor, Mensaje, Recibo, Tarjeta, useApi, Vacio, type TipoMensaje } from '../../components/ui';
 import { Icon } from '../../components/icons';
+import { AiOrb } from '../../components/AiOrb';
 import { ThinkingOrb } from 'thinking-orbs';
 import { useWorkspaceBirthReady } from '../../components/WorkspaceBirth';
 
@@ -172,7 +173,7 @@ function AccesoAsistente() {
   if (!puede('ai:assist') || !s.modulos.includes('ia')) return null;
   const abrir = (texto: string) => { if (texto.trim()) nav(`/asistente?q=${encodeURIComponent(texto.trim())}`); };
   return (
-    <Tarjeta titulo={<span className="fila"><Icon n="ia" className="" size={16} /> Pregúntale a tu negocio</span>} acciones={<Link to="/asistente" className="btn sutil peq">Abrir el asistente</Link>}>
+    <Tarjeta titulo={<span className="fila"><AiOrb state="breathing" size={20} theme="light" label="Asistente" /> Pregúntale a tu negocio</span>} acciones={<Link to="/asistente" className="btn sutil peq">Abrir el asistente</Link>}>
       <div className="col" style={{ gap: 8 }}>
         <span className="tenue peq-txt">El asistente conoce tu negocio, recuerda la conversación y consulta tus datos con tus permisos. Sus consultas dejan recibo.</span>
         <div className="fila envolver" style={{ gap: 6 }}>{[

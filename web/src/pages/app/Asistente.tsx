@@ -1,11 +1,52 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import type { OrbState } from 'thinking-orbs';
 import { api, hace, hora } from '../../api';
 import { Cabecera, useSesion } from '../../components/Layout';
-import { Cargando, Confirmar, Mensaje, Recibo, useAccion, useApi, Vacio } from '../../components/ui';
+import { AiOrb } from '../../components/AiOrb';
+import { AiVoice, useEscrituraEnVivo } from '../../components/AiVoice';
+import { Cargando, Confirmar, Recibo, useAccion, useApi, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
 
-interface Item { id?: string; rol: 'user' | 'assistant'; contenido: string; ejecuciones?: any[]; creado_en?: string }
+interface Item { id?: string; rol: 'user' | 'assistant'; contenido: string; ejecuciones?: any[]; creado_en?: string; nuevo?: boolean }
+
+const PENSANDO = ['Entendiendo tu pregunta…', 'Consultando los datos de tu negocio…', 'Armando la respuesta…'];
+
+/** Mientras espera, la IA dice en qué va: no es una barra de carga, es la voz del asistente. */
+function Pensando() {
+  const [i, setI] = useState(0);
+  useEffect(() => { const t = window.setInterval(() => setI((v) => Math.min(v + 1, PENSANDO.length - 1)), 2200); return () => window.clearInterval(t); }, []);
+  return (
+    <div className="as-msg ia as-pensando" role="status">
+      <span className="as-avatar"><AiOrb state="working" size={20} theme="light" label="Consultando" /></span>
+      <span className="as-pensando-txt" key={i}>{PENSANDO[i]}</span>
+    </div>
+  );
+}
+
+/** Respuesta del asistente. Si acaba de llegar, se escribe en vivo y los recibos aparecen al terminar. */
+function Respuesta({ m, alAvanzar }: { m: Item; alAvanzar: () => void }) {
+  const vivo = !!m.nuevo;
+  const { visible, escribiendo } = useEscrituraEnVivo(vivo ? m.contenido : '', { escribir: Math.max(4, Math.min(16, 2200 / Math.max(m.contenido.length, 1))) });
+  useEffect(() => { if (vivo) alAvanzar(); }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div className="as-msg ia">
+      <span className="as-avatar"><AiOrb state="breathing" size={20} theme="light" label="Asistente" /></span>
+      <div className="as-burbuja-col">
+        <div className="as-quien"><b>Asistente</b>{m.creado_en && <span>{hora(m.creado_en)}</span>}</div>
+        <div className="as-burbuja">
+          {vivo ? <>
+            <p className="as-texto" aria-hidden="true"><span className="ai-voice-ghost">{m.contenido}</span><span>{visible}{escribiendo && <span className="ai-voice-caret" />}</span></p>
+            <p className="sr">{m.contenido}</p>
+          </> : <p className="as-texto">{m.contenido}</p>}
+        </div>
+        {!!m.ejecuciones?.length && (!vivo || !escribiendo) && (
+          <div className="as-recibos">{m.ejecuciones.map((r) => <Recibo key={r.id} e={{ ...r, nivel_riesgo: r.riesgo, motivo_denegacion: r.motivo }} compacto />)}</div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Asistente IA del panel. La conversación vive en el servidor: recargar la página o cambiar de
@@ -24,6 +65,7 @@ export function Asistente() {
   const [noEncontrado, setNoEncontrado] = useState(false);
   const [q, setQ] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  const [recien, setRecien] = useState(false);
   const [fallo, setFallo] = useState<string | null>(null);
   const [verLista, setVerLista] = useState(false);
   const [borrar, setBorrar] = useState(false);
@@ -33,6 +75,7 @@ export function Asistente() {
   const fin = useRef<HTMLDivElement>(null);
   const campo = useRef<HTMLTextAreaElement>(null);
   const permitido = puede('ai:assist') && s.modulos.includes('ia');
+  const vacio = mensajes.length === 0 && !cargandoHilo && !noEncontrado && !ocupado;
 
   // Abrir un hilo guardado. El que acaba de crearse aquí ya está en pantalla.
   useEffect(() => {
@@ -49,19 +92,37 @@ export function Asistente() {
     return () => { vivo = false; };
   }, [id]);
 
-  useEffect(() => { fin.current?.scrollIntoView({ block: 'end' }); }, [mensajes, ocupado]);
+  const alFinal = () => fin.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  useEffect(() => { alFinal(); }, [mensajes, ocupado]);
+
+  // El orbe acompaña: escucha mientras escribes, resuelve mientras consulta y se «forma» al responder.
+  useEffect(() => {
+    if (!recien) return;
+    const t = window.setTimeout(() => setRecien(false), 2600);
+    return () => window.clearTimeout(t);
+  }, [recien]);
+  const orbe: OrbState = ocupado ? 'solving' : recien ? 'shaping' : q.trim() ? 'listening' : 'breathing';
+
+  // El cuadro de escritura crece con el texto, hasta un tope.
+  useEffect(() => {
+    const el = campo.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
+  }, [q]);
 
   const preguntar = async (texto: string) => {
     const pregunta = texto.trim();
     if (!pregunta || ocupado) return;
     const hiloAlEnviar = id;
-    setFallo(null); setQ(''); setOcupado(true);
-    setMensajes((m) => [...m, { rol: 'user', contenido: pregunta }]);
+    setFallo(null); setQ(''); setOcupado(true); setRecien(false);
+    setMensajes((m) => [...m.map((x) => ({ ...x, nuevo: false })), { rol: 'user', contenido: pregunta, creado_en: new Date().toISOString() }]);
     try {
       const r = await api.post('/api/t/asistente', { pregunta, hilo_id: hiloAlEnviar });
       // Si la persona cambió de conversación mientras esperaba, la respuesta ya quedó guardada en la suya.
       if (actual.current === hiloAlEnviar) {
-        setMensajes((m) => [...m, { rol: 'assistant', contenido: r.texto, ejecuciones: r.ejecuciones }]);
+        setMensajes((m) => [...m, { rol: 'assistant', contenido: r.texto, ejecuciones: r.ejecuciones, creado_en: new Date().toISOString(), nuevo: true }]);
+        setRecien(true);
         if (r.titulo && !hiloAlEnviar) setTitulo(r.titulo);
         if (r.hilo_id && r.hilo_id !== hiloAlEnviar) { recienCreado.current = r.hilo_id; nav(`/asistente/${r.hilo_id}`, { replace: true }); }
       }
@@ -102,6 +163,8 @@ export function Asistente() {
     { texto: '¿Cómo emito una nota crédito?', permiso: 'ai:assist', modulo: 'facturacion' },
   ].filter((p) => puede(p.permiso) && s.modulos.includes(p.modulo));
   const lista = hilos.data ?? [];
+  const nombre = s.usuario.nombre.split(' ')[0];
+  const saludo = `Hola, ${nombre}. Soy el asistente de ${s.tenant.nombre}. Conozco tu catálogo, tus horarios y tus módulos; lo que cambia —ventas, citas, existencias— lo consulto en el momento y te muestro de dónde sale.`;
 
   return (
     <>
@@ -117,8 +180,8 @@ export function Asistente() {
               <div className="cuerpo"><span className="tenue peq-txt">Cuando preguntes algo, la conversación quedará guardada aquí. Solo tú la ves.</span></div>
             ) : (
               <ul className="lista asistente-hilos">
-                {lista.map((h) => (
-                  <li key={h.id}>
+                {lista.map((h, i) => (
+                  <li key={h.id} style={{ ['--i' as any]: Math.min(i, 8) }}>
                     <button type="button" className={`asistente-hilo ${h.id === id ? 'activo' : ''}`} aria-current={h.id === id ? 'true' : undefined} onClick={() => nav(`/asistente/${h.id}`)}>
                       <span className="lista-titulo cortar">{h.titulo}</span>
                       <span className="lista-detalle">{hace(h.actualizado_en)} · {h.preguntas} {h.preguntas === 1 ? 'pregunta' : 'preguntas'}</span>
@@ -129,44 +192,51 @@ export function Asistente() {
             )}
           </aside>
 
-          <section className="tarjeta panel-hilo" aria-label="Conversación con el asistente">
-            <div className="cab">
-              <div className="conv-cab-txt">
-                <h2 className="titulo-tarjeta cortar">{titulo ?? 'Nueva conversación'}</h2>
-                <span className="tenue">Solo tú ves esta conversación.</span>
+          <section className={`panel-hilo as-escena ${vacio ? 'is-vacio' : ''} ${ocupado ? 'is-working' : ''}`} aria-label="Conversación con el asistente" aria-busy={ocupado}>
+            <header className="as-cab">
+              <span className="as-cab-orbe" aria-hidden={vacio}>
+                <span className="orb-halo" aria-hidden="true" /><span className="orb-halo" aria-hidden="true" />
+                <AiOrb large theme="dark" state={orbe} label={ocupado ? 'Consultando' : 'Asistente de Omnegia'} />
+              </span>
+              <div className="as-cab-txt">
+                <h2 className="cortar">{titulo ?? 'Nueva conversación'}</h2>
+                <span className="as-estado"><i className={`ai-status-dot ${ocupado ? 'active' : 'live'}`} />{ocupado ? 'Consultando tus datos' : 'Conoce tu negocio · solo tú ves esta conversación'}</span>
               </div>
-              {id && !noEncontrado && <button className="btn sutil peq" style={{ marginLeft: 'auto' }} onClick={() => setBorrar(true)}><Icon n="x" className="" size={14} />Borrar</button>}
-            </div>
-            <div className="hilo-scroll">
+              {id && !noEncontrado && <button className="as-borrar" onClick={() => setBorrar(true)}><Icon n="x" className="" size={14} />Borrar</button>}
+            </header>
+
+            <div className="as-cuerpo">
               {cargandoHilo ? <Cargando filas={4} /> : noEncontrado ? (
                 <Vacio titulo="No encontramos esa conversación" accion={<button className="btn" onClick={() => nav('/asistente')}>Empezar una nueva</button>}>Puede que ya la hayas borrado.</Vacio>
+              ) : vacio ? (
+                <div className="as-hero">
+                  <div className="registration-orb-stage"><span className="orb-halo" aria-hidden="true" /><span className="orb-halo" aria-hidden="true" />
+                    <AiOrb large theme="dark" state={orbe} label="Asistente de Omnegia" /></div>
+                  <div className="as-hero-voz"><AiVoice texto={saludo} /></div>
+                  {sugerencias.length > 0 && <div className="as-sugerencias">{sugerencias.map((p, i) => (
+                    <button key={p.texto} type="button" className="as-sugerencia" style={{ ['--i' as any]: i }} onClick={() => preguntar(p.texto)} disabled={ocupado}>{p.texto}<Icon n="flecha" className="" size={14} /></button>
+                  ))}</div>}
+                </div>
               ) : (
-                <div className="hilo" role="log" aria-live="polite">
-                  {mensajes.length === 0 && (
-                    <div className="col asistente-inicio">
-                      <b>¿Qué quieres saber de {s.tenant.nombre}?</b>
-                      <span className="tenue peq-txt">Conoce tu catálogo, horarios y módulos. Las cifras y los datos de tus clientes los consulta en el momento, con tus permisos, y cada consulta deja su recibo.</span>
-                      {sugerencias.length > 0 && <div className="fila envolver" style={{ gap: 6 }}>{sugerencias.map((p) => <button key={p.texto} type="button" className="chip" onClick={() => preguntar(p.texto)} disabled={ocupado}>{p.texto}</button>)}</div>}
-                    </div>
-                  )}
+                <div className="as-hilo" role="log" aria-live="polite">
                   {mensajes.map((m, i) => m.rol === 'user'
-                    ? <Mensaje key={m.id ?? `u${i}`} tipo="cliente" rol="Tú" hora={m.creado_en ? hora(m.creado_en) : undefined}>{m.contenido}</Mensaje>
-                    : <div key={m.id ?? `a${i}`} className="col" style={{ gap: 6, alignItems: 'flex-end', minWidth: 0 }}>
-                        <Mensaje tipo="ia" rol="Asistente" hora={m.creado_en ? hora(m.creado_en) : undefined}>{m.contenido}</Mensaje>
-                        {m.ejecuciones?.map((r) => <Recibo key={r.id} e={{ ...r, nivel_riesgo: r.riesgo, motivo_denegacion: r.motivo }} compacto />)}
-                      </div>)}
-                  {ocupado && <span className="tenue peq-txt" style={{ alignSelf: 'flex-end' }}>Consultando…</span>}
+                    ? <div key={m.id ?? `u${i}`} className="as-msg yo"><div className="as-burbuja-col"><div className="as-burbuja"><p className="as-texto">{m.contenido}</p></div>{m.creado_en && <span className="as-hora">{hora(m.creado_en)}</span>}</div></div>
+                    : <Respuesta key={m.id ?? `a${i}`} m={m} alAvanzar={alFinal} />)}
+                  {ocupado && <Pensando />}
                   <div ref={fin} />
                 </div>
               )}
             </div>
-            <form className="composer" onSubmit={enviar}>
+
+            <form className="as-composer" onSubmit={enviar}>
               {fallo && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{fallo}</div>}
-              <textarea ref={campo} className="input" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={teclas} maxLength={1000} placeholder="Escribe tu pregunta. Enter envía, Shift + Enter salta de línea." aria-label="Pregunta al asistente" disabled={noEncontrado} />
-              <div className="fila" style={{ justifyContent: 'space-between', gap: 12 }}>
-                <span className="tenue peq-txt">El asistente puede equivocarse. <Link to="/soporte">¿Necesitas a una persona?</Link></span>
-                <button className="btn primario" disabled={ocupado || !q.trim() || noEncontrado}><Icon n="enviar" className="" size={16} />{ocupado ? 'Consultando…' : 'Preguntar'}</button>
+              <div className="as-caja">
+                <textarea ref={campo} rows={1} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={teclas} maxLength={1000} placeholder="Pregúntale a tu negocio…" aria-label="Pregunta al asistente" disabled={noEncontrado} />
+                <button type="submit" className="composer-send" disabled={ocupado || !q.trim() || noEncontrado} aria-label={ocupado ? 'Consultando' : 'Preguntar'}>
+                  {ocupado ? <AiOrb state="working" size={20} theme="dark" label="Consultando" /> : <Icon n="enviar" size={18} className="" />}
+                </button>
               </div>
+              <span className="as-pie">Enter envía · Shift + Enter salta de línea · El asistente puede equivocarse. <Link to="/soporte">¿Necesitas a una persona?</Link></span>
             </form>
           </section>
         </div>

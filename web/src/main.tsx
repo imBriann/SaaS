@@ -8,6 +8,7 @@ import './japanese.css';
 import './landing.css';
 import './support.css';
 import './registration.css';
+import './asistente.css';
 import './workspace-birth.css';
 import './creation.css';
 import './legal.css';
