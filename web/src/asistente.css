@@ -3,16 +3,27 @@
    orbe vivo, halos, voz que se escribe) llevada a una conversación.
    Los orbes y la voz salen de registration.css (.ai-orb, .orb-halo, .ai-voice).
    ===================================================================== */
-.asistente-detalle { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
-.asistente-detalle .panel-hilo { height: calc(100dvh - 210px); min-height: 480px; }
+
+/* El asistente ocupa toda la ventana a la derecha del menú: no es una página con título, es una conversación. */
+.app-completa .pagina.completa { flex: 1; min-height: 0; max-width: none; margin: 0; padding: 0; }
+@media (min-width: 1001px) {
+  .app.app-completa { height: 100dvh; overflow: hidden; }
+  .app-completa .marco { height: 100dvh; min-height: 0; }
+}
+
+/* Una sola superficie: lista de conversaciones a la izquierda, escena a la derecha, sin tarjetas sueltas. */
+.as-ventana { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); background: #fbfaff; }
 
 @keyframes as-in { from { opacity: 0; transform: translateY(14px) scale(.985); filter: blur(3px); } }
 @keyframes as-lista-in { from { opacity: 0; transform: translateX(-8px); } }
 
 /* ---------------------------------------------------------------- lista de conversaciones */
-.asistente-lista { position: sticky; top: 16px; display: flex; flex-direction: column; max-height: calc(100dvh - 210px); overflow: hidden; }
-.asistente-hilos { overflow-y: auto; margin: 0; padding: 6px 8px 10px; list-style: none; }
-.asistente-hilos > * + * { border-top: 0; }
+.as-lista { min-height: 0; display: flex; flex-direction: column; background: var(--superficie); border-right: 1px solid var(--borde); }
+.as-lista-cab { flex: none; display: flex; flex-direction: column; gap: 12px; padding: 18px 14px 12px; }
+.as-lista-cab h2 { margin: 0; padding: 0 4px; font-size: 13px; font-weight: 600; letter-spacing: .01em; color: var(--tinta-3); }
+.as-lista-cab .btn { width: 100%; justify-content: center; }
+.as-lista-vacia { margin: 0; padding: 8px 18px; font-size: 13px; line-height: 1.5; color: var(--tinta-3); }
+.asistente-hilos { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 4px 8px 12px; list-style: none; }
 .asistente-hilos > li { animation: as-lista-in 420ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
 .asistente-hilo { position: relative; display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0; padding: 10px 12px 10px 14px; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background-color 180ms ease, transform 160ms var(--ease-out); }
 .asistente-hilo::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background: linear-gradient(#8f78f0, #5742c9); transform: scaleY(0); transition: transform 280ms var(--ease-out); }
@@ -23,7 +34,7 @@
 .asistente-hilo.activo .lista-titulo { color: #3f2da0; }
 
 /* ---------------------------------------------------------------- escena */
-.as-escena { position: relative; display: flex; flex-direction: column; overflow: hidden; border-radius: 14px; background: #fbfaff; border-color: #ddd8ee; }
+.as-escena { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: #fbfaff; }
 /* El escenario oscuro vive detrás de cabecera y cuerpo: sin costura cuando no hay mensajes. */
 .as-escena::before { content: ''; position: absolute; inset: 0; background: radial-gradient(85% 75% at 50% 46%, #2f2760 0%, #19182d 72%); opacity: 0; transition: opacity 700ms var(--ease-out); pointer-events: none; }
 .as-escena.is-vacio::before { opacity: 1; }
@@ -43,11 +54,14 @@
 @media (hover: hover) { .as-borrar:hover { background: #ffffff22; border-color: #ffffff48; color: #fff; } }
 .as-borrar:active { transform: scale(.96); }
 
+.as-lista-btn { display: none; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid #ffffff26; border-radius: 999px; background: #ffffff10; color: #ddd6ee; font: inherit; font-size: 13px; cursor: pointer; }
+
 /* Sin mensajes, el orbe grande de la escena toma el lugar del de la cabecera. */
 .as-escena.is-vacio .as-cab { padding-block: 14px 0; padding-left: 28px; background: transparent; }
 .as-escena.is-vacio .as-cuerpo { background: transparent; }
 .as-escena.is-vacio .as-cab-orbe { width: 0; height: 0; margin-right: -14px; opacity: 0; overflow: hidden; }
-.as-escena.is-vacio .as-estado { display: none; }
+.as-escena.is-vacio .as-estado, .as-escena.is-vacio .as-cab-txt { display: none; }
+@media (min-width: 1001px) { .as-escena.is-vacio .as-cab { display: none; } }
 
 /* ---------------------------------------------------------------- cuerpo */
 .as-cuerpo { position: relative; flex: 1; min-height: 0; overflow-y: auto; scroll-behavior: smooth; background: radial-gradient(120% 60% at 50% -8%, #ebe6ff 0%, transparent 62%), #fbfaff; }
@@ -90,7 +104,7 @@
 @keyframes as-pulso { 50% { opacity: .45; } }
 
 /* ---------------------------------------------------------------- composer */
-.as-composer { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 12px; background: #fbfaff; border-top: 1px solid #e6e1f3; }
+.as-composer { position: relative; z-index: 1; flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 12px; background: #fbfaff; border-top: 1px solid #e6e1f3; }
 .as-caja { display: flex; align-items: flex-end; gap: 10px; padding: 8px 8px 8px 16px; background: #fff; border: 1px solid #b4aec6; border-radius: 22px; box-shadow: 0 10px 28px -22px #28233b80; transition: border-color 180ms ease, box-shadow 180ms ease; }
 .as-caja:focus-within { border-color: #6952d7; box-shadow: 0 0 0 3px #6952d71f, 0 10px 28px -22px #28233b80; }
 .as-caja textarea { flex: 1; min-width: 0; max-height: 168px; resize: none; border: 0; outline: 0; box-shadow: none; background: transparent; font: inherit; font-size: 16px; line-height: 1.5; color: #242438; padding: 8px 0; caret-color: #5742c9; overflow-y: auto; }
@@ -98,20 +112,36 @@
 .as-caja .composer-send { align-self: flex-end; }
 .as-pie { font-size: 12.5px; color: #6d6781; line-height: 1.4; padding: 0 6px; }
 .as-pie a { color: #4b3a96; }
+/* Sobre el escenario oscuro el compositor flota: solo la caja es clara. */
+.as-composer { transition: background-color 500ms var(--ease-out), border-color 500ms ease; }
+.as-escena.is-vacio .as-composer { background: transparent; border-top-color: transparent; }
+.as-escena.is-vacio .as-pie { color: #bdb5d9; }
+.as-escena.is-vacio .as-pie a { color: #dcd3ff; }
 
 /* ---------------------------------------------------------------- pantallas angostas */
 @media (max-width: 1000px) {
-  .asistente-detalle { grid-template-columns: minmax(0, 1fr); }
-  /* Barra superior y barra inferior ocupan ~120px: el panel cabe entero cuando se llega a él. */
-  .asistente-detalle .panel-hilo { height: calc(100dvh - 130px); }
-  .asistente-lista { display: none; position: static; max-height: none; }
-  .asistente-detalle.ver-lista > .asistente-lista { display: flex; }
-  .asistente-detalle.ver-lista > .panel-hilo { display: none; }
+  /* Barra superior (56px) y barra inferior (64px) ocupan el resto: el panel cabe entero. */
+  .as-ventana { grid-template-columns: minmax(0, 1fr); height: calc(100dvh - 56px - 64px - env(safe-area-inset-bottom)); flex: none; }
+  .as-lista { display: none; border-right: 0; }
+  .as-ventana.ver-lista > .as-lista { display: flex; }
+  .as-ventana.ver-lista > .as-escena { display: none; }
+  .as-lista-btn { display: inline-flex; }
+  .as-escena.is-vacio .as-cab { padding: 10px 12px 0; }
   .as-hero .registration-orb-stage { min-height: 200px; }
   .as-hero .ai-orb-large canvas { transform: scale(2.1); }
   .as-hero-voz { min-height: 150px; }
   .as-hero .ai-voice { font-size: 18px; }
   .as-msg { max-width: 94%; }
+}
+@media (max-height: 760px) and (min-width: 1001px) {
+  .as-hero .registration-orb-stage { min-height: 190px; }
+  .as-hero .ai-orb-large canvas { transform: scale(2.1); }
+  .as-hero-voz { min-height: 100px; }
+}
+@media (max-width: 760px) {
+  .as-cab { gap: 10px; padding: 10px 12px; }
+  .as-cab-orbe, .as-estado { display: none; }
+  .as-cab-txt h2 { font-size: 15px; }
 }
 @media (max-width: 520px) {
   .as-pie { display: none; }

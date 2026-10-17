@@ -166,44 +166,45 @@ export function Asistente() {
   const nombre = s.usuario.nombre.split(' ')[0];
   const saludo = `Hola, ${nombre}. Soy el asistente de ${s.tenant.nombre}. Conozco tu catálogo, tus horarios y tus módulos; lo que cambia —ventas, citas, existencias— lo consulto en el momento y te muestro de dónde sale.`;
 
+  const nueva = () => { setVerLista(false); nav('/asistente'); campo.current?.focus(); };
+
   return (
     <>
-      <Cabecera titulo="Asistente IA" sub="Pregunta por tu negocio. Recuerda la conversación y consulta tus datos con tus permisos.">
-        <button className="btn solo-movil" onClick={() => setVerLista((v) => !v)} aria-expanded={verLista}><Icon n="conversaciones" className="" size={16} />Conversaciones</button>
-        <button className="btn primario" onClick={() => { nav('/asistente'); campo.current?.focus(); }} disabled={!id && mensajes.length === 0}><Icon n="mas" className="" size={16} />Nueva conversación</button>
-      </Cabecera>
-      <div className="contenido">
-        <div className={`asistente-detalle ${verLista ? 'ver-lista' : ''}`}>
-          <aside className="tarjeta asistente-lista" aria-label="Tus conversaciones con el asistente">
-            <div className="cab"><h2 className="titulo-tarjeta">Tus conversaciones</h2></div>
-            {hilos.cargando && !hilos.data ? <Cargando filas={4} /> : lista.length === 0 ? (
-              <div className="cuerpo"><span className="tenue peq-txt">Cuando preguntes algo, la conversación quedará guardada aquí. Solo tú la ves.</span></div>
-            ) : (
-              <ul className="lista asistente-hilos">
-                {lista.map((h, i) => (
-                  <li key={h.id} style={{ ['--i' as any]: Math.min(i, 8) }}>
-                    <button type="button" className={`asistente-hilo ${h.id === id ? 'activo' : ''}`} aria-current={h.id === id ? 'true' : undefined} onClick={() => nav(`/asistente/${h.id}`)}>
-                      <span className="lista-titulo cortar">{h.titulo}</span>
-                      <span className="lista-detalle">{hace(h.actualizado_en)} · {h.preguntas} {h.preguntas === 1 ? 'pregunta' : 'preguntas'}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </aside>
+      <div className={`as-ventana ${verLista ? 'ver-lista' : ''}`}>
+        <aside className="as-lista" aria-label="Tus conversaciones con el asistente">
+          <div className="as-lista-cab">
+            <h2>Conversaciones</h2>
+            <button className="btn primario" onClick={nueva}><Icon n="mas" className="" size={16} />Nueva conversación</button>
+          </div>
+          {hilos.cargando && !hilos.data ? <Cargando filas={4} /> : lista.length === 0 ? (
+            <p className="as-lista-vacia">Cuando preguntes algo, la conversación quedará guardada aquí. Solo tú la ves.</p>
+          ) : (
+            <ul className="asistente-hilos">
+              {lista.map((h, i) => (
+                <li key={h.id} style={{ ['--i' as any]: Math.min(i, 8) }}>
+                  <button type="button" className={`asistente-hilo ${h.id === id ? 'activo' : ''}`} aria-current={h.id === id ? 'true' : undefined} onClick={() => nav(`/asistente/${h.id}`)}>
+                    <span className="lista-titulo cortar">{h.titulo}</span>
+                    <span className="lista-detalle">{hace(h.actualizado_en)} · {h.preguntas} {h.preguntas === 1 ? 'pregunta' : 'preguntas'}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </aside>
 
-          <section className={`panel-hilo as-escena ${vacio ? 'is-vacio' : ''} ${ocupado ? 'is-working' : ''}`} aria-label="Conversación con el asistente" aria-busy={ocupado}>
-            <header className="as-cab">
-              <span className="as-cab-orbe" aria-hidden={vacio}>
-                <span className="orb-halo" aria-hidden="true" /><span className="orb-halo" aria-hidden="true" />
-                <AiOrb large theme="dark" state={orbe} label={ocupado ? 'Consultando' : 'Asistente de Omnegia'} />
-              </span>
-              <div className="as-cab-txt">
-                <h2 className="cortar">{titulo ?? 'Nueva conversación'}</h2>
-                <span className="as-estado"><i className={`ai-status-dot ${ocupado ? 'active' : 'live'}`} />{ocupado ? 'Consultando tus datos' : 'Conoce tu negocio · solo tú ves esta conversación'}</span>
-              </div>
-              {id && !noEncontrado && <button className="as-borrar" onClick={() => setBorrar(true)}><Icon n="x" className="" size={14} />Borrar</button>}
-            </header>
+        <section className={`as-escena ${vacio ? 'is-vacio' : ''} ${ocupado ? 'is-working' : ''}`} aria-label="Conversación con el asistente" aria-busy={ocupado}>
+          <header className="as-cab">
+            <button className="as-lista-btn" onClick={() => setVerLista((v) => !v)} aria-expanded={verLista}><Icon n="conversaciones" className="" size={16} />Conversaciones</button>
+            <span className="as-cab-orbe" aria-hidden={vacio}>
+              <span className="orb-halo" aria-hidden="true" /><span className="orb-halo" aria-hidden="true" />
+              <AiOrb large theme="dark" state={orbe} label={ocupado ? 'Consultando' : 'Asistente de Omnegia'} />
+            </span>
+            <div className="as-cab-txt">
+              <h2 className="cortar">{titulo ?? 'Nueva conversación'}</h2>
+              <span className="as-estado"><i className={`ai-status-dot ${ocupado ? 'active' : 'live'}`} />{ocupado ? 'Consultando tus datos' : 'Conoce tu negocio · solo tú ves esta conversación'}</span>
+            </div>
+            {id && !noEncontrado && <button className="as-borrar" onClick={() => setBorrar(true)}><Icon n="x" className="" size={14} />Borrar</button>}
+          </header>
 
             <div className="as-cuerpo">
               {cargandoHilo ? <Cargando filas={4} /> : noEncontrado ? (
@@ -238,8 +239,7 @@ export function Asistente() {
               </div>
               <span className="as-pie">Enter envía · Shift + Enter salta de línea · El asistente puede equivocarse. <Link to="/soporte">¿Necesitas a una persona?</Link></span>
             </form>
-          </section>
-        </div>
+        </section>
       </div>
       {borrar && id && <Confirmar titulo="Borrar esta conversación" efecto={<>Se elimina con todos sus mensajes y el asistente deja de recordarla. Las consultas que hizo siguen en la auditoría de tu empresa.</>} textoBoton="Borrar"
         onCerrar={() => setBorrar(false)}
