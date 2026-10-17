@@ -112,6 +112,45 @@ function SelectorActividad({ sectores, c, ocupado, cambiar }: { sectores: { id: 
 }
 
 type Sectores = { id: string; nombre: string; tipos: string[] }[];
+
+const NOMBRE_CAMPO: Record<string, string> = {
+  sector: 'Sector', tipo_negocio: 'Tipo de negocio', actividades_adicionales: 'Otras actividades', tamano: 'Equipo que atenderá',
+  volumen_conv_mes: 'Conversaciones al mes', factura_electronica: 'Factura electrónica', modulos_sugeridos: 'Funciones',
+};
+
+/** Un valor tal como lo leería una persona, no como se guarda. */
+function legible(campo: string, v: unknown, sectores: Sectores): string {
+  if (v == null || v === '') return 'Sin definir';
+  if (campo === 'sector') return sectores.find((s) => s.id === v)?.nombre ?? String(v);
+  if (campo === 'tamano') return TAMANOS.find(([k]) => k === v)?.[1] ?? String(v);
+  if (campo === 'volumen_conv_mes') return VOLUMENES.find(([k]) => k === v)?.[1] ?? String(v);
+  if (campo === 'factura_electronica') return v ? 'Sí, la necesito' : 'No por ahora';
+  if (campo === 'modulos_sugeridos') return (v as string[]).map((k) => FUNCIONES.find(([f]) => f === k)?.[1] ?? k).join(' · ') || 'Ninguna';
+  if (campo === 'actividades_adicionales') return (v as { tipo_negocio: string }[]).map((a) => a.tipo_negocio).join(', ') || 'Ninguna';
+  return String(v);
+}
+
+/**
+ * Lo que la persona eligió antes y lo que la IA lee ahora no coinciden (por ejemplo, si reescribió su descripción).
+ * Se muestran los dos valores lado a lado y se resuelve de una vez: nada cambia hasta que ella elija.
+ */
+function Conflictos({ conflictos, sectores, ocupado, cambiar }: { conflictos: { campo: string; valor: unknown; sugerencia: unknown }[]; sectores: Sectores; ocupado: boolean; cambiar: Cambiar }) {
+  const juntar = (clave: 'valor' | 'sugerencia') => Object.fromEntries(conflictos.map((x) => [x.campo, x[clave]]));
+  return (
+    <div className="ia-conflicto" role="status">
+      <b>Tus respuestas anteriores y lo que entendí ahora no coinciden</b>
+      <span>No cambié nada de lo que elegiste. Compara y decide:</span>
+      <dl className="ia-conflicto-lista">
+        {conflictos.map((x) => <div key={x.campo}><dt>{NOMBRE_CAMPO[x.campo] ?? x.campo}</dt><dd><span>Tú elegiste: <b>{legible(x.campo, x.valor, sectores)}</b></span><span>Ahora entiendo: <b>{legible(x.campo, x.sugerencia, sectores)}</b></span></dd></div>)}
+      </dl>
+      <div className="fila envolver" style={{ gap: 8 }}>
+        <button type="button" className="btn primario peq" disabled={ocupado} onClick={() => cambiar(juntar('sugerencia'))}>Usar lo que entendí ahora</button>
+        <button type="button" className="btn peq" disabled={ocupado} onClick={() => cambiar(juntar('valor'))}>Mantener mis respuestas</button>
+      </div>
+    </div>
+  );
+}
+
 type Adicional = { sector: string; tipo_negocio: string };
 const MAX_ADICIONALES = 3;
 
@@ -171,16 +210,7 @@ export function PropuestaIA({ c, ocupado, cambiar }: { c: any; ocupado: boolean;
       {c.justificacion && <p className="ia-resumen">{c.justificacion}</p>}
       {errorCatalogo && <p className="aviso" role="alert">{errorCatalogo}</p>}
 
-      {c.conflictos?.map((x: any) => (
-        <div className="ia-conflicto" key={x.campo} role="status">
-          <b>Tu respuesta y la nueva lectura no coinciden</b>
-          <span>Conservamos lo que elegiste. ¿Quieres mantenerlo o usar la sugerencia?</span>
-          <div className="fila envolver" style={{ gap: 8 }}>
-            <button type="button" className="btn peq" disabled={ocupado} onClick={() => cambiar({ [x.campo]: x.valor })}>Mantener mi respuesta</button>
-            <button type="button" className="btn sutil peq" disabled={ocupado} onClick={() => cambiar({ [x.campo]: x.sugerencia })}>Usar la sugerencia</button>
-          </div>
-        </div>
-      ))}
+      {c.conflictos?.length > 0 && <Conflictos conflictos={c.conflictos} sectores={sectores} ocupado={ocupado} cambiar={cambiar} />}
 
       <div className="ia-filas">
         <FilaDato indice={0} titulo="Actividad" estado={estadoActividad} ocupado={ocupado}

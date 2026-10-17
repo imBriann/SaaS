@@ -228,3 +228,7 @@
   .pago-metodos { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .pago-metodos label { transition: none; } }
+.ia-conflicto-lista { margin: 4px 0 8px; display: grid; gap: 8px; }
+.ia-conflicto-lista > div { display: grid; gap: 2px; }
+.ia-conflicto-lista dt { font-weight: 600; font-size: 14px; }
+.ia-conflicto-lista dd { margin: 0; display: grid; gap: 1px; font-size: 14.5px; line-height: 1.5; }

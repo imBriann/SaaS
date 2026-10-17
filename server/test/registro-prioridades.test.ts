@@ -1,7 +1,7 @@
 import { beforeAll,afterAll,describe,it,expect } from 'vitest';
 import ExcelJS from 'exceljs';
 import { setup,verificarAlta,codigoDelCorreo,login,api,CRED,type Env } from './helpers.js';
-import { classifyBusiness } from '../src/onboarding/classifier.js';
+import { classifyBusiness, sinActividadesContenidas } from '../src/onboarding/classifier.js';
 import { SinModelo,setLlm } from '../src/ai/llm/index.js';
 import { applyMapping,inferMapping,readSheet } from '../src/onboarding/importer.js';
 import { todayLocal } from '../src/lib/time.js';
@@ -24,6 +24,13 @@ describe('Registro: datos verificables y prioridad humana',()=>{
   const cafeSpa=await classifyBusiness('Tengo un café spa en Cúcuta con tres empleados.');
   expect(cafeSpa).toMatchObject({sector:'restaurante',tipo_negocio:'Cafetería'});expect(cafeSpa.actividades_adicionales?.map(a=>a.tipo_negocio)).toEqual(['Spa']);expect(cafeSpa.modulos_sugeridos).toEqual(expect.arrayContaining(['agenda','inventario']));
   expect((await classifyBusiness('Tengo una barbería')).actividades_adicionales).toEqual([]);
+ });
+ it('una clínica veterinaria con tienda y peluquería canina: la veterinaria es la principal y no se repiten actividades',async()=>{
+  const c=await classifyBusiness('Soy dueño de una clínica veterinaria que también tiene tienda de mascotas. Somos 6 personas en el equipo (3 veterinarios, 2 peluqueros caninos y 1 recepcionista). Nos llegan unos 60 mensajes al día por WhatsApp pidiendo citas para la peluquería, urgencias médicas y preguntando por marcas de alimentos.');
+  expect(c).toMatchObject({sector:'mascotas',tipo_negocio:'Veterinaria'});
+  expect(c.actividades_adicionales?.map(a=>a.tipo_negocio)).toEqual(['Tienda para mascotas','Peluquería canina']);
+  expect(sinActividadesContenidas('Veterinaria',[{tipo_negocio:'Peluquería'},{tipo_negocio:'Peluquería canina'},{tipo_negocio:'Spa'}]).map(a=>a.tipo_negocio)).toEqual(['Peluquería canina','Spa']);
+  expect(sinActividadesContenidas('Peluquería canina',[{tipo_negocio:'Peluquería'}])).toEqual([]);
  });
  it('catálogo amplio, tipos válidos y reanálisis que conserva las respuestas y el borrador',async()=>{
   const catalog=(await E.app.inject({method:'GET',url:'/api/onboarding/catalogos'})).json();expect(catalog.sectores.length).toBeGreaterThanOrEqual(19);

@@ -122,8 +122,24 @@ function resumenReglas(c: Omit<Clasificacion, 'tokens'>): string {
   return [visto.length ? `Entendí ${visto.join(', ')}.` : 'No pude identificar datos concretos en la descripción.', falta.length ? `Falta saber ${falta.join(', ')}.` : ''].join(' ').trim();
 }
 
+/**
+ * Una actividad que otra ya incluye no es otra línea de negocio: «Peluquería» dentro de «Peluquería canina», o el tipo
+ * principal repetido. Se compara el nombre sin tildes: el más corto, que es prefijo del más largo, se descarta.
+ */
+export function sinActividadesContenidas<T extends { tipo_negocio: string }>(principal: string | null | undefined, lista: T[]): T[] {
+  const nombres = [principal, ...lista.map((a) => a.tipo_negocio)].filter((x): x is string => !!x).map(normalizeText);
+  return lista.filter((a) => {
+    const n = normalizeText(a.tipo_negocio);
+    return !nombres.some((otro) => otro !== n && otro.startsWith(`${n} `));
+  });
+}
+
 /** Sinónimos frecuentes que no coinciden con el nombre del tipo en el catálogo. */
-const SINONIMOS: Record<string, string[]> = { 'Cafetería': ['cafe', 'cafes'], 'Gimnasio': ['gym'] };
+const SINONIMOS: Record<string, string[]> = {
+  'Cafetería': ['cafe', 'cafes'], 'Gimnasio': ['gym'],
+  'Tienda para mascotas': ['tienda de mascotas', 'pet shop', 'petshop'],
+  'Peluquería canina': ['peluquero canino', 'peluqueros caninos', 'peluquera canina', 'peluqueras caninas', 'peluqueria para mascotas', 'peluqueria de mascotas'],
+};
 
 /**
  * Tipos del catálogo que el texto nombra, en el orden en que aparecen. Si un nombre contiene a otro
@@ -161,7 +177,7 @@ export async function classifyBusiness(descripcion: string): Promise<Clasificaci
       '6. evidencia: para cada campo con valor, copia la frase LITERAL del texto que lo sustenta (sin parafrasear). Un campo sin evidencia literal debe ir en null.',
       '7. preguntas: para cada campo que dejaste en null, una pregunta breve y concreta en español de Colombia, en segunda persona («tú»), que ayude a decidir (máx. 120 caracteres). No preguntes lo que ya está claro.',
       '8. justificacion: 1–2 frases que digan qué entendiste y qué falta, sin prometer nada. No decides plan ni precios.',
-      '9. Si el negocio combina varias actividades («café y spa», «peluquería y tienda de ropa»), sector y tipo_negocio describen la principal (la que el texto presenta primero o con más peso) y cada una de las demás va en actividades_adicionales (máximo 3), con sector y tipo_negocio del catálogo y la frase LITERAL que la respalda. Si solo hay una actividad, actividades_adicionales va vacío.',
+      '9. Si el negocio combina varias actividades («café y spa», «peluquería y tienda de ropa»), sector y tipo_negocio describen la principal (la que el texto presenta primero o con más peso) y cada una de las demás va en actividades_adicionales (máximo 3), con sector y tipo_negocio del catálogo y la frase LITERAL que la respalda. Una actividad adicional es otra línea de negocio que el texto menciona de forma explícita (p. ej. la tienda de una veterinaria); no repitas un servicio ya cubierto por otro tipo (si eliges «Peluquería canina», no agregues también «Peluquería») ni inventes actividades de otro sector que el texto no nombre. Si solo hay una actividad, actividades_adicionales va vacío.',
     ].join('\n'),
     user: `<descripcion_del_negocio>\n${descripcion.slice(0, 2000)}\n</descripcion_del_negocio>`,
     schema: ClasificacionSchema,
@@ -189,7 +205,7 @@ export async function classifyBusiness(descripcion: string): Promise<Clasificaci
   };
   if (motor === 'ia') for (const a of c.actividades_adicionales ?? []) if (a.evidencia && t.includes(normalizeText(a.evidencia))) agregar(a.sector, a.tipo_negocio, a.evidencia);
   for (const m of matches) agregar(m.sector, m.tipo, m.literal);
-  c.actividades_adicionales = adicionales;
+  c.actividades_adicionales = sinActividadesContenidas(c.tipo_negocio, adicionales);
   // Con reglas, las funciones de cada actividad se suman (un café con spa necesita inventario y agenda).
   if (motor === 'reglas') {
     const modulos = new Set<string>(c.modulos_sugeridos);
