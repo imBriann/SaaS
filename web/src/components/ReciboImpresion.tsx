@@ -30,6 +30,7 @@ export function ReciboImpresion({ fase, numero, monto, concepto, empresa, fiscal
           <div className="impresion-sello" style={{ ['--i' as any]: 3 }}>{validez ? 'Factura validada DIAN' : 'Sin validez fiscal'}</div>
           <div className="impresion-corte" />
         </div>
+        <span className="impresion-cubierta" />
       </div>
       <div className="impresion-estado" role="status" aria-live="polite">
         <span className={`estado ${fase === 'listo' ? 'ok' : fase === 'pendiente' ? 'warn' : 'neutro'}`}>

@@ -36,8 +36,9 @@ export function WorkspaceBirth({ nombre, children }: { nombre: string; children:
     const finish = () => { setStage(5); setActive(false); };
     if (motion.matches) { finish(); return; }
     // Reveal already loaded, real elements. This is presentation, not server progress.
-    const timers = [200, 850, 1500, 2150, 3200].map((ms, i) => window.setTimeout(() => setStage(i + 1), ms));
-    timers.push(window.setTimeout(finish, 3520));
+    // Ritmo pausado: cada parte del panel real se ve nacer antes de soltarlo.
+    const timers = [600, 1700, 2900, 4100, 5800].map((ms, i) => window.setTimeout(() => setStage(i + 1), ms));
+    timers.push(window.setTimeout(finish, 6400));
     const change = () => { if (motion.matches) finish(); };
     motion.addEventListener('change', change);
     return () => { timers.forEach(clearTimeout); motion.removeEventListener('change', change); };

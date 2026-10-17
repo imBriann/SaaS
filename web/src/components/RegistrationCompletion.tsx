@@ -117,17 +117,14 @@ export function RegistrationCompletion() {
     irAEmpresa(status.tenant.slug, '/?estreno=1', (url) => navigate(url, { replace: true }));
   };
 
+  // Se entra al panel cuando el espacio existe y la vista previa terminó de mostrarlo completo.
+  const [presentado, setPresentado] = useState(false);
   useEffect(() => {
-    if (!ready || !started || !password || authAttempt.current || challenge) return;
+    if (!ready || !started || !presentado || !password || authAttempt.current || challenge) return;
     authAttempt.current = true;
-    // Un instante para ver el espacio completo en la vista previa antes de abrir el panel real.
-    const pausa = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1800;
-    const t = window.setTimeout(() => {
-      setBusy(true);
-      enterWorkspace().catch((e) => { setAccessError(e.message); setStarted(false); }).finally(() => setBusy(false));
-    }, pausa);
-    return () => { window.clearTimeout(t); authAttempt.current = false; };
-  }, [ready, started, password, challenge]); // Auth attempt is explicit and one-shot; failed login requires retry.
+    setBusy(true);
+    enterWorkspace().catch((e) => { setAccessError(e.message); setStarted(false); }).finally(() => setBusy(false));
+  }, [ready, started, presentado, password, challenge]); // Auth attempt is explicit and one-shot; failed login requires retry.
 
   const create = async (event?: FormEvent, confirmedSession = false) => {
     event?.preventDefault();
@@ -203,7 +200,8 @@ export function RegistrationCompletion() {
     {paid && tk && !loadError && creating && <CreationTheater d={d} status={status} titulo={creation.title} detalle={creation.detail} orbe={creation.orb} listo={ready}
       pasos={STEPS.map(([clave, nombre]) => ({ clave, nombre, hecho: completed.has(clave) }))}
       aviso={!password && !busy ? 'La creación sigue en curso. Cuando termine, introduce tu contraseña para abrir tu espacio.' : accessError || null}
-      onDescargar={download} descargando={downloading} reciboListo={receiptReal === 'listo'} />}
+      onDescargar={download} descargando={downloading} reciboListo={receiptReal === 'listo'}
+      enCurso={CREATION.aplicando} onCompleto={() => setPresentado(true)} />}
     {paid && tk && !loadError && !creating && <div className="registration-finish">
       <section className="finish-receipt" aria-labelledby="receipt-title">
         <div className="finish-paid"><Icon n="ok" size={17} className="" />Pago confirmado</div>

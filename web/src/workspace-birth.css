@@ -80,7 +80,7 @@
 @keyframes birth-item { from { opacity: 0; transform: translateX(-14px); } }
 .is-born:is([data-birth-stage="3"], [data-birth-stage="4"]) .workspace-personalized { box-shadow: 0 0 0 2px color-mix(in srgb, var(--acento) 45%, transparent), 0 24px 50px -30px color-mix(in srgb, var(--acento) 60%, transparent); }
 [data-birth-stage="5"] .birth-guide { opacity: 0; transform: translateY(10px); }
-.is-born .lateral, .is-born .barra-movil, .is-born .tabbar, .is-born .cabecera, .is-born .workspace-personalized, .is-born .contenido > .kpis, .is-born .contenido > .grid, .is-born .contenido > .tarjeta { transition: opacity 700ms var(--ease-out), transform 700ms var(--ease-out); }
+.is-born .lateral, .is-born .barra-movil, .is-born .tabbar, .is-born .cabecera, .is-born .workspace-personalized, .is-born .contenido > .kpis, .is-born .contenido > .grid, .is-born .contenido > .tarjeta { transition: opacity 1000ms var(--ease-out), transform 1000ms var(--ease-out); }
 .is-born[data-birth-stage="0"] .lateral { opacity: 0; transform: translateX(-35px); visibility: hidden; }
 .is-born[data-birth-stage="0"] .barra-movil, .is-born[data-birth-stage="0"] .tabbar { opacity: 0; visibility: hidden; }
 .is-born:is([data-birth-stage="0"], [data-birth-stage="1"]) .cabecera { opacity: 0; transform: translateY(20px); visibility: hidden; }
@@ -155,5 +155,5 @@
   .finish-receipt .impresion { break-inside: avoid; }
   .finish-receipt .impresion-papel, .finish-receipt .impresion-linea, .finish-receipt .impresion-sello { animation: none !important; transform: none !important; opacity: 1 !important; }
   .finish-receipt .impresion-salida { height: auto !important; overflow: visible !important; }
-  .finish-receipt .impresion-impresora, .finish-receipt .impresion-estado { display: none !important; }
+  .finish-receipt .impresion-impresora, .finish-receipt .impresion-estado, .finish-receipt .impresion-cubierta { display: none !important; }
 }
