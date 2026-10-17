@@ -187,6 +187,14 @@ export const HANDLERS: Record<string, Handler> = {
     if (!ok) return 'reintentar';
   },
 
+  // Respuesta del asistente de Omnegia a quien escribió a su número (sin comercio ni conversación guardada).
+  responder_plataforma: async (_db, _tenantId, p, job) => {
+    const r = await channel('WHATSAPP').sendText(p.phone_number_id, p.to, String(p.texto ?? ''));
+    if (r.ok) return;
+    if (r.reintentable && !ultimoIntento(job)) return 'reintentar';
+    throw new Error(r.error ?? 'No se pudo responder desde el número de Omnegia.');
+  },
+
   verificar_whatsapp: async (db, tenantId, _p, job) => { await verificarWhatsapp(db, tenantId!, job.id); },
 
   emitir_documento: async (db, tenantId, p, job) => {
@@ -321,6 +329,9 @@ export const HANDLERS: Record<string, Handler> = {
       await tx.query(`UPDATE email_outbox SET estado=CASE WHEN estado='PENDIENTE' THEN 'FALLIDO' ELSE estado END, error=CASE WHEN estado='PENDIENTE' THEN 'CADUCADO' ELSE error END,
                         contenido_cifrado=NULL WHERE sensible AND contenido_cifrado IS NOT NULL AND caduca_en < now()`);
       await tx.query(`DELETE FROM metrica_http WHERE minuto < now() - interval '30 days'`);
+      // Los reembolsos tienen plazo legal: se avisa antes de que venza.
+      const porVencer = (await tx.query(`SELECT count(*)::int AS n FROM reembolso WHERE estado IN ('EN_REVISION','APROBADO') AND vence_en < now() + interval '3 days'`)).rows[0].n;
+      if (porVencer > 0) await registrarIncidente(tx, { codigo: 'REEMBOLSO_POR_VENCER', servicio: 'reembolsos', detalle: { intentos: porVencer } });
     });
   },
 

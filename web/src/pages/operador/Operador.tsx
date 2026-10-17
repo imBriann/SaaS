@@ -23,6 +23,7 @@ const SECCIONES: { to: string; n: string; t: string }[] = [
   { to: '/operador/incidentes', n: 'alerta', t: 'Incidentes' },
   { to: '/operador/integraciones', n: 'integraciones', t: 'Integraciones' },
   { to: '/operador/soporte', n: 'soporte', t: 'Soporte' },
+  { to: '/operador/reembolsos', n: 'suscripcion', t: 'Reembolsos' },
   { to: '/operador/auditoria', n: 'auditoria', t: 'Auditoría' },
 ];
 
@@ -651,6 +652,93 @@ export function OpTicket() {
 }
 
 // ------------------------------------------------------------------ auditoría
+// ------------------------------------------------------------------ reembolsos
+const PLAZO = (r: any) => r.estado === 'REEMBOLSADO' || r.estado === 'RECHAZADO' ? null
+  : r.vencido ? { tono: 'err', texto: `Vencido hace ${Math.abs(r.dias_restantes)} ${Math.abs(r.dias_restantes) === 1 ? 'día' : 'días'}: la ley fija 15 días calendario` }
+  : { tono: r.dias_restantes <= 3 ? 'warn' : 'neutro', texto: `Quedan ${r.dias_restantes} ${r.dias_restantes === 1 ? 'día' : 'días'} para devolver el dinero (límite legal: 15 días calendario)` };
+
+export function OpReembolsos() {
+  const { puede } = useYo();
+  const [estado, setEstado] = useState('');
+  const { data, error, cargando, recargar } = useApi<any>(() => api.get(`/api/operador/reembolsos?estado=${estado}`), [estado]);
+  const [accion, setAccion] = useState<{ tipo: 'decidir' | 'devuelto'; r: any } | null>(null);
+  const gestiona = puede('reembolsos:gestionar');
+  return (
+    <>
+      <Cabecera titulo="Reembolsos" sub="Retracto y devoluciones de los pagos a la plataforma. El dinero se devuelve en Wompi o por transferencia; aquí se decide y se deja la referencia." />
+      <Tarjeta sinCuerpo>
+        <div className="filtros">
+          <select className="input" value={estado} onChange={(e) => setEstado(e.target.value)} aria-label="Estado">
+            <option value="">Todos</option><option value="EN_REVISION">En revisión</option><option value="APROBADO">Aprobados: falta devolver</option><option value="REEMBOLSADO">Devueltos</option><option value="RECHAZADO">Rechazados</option>
+          </select>
+        </div>
+        {error ? <div className="cuerpo"><ErrorCarga error={error} reintentar={recargar} /></div> : cargando && !data ? <div className="cuerpo"><Cargando /></div> : !data.reembolsos.length ? <div className="cuerpo"><Vacio titulo="Sin solicitudes de reembolso">Cuando alguien pida un retracto o una devolución desde la zona legal, aparece aquí.</Vacio></div> : (
+          <ul className="op-incidentes">{data.reembolsos.map((r: any) => {
+            const plazo = PLAZO(r);
+            return (
+              <li key={r.id}>
+                <div className="fila entre" style={{ flexWrap: 'wrap', gap: 8 }}>
+                  <span className="fila" style={{ gap: 8 }}><b className="mono">{r.radicado}</b><span className="tenue">· {r.motivo_nombre}</span></span>
+                  <Estado v={r.estado} />
+                </div>
+                {plazo && <p className={plazo.tono === 'err' ? 'bloqueado' : 'tenue peq-txt'} style={{ margin: 0 }}><Icon n={plazo.tono === 'neutro' ? 'reloj' : 'alerta'} className="" size={14} /> {plazo.texto}</p>}
+                <dl className="datos-def">
+                  <dt>Valor</dt><dd><b>{cop(r.monto)}</b> {r.moneda}</dd>
+                  <dt>Pago</dt><dd className="mono">{r.referencia}{r.empresa ? ` · ${r.empresa}` : ''}</dd>
+                  <dt>Solicitante</dt><dd>{r.solicitante} · <a href={`mailto:${r.solicitante_email}`}>{r.solicitante_email}</a></dd>
+                  <dt>Devolver por</dt><dd>{r.medio}</dd>
+                  <dt>Pidió</dt><dd>{fechaHora(r.creado_en)} · límite {fecha(r.vence_en)}</dd>
+                  <dt>Lo que dice</dt><dd>«{r.detalle}»</dd>
+                  <dt>Evaluación</dt><dd>{r.evaluacion?.razon}{r.decidido_por ? ` (${r.decidido_por === 'sistema' ? 'decidido por el sistema' : `decidido por ${r.decidido_por}`})` : ''}</dd>
+                  {r.decision_motivo && <><dt>Decisión</dt><dd>{r.decision_motivo}</dd></>}
+                  {r.referencia_devolucion && <><dt>Devolución</dt><dd className="mono">{r.referencia_devolucion} · {fechaHora(r.reembolsado_en)}</dd></>}
+                </dl>
+                {gestiona && r.estado === 'EN_REVISION' && <div className="fila"><button className="btn peq primario" onClick={() => setAccion({ tipo: 'decidir', r })}>Decidir</button></div>}
+                {gestiona && r.estado === 'APROBADO' && <div className="fila"><button className="btn peq primario" onClick={() => setAccion({ tipo: 'devuelto', r })}>Registrar devolución hecha</button></div>}
+              </li>
+            );
+          })}</ul>
+        )}
+      </Tarjeta>
+      {accion?.tipo === 'decidir' && <DecidirReembolso r={accion.r} onCerrar={() => setAccion(null)} onHecho={() => { setAccion(null); recargar(); }} />}
+      {accion?.tipo === 'devuelto' && <RegistrarDevolucion r={accion.r} onCerrar={() => setAccion(null)} onHecho={() => { setAccion(null); recargar(); }} />}
+    </>
+  );
+}
+
+function DecidirReembolso({ r, onCerrar, onHecho }: { r: any; onCerrar: () => void; onHecho: () => void }) {
+  const [decision, setDecision] = useState<'APROBAR' | 'RECHAZAR'>('APROBAR');
+  const [motivo, setMotivo] = useState('');
+  const { run, ocupado, error } = useAccion();
+  const listo = decision === 'APROBAR' || motivo.trim().length >= 10;
+  return (
+    <Modal titulo={`Decidir ${r.radicado}`} onCerrar={onCerrar} pie={<><button className="btn" onClick={onCerrar}>Volver</button>
+      <button className="btn primario" disabled={ocupado || !listo} onClick={async () => { const x = await run(() => api.post(`/api/operador/reembolsos/${r.id}/decidir`, { decision, motivo: motivo.trim() || undefined }), decision === 'APROBAR' ? 'Aprobado. Falta devolver el dinero.' : 'Rechazado. La persona recibió el motivo.', { silencioso: true }); if (x) onHecho(); }}>{decision === 'APROBAR' ? 'Aprobar' : 'Rechazar'}</button></>}>
+      <p className="sec">{cop(r.monto)} · {r.motivo_nombre}. Si apruebas, la devolución es del valor completo, sin descuentos ni retenciones, y la persona recibe un correo. {r.motivo === 'RETRACTO' || r.motivo === 'NO_ACTIVACION' ? 'Si el espacio aún no se creó, ya no se podrá crear con este pago.' : ''}</p>
+      <fieldset className="legal-tipos" style={{ marginBottom: 12 }}>
+        <legend>Decisión</legend>
+        <label className={decision === 'APROBAR' ? 'on' : ''}><input type="radio" name="decision" checked={decision === 'APROBAR'} onChange={() => setDecision('APROBAR')} /><span><b>Aprobar la devolución</b></span></label>
+        <label className={decision === 'RECHAZAR' ? 'on' : ''}><input type="radio" name="decision" checked={decision === 'RECHAZAR'} onChange={() => setDecision('RECHAZAR')} /><span><b>Rechazar</b><small>Debes explicar el motivo: la persona lo recibe y puede acudir a la Superintendencia de Industria y Comercio.</small></span></label>
+      </fieldset>
+      <Campo etiqueta={decision === 'RECHAZAR' ? 'Motivo del rechazo' : 'Nota (opcional)'} ayuda="la lee la persona"><textarea className="input" rows={3} maxLength={1000} value={motivo} onChange={(e) => setMotivo(e.target.value)} /></Campo>
+      {error && <p role="alert" className="bloqueado"><Icon n="alerta" className="" size={16} />{error.message}</p>}
+    </Modal>
+  );
+}
+
+function RegistrarDevolucion({ r, onCerrar, onHecho }: { r: any; onCerrar: () => void; onHecho: () => void }) {
+  const [ref, setRef] = useState('');
+  const { run, ocupado, error } = useAccion();
+  return (
+    <Modal titulo={`Devolución de ${r.radicado}`} onCerrar={onCerrar} pie={<><button className="btn" onClick={onCerrar}>Volver</button>
+      <button className="btn primario" disabled={ocupado || ref.trim().length < 3} onClick={async () => { const x = await run(() => api.post(`/api/operador/reembolsos/${r.id}/devuelto`, { referencia: ref.trim() }), 'Devolución registrada. La persona recibió el aviso.', { silencioso: true }); if (x) onHecho(); }}>Registrar devolución</button></>}>
+      <p className="sec">Haz primero la devolución de <b>{cop(r.monto)}</b> ({r.medio.toLowerCase()}), desde el panel de Wompi o por transferencia, y pega aquí la referencia del comprobante. Al registrarla, el pago queda como reembolsado y la persona recibe el aviso con esa referencia.</p>
+      <Campo etiqueta="Referencia de la devolución" ayuda="comprobante de Wompi o de la transferencia"><input className="input mono" value={ref} maxLength={80} onChange={(e) => setRef(e.target.value)} /></Campo>
+      {error && <p role="alert" className="bloqueado"><Icon n="alerta" className="" size={16} />{error.message}</p>}
+    </Modal>
+  );
+}
+
 export function OpAuditoria() {
   const [eventos, setEventos] = useState<any[] | null>(null);
   const [fin, setFin] = useState(false);

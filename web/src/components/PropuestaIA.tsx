@@ -111,6 +111,41 @@ function SelectorActividad({ sectores, c, ocupado, cambiar }: { sectores: { id: 
   );
 }
 
+type Sectores = { id: string; nombre: string; tipos: string[] }[];
+type Adicional = { sector: string; tipo_negocio: string };
+const MAX_ADICIONALES = 3;
+
+/** Un comercio puede combinar actividades («cafetería y spa»): la principal define la plantilla y las demás se suman. */
+function ActividadesAdicionales({ sectores, c, ocupado, cambiar }: { sectores: Sectores; c: any; ocupado: boolean; cambiar: Cambiar }) {
+  const extras: Adicional[] = c.actividades_adicionales ?? [];
+  const [sectorNuevo, setSectorNuevo] = useState('');
+  const elegible = sectores.filter((s) => s.id !== 'otro');
+  const tipos = elegible.find((s) => s.id === sectorNuevo)?.tipos ?? [];
+  const yaEsta = (t: string) => t === c.tipo_negocio || extras.some((x) => x.tipo_negocio === t);
+  const guardar = (lista: Adicional[]) => cambiar({ actividades_adicionales: lista });
+  return (
+    <div className="actividad-extra">
+      <p className="ia-para"><b>¿Tu negocio ofrece otra actividad?</b> Por ejemplo, una cafetería que también tiene spa. Añade hasta {MAX_ADICIONALES}; las tendremos en cuenta en tus funciones y en cómo te atiende el asistente.</p>
+      {extras.length > 0 && <ul className="actividad-chips" aria-label="Actividades adicionales">
+        {extras.map((a) => <li key={a.tipo_negocio}><span>{a.tipo_negocio}</span><button type="button" disabled={ocupado} aria-label={`Quitar ${a.tipo_negocio}`} onClick={() => guardar(extras.filter((x) => x.tipo_negocio !== a.tipo_negocio))}><Icon n="x" size={14} className="" /></button></li>)}
+      </ul>}
+      {extras.length < MAX_ADICIONALES
+        ? <div className="actividad-extra-nueva">
+            <label className="campo"><span>Añadir otra actividad</span>
+              <select className="input" value={sectorNuevo} disabled={ocupado} onChange={(e) => setSectorNuevo(e.target.value)}>
+                <option value="">Elige el sector</option>
+                {elegible.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              </select>
+            </label>
+            {sectorNuevo && <div className="ia-opciones" role="group" aria-label="Tipo de la otra actividad">
+              {tipos.map((t) => <button key={t} type="button" className="ia-opcion" disabled={ocupado || yaEsta(t)} onClick={() => { guardar([...extras, { sector: sectorNuevo, tipo_negocio: t }]); setSectorNuevo(''); }}>{t}</button>)}
+            </div>}
+          </div>
+        : <p className="tenue peq-txt">Llegaste al máximo de {MAX_ADICIONALES} actividades adicionales. Quita una para añadir otra.</p>}
+    </div>
+  );
+}
+
 export function PropuestaIA({ c, ocupado, cambiar }: { c: any; ocupado: boolean; cambiar: Cambiar }) {
   const [sectores, setSectores] = useState<{ id: string; nombre: string; tipos: string[] }[]>([]);
   const [errorCatalogo, setErrorCatalogo] = useState('');
@@ -149,10 +184,11 @@ export function PropuestaIA({ c, ocupado, cambiar }: { c: any; ocupado: boolean;
 
       <div className="ia-filas">
         <FilaDato indice={0} titulo="Actividad" estado={estadoActividad} ocupado={ocupado}
-          valor={c.sector === 'otro' ? `Otra actividad${c.otro_descripcion ? `: ${c.otro_descripcion}` : ''}` : <>{c.tipo_negocio} <span className="tenue">· {sector?.nombre ?? ''}</span></>}
+          valor={c.sector === 'otro' ? `Otra actividad${c.otro_descripcion ? `: ${c.otro_descripcion}` : ''}` : <>{c.tipo_negocio} <span className="tenue">· {sector?.nombre ?? ''}</span>{c.actividades_adicionales?.length > 0 && <span className="ia-extras"> y también {c.actividades_adicionales.map((a: Adicional) => a.tipo_negocio).join(', ')}</span>}</>}
           evidencia={c.evidencia?.tipo_negocio ?? c.evidencia?.sector} pregunta={c.preguntas?.sector || c.preguntas?.tipo_negocio || PREGUNTA.actividad.pregunta} para={PREGUNTA.actividad.para}
           >
           <SelectorActividad sectores={sectores} c={c} ocupado={ocupado} cambiar={cambiar} />
+          {c.sector && c.sector !== 'otro' && <ActividadesAdicionales sectores={sectores} c={c} ocupado={ocupado} cambiar={cambiar} />}
         </FilaDato>
         <FilaDato indice={1} titulo="Equipo que atenderá" estado={estado('tamano')} ocupado={ocupado} valor={nombreDe(TAMANOS, c.tamano)}
           evidencia={c.evidencia?.tamano} pregunta={pregunta('tamano')} para={PREGUNTA.tamano.para}>

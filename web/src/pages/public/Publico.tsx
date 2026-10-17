@@ -260,8 +260,14 @@ export function Pago() {
   const { d, setD, cargando, error, recargar } = useBorrador();
   const { run, ocupado } = useAccion();
   const [acepto, setAcepto] = useState(false);
+  // Aceptación expresa de los textos legales: tres casillas; la prueba se guarda en el servidor al pagar.
+  const [legal, setLegal] = useState({ terminos: false, privacidad: false, inicio_servicio: false });
   const nav = useNavigate();
   const activate = async () => {
+    if (!d.aceptacion_legal?.vigente) {
+      const a = await run(() => api.post(`/api/onboarding/borradores/${d.token}/aceptacion-legal`, legal));
+      if (!a) return;
+    }
     const r = await run(() => api.post(`/api/onboarding/borradores/${d.token}/pago`, { retorno: window.location.origin }));
     if (!r) return;
     // Ya estaba pagado: no hay un segundo cobro, se va directo al estado del alta.
@@ -274,6 +280,7 @@ export function Pago() {
   const o = d.oferta;
   const institucional = o?.modalidad === 'INSTITUCIONAL';
   const real = d.pasarela === 'wompi';
+  const aceptadoLegal = !!d.aceptacion_legal?.vigente || (legal.terminos && legal.privacidad && legal.inicio_servicio);
   const textoBoton = ocupado ? 'Preparando…' : d.pasarela === 'simulada' ? 'Ir al pago de prueba' : `Pagar ${cop(o?.monto ?? d.cotizacion.total)} con Wompi`;
   return <PublicoLayout paso={4}><section className="proposal-summary">
     <h1 className="onb-titulo">Revisa tu propuesta</h1>
@@ -294,12 +301,24 @@ export function Pago() {
     {d.pasarela === 'simulada' && <div className="aviso peq-txt"><Icon n="info" className="" size={16} />Estás en una demostración: la activación usa una pasarela simulada, sin tarjeta ni cobros reales.</div>}
     {real && d.pago_disponible && <div className="aviso peq-txt" role="note"><Icon n="alerta" className="" size={16} /><span>Este es un <b>cobro real</b> de {cop(o?.monto ?? d.cotizacion.total)} COP, no una simulación. El pago se hace en el sitio seguro de Wompi; Omnegia no ve ni guarda los datos de tu tarjeta.</span></div>}
     {!d.pago_disponible && <div className="aviso peq-txt"><Icon n="info" className="" size={16} />La contratación en línea todavía no está habilitada. Escríbenos y activamos tu espacio contigo.</div>}
+    <section className="legal-aceptacion" aria-labelledby="acepta-t">
+      <h2 id="acepta-t">Antes de pagar</h2>
+      <p className="tenue peq-txt" style={{ margin: 0 }}>Los textos se abren en una pestaña nueva. Marca cada casilla; guardamos la prueba de tu aceptación (versión, fecha y hora).</p>
+      {([
+        ['terminos', <>He leído y acepto los <a href="/terminos" target="_blank" rel="noopener noreferrer">Términos y condiciones</a>, incluidos el derecho de retracto y cómo ejercerlo.</>],
+        ['privacidad', <>Autorizo el tratamiento de mis datos personales según la <a href="/privacidad" target="_blank" rel="noopener noreferrer">Política de tratamiento de datos</a>, incluida su transmisión a proveedores fuera de Colombia. Puedo revocar esta autorización cuando quiera.</>],
+        ['inicio_servicio', <>Entiendo y acepto que el servicio comienza cuando se crea mi espacio. Hasta ese momento puedo retractarme dentro de los 5 días hábiles siguientes a la compra; después, ya no (Ley 1480 de 2011, art. 47, numeral 1).</>],
+      ] as [keyof typeof legal, ReactNode][]).map(([k, texto]) => <label key={k}>
+        <input type="checkbox" checked={!!d.aceptacion_legal?.vigente || legal[k]} disabled={!!d.aceptacion_legal?.vigente} onChange={(e) => setLegal((s) => ({ ...s, [k]: e.target.checked }))} /><span>{texto}</span>
+      </label>)}
+      {d.aceptacion_legal?.vigente && <p className="estado ok"><Icon n="ok" className="" size={13} />Aceptado el {new Date(d.aceptacion_legal.aceptado_en).toLocaleString('es-CO', { dateStyle: 'long', timeStyle: 'short' })} · versión {d.aceptacion_legal.version}</p>}
+    </section>
     {real && d.pago_disponible && <label className="acepto-cobro">
       <input type="checkbox" checked={acepto} onChange={(e) => setAcepto(e.target.checked)} />
       <span>Entiendo que se hará un cobro real de {cop(o?.monto ?? d.cotizacion.total)} COP{institucional ? ` por ${o.acceso_dias} días de acceso, sin renovación automática` : ''}.</span>
     </label>}
     <div className="fila envolver" style={{ gap: 8 }}>
-      {d.pago_disponible && <button className="btn primario grande" disabled={ocupado || (real && !acepto) || (d.facturacion_requerida && !d.facturacion?.completa)} onClick={activate}>{textoBoton}</button>}
+      {d.pago_disponible && <button className="btn primario grande" disabled={ocupado || !aceptadoLegal || (real && !acepto) || (d.facturacion_requerida && !d.facturacion?.completa)} onClick={activate}>{textoBoton}</button>}
       {d.estado === 'BORRADOR' && <Link className="btn grande" to="/empezar">Ajustar funciones</Link>}
     </div>
     {real && <MediosPago />}

@@ -24,9 +24,9 @@ import { ETIQUETA_CATEGORIA, revisarContenido } from './soporte.js';
  * Estas son restricciones de la aplicación. Quien administra la infraestructura (el
  * usuario propietario de la base de datos) conserva sus privilegios.
  */
-export type PermisoOperador = 'plataforma:ver' | 'empresas:gestionar' | 'planes:gestionar' | 'trabajos:reintentar' | 'incidentes:gestionar' | 'soporte:gestionar';
+export type PermisoOperador = 'plataforma:ver' | 'empresas:gestionar' | 'planes:gestionar' | 'trabajos:reintentar' | 'incidentes:gestionar' | 'soporte:gestionar' | 'reembolsos:gestionar';
 export const PERMISOS_OPERADOR: Record<'ADMIN' | 'SOPORTE', PermisoOperador[]> = {
-  ADMIN: ['plataforma:ver', 'empresas:gestionar', 'planes:gestionar', 'trabajos:reintentar', 'incidentes:gestionar', 'soporte:gestionar'],
+  ADMIN: ['plataforma:ver', 'empresas:gestionar', 'planes:gestionar', 'trabajos:reintentar', 'incidentes:gestionar', 'soporte:gestionar', 'reembolsos:gestionar'],
   SOPORTE: ['plataforma:ver', 'incidentes:gestionar', 'soporte:gestionar'],
 };
 

@@ -29,6 +29,8 @@ export const ClasificacionSchema = z.object({
   volumen_conv_mes: z.enum(VOLUMENES).nullable(),
   modulos_sugeridos: z.array(z.enum(MODULOS_CONOCIDOS)),
   factura_electronica: z.boolean().nullable(),
+  /** Otras actividades del mismo negocio («café y spa»): cada una con la frase literal que la respalda. */
+  actividades_adicionales: z.array(z.object({ sector: z.enum(SECTORES), tipo_negocio: z.string(), evidencia: z.string() })),
   /** Frase literal que sustenta cada campo con valor; null en los demás. */
   evidencia: PorCampo,
   /** Pregunta concreta por cada campo que no se pudo determinar con el texto; null en los demás. */
@@ -38,8 +40,13 @@ export const ClasificacionSchema = z.object({
 });
 export type ClasificacionModelo = z.infer<typeof ClasificacionSchema>;
 
+/** Otra actividad del mismo comercio; la principal sigue siendo `sector` + `tipo_negocio`. */
+export interface ActividadAdicional { sector: (typeof SECTORES)[number]; tipo_negocio: string; evidencia?: string }
+export const MAX_ACTIVIDADES_ADICIONALES = 3;
+
 export interface Clasificacion {
   tipo_negocio?: string | null;
+  actividades_adicionales?: ActividadAdicional[];
   otro_descripcion?: string;
   confirmados?: string[];
   estados?: Record<string, string>;
@@ -83,8 +90,18 @@ export function sanitizeClassification(raw: any): Omit<Clasificacion, 'tokens'> 
   let confianza = typeof raw?.confianza === 'number' && raw.confianza >= 0 && raw.confianza <= 1 ? raw.confianza : 0;
   if (descartados.length) confianza = Math.min(confianza, 0.5);
   const justificacion = typeof raw?.justificacion === 'string' ? raw.justificacion.slice(0, 600) : '';
+  const tipo = sectorTypes(sector).includes(raw?.tipo_negocio) ? raw.tipo_negocio : null;
+  // Una actividad adicional inválida o repetida se omite sin restarle confianza a la actividad principal.
+  const adicionales: ActividadAdicional[] = [];
+  for (const a of Array.isArray(raw?.actividades_adicionales) ? raw.actividades_adicionales : []) {
+    if (!a || !inEnum(SECTORES, a.sector) || a.sector === 'otro' || !sectorTypes(a.sector).includes(a.tipo_negocio)) continue;
+    if ((a.sector === sector && a.tipo_negocio === tipo) || adicionales.some((x) => x.tipo_negocio === a.tipo_negocio)) continue;
+    const evidencia = typeof a.evidencia === 'string' && a.evidencia.trim() ? a.evidencia.trim().slice(0, 160) : undefined;
+    adicionales.push({ sector: a.sector, tipo_negocio: a.tipo_negocio, ...(evidencia ? { evidencia } : {}) });
+    if (adicionales.length === MAX_ACTIVIDADES_ADICIONALES) break;
+  }
   return {
-    sector, tipo_negocio: sectorTypes(sector).includes(raw?.tipo_negocio) ? raw.tipo_negocio : null, tamano, volumen_conv_mes: volumen, modulos_sugeridos: modulos, factura_electronica: factura,
+    sector, tipo_negocio: tipo, actividades_adicionales: sector ? adicionales : [], tamano, volumen_conv_mes: volumen, modulos_sugeridos: modulos, factura_electronica: factura,
     confianza, justificacion, campos_descartados: descartados, prellenar: confianza >= 0.6,
   };
 }
@@ -96,13 +113,36 @@ const NOMBRE_VOLUMEN: Record<string, string> = { bajo: 'menos de 300 conversacio
 function resumenReglas(c: Omit<Clasificacion, 'tokens'>): string {
   const sector = SECTOR_CATALOG.find((x) => x.id === c.sector);
   const visto = [
-    c.tipo_negocio ? `un negocio de tipo «${c.tipo_negocio}»` : sector ? `un negocio de ${sector.nombre.toLowerCase()}` : null,
+    c.tipo_negocio ? `un negocio de tipo «${c.tipo_negocio}»${c.actividades_adicionales?.length ? ` que también ofrece ${c.actividades_adicionales.map((a) => `«${a.tipo_negocio}»`).join(' y ')}` : ''}` : sector ? `un negocio de ${sector.nombre.toLowerCase()}` : null,
     c.tamano ? `con un equipo ${NOMBRE_TAMANO[c.tamano]}` : null,
     c.volumen_conv_mes ? `que recibe ${NOMBRE_VOLUMEN[c.volumen_conv_mes]}` : null,
     c.factura_electronica === true ? 'que necesita factura electrónica' : c.factura_electronica === false ? 'que por ahora no necesita factura electrónica' : null,
   ].filter(Boolean);
   const falta = [!c.sector && 'la actividad', !c.tamano && 'cuántas personas atenderán', !c.volumen_conv_mes && 'cuántas conversaciones recibes', c.factura_electronica == null && 'si necesitas facturar'].filter(Boolean);
   return [visto.length ? `Entendí ${visto.join(', ')}.` : 'No pude identificar datos concretos en la descripción.', falta.length ? `Falta saber ${falta.join(', ')}.` : ''].join(' ').trim();
+}
+
+/** Sinónimos frecuentes que no coinciden con el nombre del tipo en el catálogo. */
+const SINONIMOS: Record<string, string[]> = { 'Cafetería': ['cafe', 'cafes'], 'Gimnasio': ['gym'] };
+
+/**
+ * Tipos del catálogo que el texto nombra, en el orden en que aparecen. Si un nombre contiene a otro
+ * («peluquería canina» y «peluquería») solo cuenta el más largo.
+ */
+export function detectarActividades(descripcion: string) {
+  const original = descripcion.normalize('NFC');
+  // Misma longitud que el original: los índices del texto sin tildes sirven para citar la frase literal.
+  const plano = original.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const hallazgos = SECTOR_CATALOG.flatMap((s) => s.tipos.filter((tipo) => tipo !== 'Otra actividad').flatMap((tipo) => {
+    for (const nombre of [normalizeText(tipo), ...(SINONIMOS[tipo] ?? [])]) {
+      const m = new RegExp(`(?:^|\\W)(${nombre})(?:$|\\W)`).exec(plano);
+      if (m) { const ini = m.index + m[0].indexOf(m[1]); return [{ sector: s.id as ActividadAdicional['sector'], tipo, ini, fin: ini + m[1].length, literal: original.slice(ini, ini + m[1].length) }]; }
+    }
+    return [];
+  }));
+  return hallazgos
+    .filter((h) => !hallazgos.some((g) => g !== h && g.ini <= h.ini && g.fin >= h.fin && g.fin - g.ini > h.fin - h.ini))
+    .sort((a, b) => a.ini - b.ini);
 }
 
 export async function classifyBusiness(descripcion: string): Promise<Clasificacion> {
@@ -121,6 +161,7 @@ export async function classifyBusiness(descripcion: string): Promise<Clasificaci
       '6. evidencia: para cada campo con valor, copia la frase LITERAL del texto que lo sustenta (sin parafrasear). Un campo sin evidencia literal debe ir en null.',
       '7. preguntas: para cada campo que dejaste en null, una pregunta breve y concreta en español de Colombia, en segunda persona («tú»), que ayude a decidir (máx. 120 caracteres). No preguntes lo que ya está claro.',
       '8. justificacion: 1–2 frases que digan qué entendiste y qué falta, sin prometer nada. No decides plan ni precios.',
+      '9. Si el negocio combina varias actividades («café y spa», «peluquería y tienda de ropa»), sector y tipo_negocio describen la principal (la que el texto presenta primero o con más peso) y cada una de las demás va en actividades_adicionales (máximo 3), con sector y tipo_negocio del catálogo y la frase LITERAL que la respalda. Si solo hay una actividad, actividades_adicionales va vacío.',
     ].join('\n'),
     user: `<descripcion_del_negocio>\n${descripcion.slice(0, 2000)}\n</descripcion_del_negocio>`,
     schema: ClasificacionSchema,
@@ -130,14 +171,34 @@ export async function classifyBusiness(descripcion: string): Promise<Clasificaci
   const raw: any = motor === 'reglas' ? classifyHeuristic(descripcion) : r.raw;
   const c = sanitizeClassification(raw);
   const t = normalizeText(descripcion);
-  const matches = SECTOR_CATALOG.flatMap(s => s.tipos.filter(tipo => tipo !== 'Otra actividad' && new RegExp(`(?:^|\\W)${normalizeText(tipo)}(?:$|\\W)`).test(t)).map(tipo => ({ sector: s.id, tipo })));
-  if (motor === 'reglas' && matches.length === 1) { c.sector = matches[0].sector; c.tipo_negocio = matches[0].tipo; c.confianza = 0.85; }
+  const matches = detectarActividades(descripcion);
+  // Con varias actividades en el texto, la que se presenta primero es la principal y las demás quedan como adicionales.
+  if (motor === 'reglas' && matches.length >= 1) { c.sector = matches[0].sector; c.tipo_negocio = matches[0].tipo; c.confianza = 0.85; }
   if (!c.tipo_negocio && c.sector && matches.filter(m => m.sector === c.sector).length === 1) c.tipo_negocio = matches.find(m => m.sector === c.sector)!.tipo;
-  if (c.confianza < 0.6 || c.sector === 'otro' || new Set(matches.map(m=>m.sector)).size>1) { c.sector = null; c.tipo_negocio = null; }
+  if (c.confianza < 0.6 || c.sector === 'otro') { c.sector = null; c.tipo_negocio = null; }
   // Con el modelo, la actividad también exige una frase literal que la respalde (en sector o en tipo).
   if (motor === 'ia' && c.sector) {
     const apoyo = [raw.evidencia?.sector, raw.evidencia?.tipo_negocio].some((e) => typeof e === 'string' && e.trim() && t.includes(normalizeText(e)));
     if (!apoyo) { c.sector = null; c.tipo_negocio = null; }
+  }
+  // Actividades adicionales: las del modelo con frase literal y las que el texto nombra con claridad.
+  const adicionales: ActividadAdicional[] = [];
+  const agregar = (sector: ActividadAdicional['sector'], tipo: string, evidencia?: string) => {
+    if (!c.sector || (sector === c.sector && tipo === c.tipo_negocio) || adicionales.some((x) => x.tipo_negocio === tipo) || adicionales.length >= MAX_ACTIVIDADES_ADICIONALES) return;
+    adicionales.push({ sector, tipo_negocio: tipo, ...(evidencia ? { evidencia } : {}) });
+  };
+  if (motor === 'ia') for (const a of c.actividades_adicionales ?? []) if (a.evidencia && t.includes(normalizeText(a.evidencia))) agregar(a.sector, a.tipo_negocio, a.evidencia);
+  for (const m of matches) agregar(m.sector, m.tipo, m.literal);
+  c.actividades_adicionales = adicionales;
+  // Con reglas, las funciones de cada actividad se suman (un café con spa necesita inventario y agenda).
+  if (motor === 'reglas') {
+    const modulos = new Set<string>(c.modulos_sugeridos);
+    for (const sector of adicionales.length && c.sector ? [c.sector, ...adicionales.map((a) => a.sector)] : []) {
+      if (['barberia', 'gimnasio', 'servicios', 'salud', 'mascotas'].includes(sector)) modulos.add('agenda');
+      if (['restaurante', 'comercio', 'alimentos', 'taller'].includes(sector)) modulos.add('inventario');
+      if (sector === 'gimnasio') modulos.add('membresias');
+    }
+    c.modulos_sugeridos = [...modulos] as typeof c.modulos_sugeridos;
   }
   if (motor === 'ia') for (const campo of ['tamano','volumen_conv_mes','factura_electronica'] as const) {
     const evidencia = raw.evidencia?.[campo];

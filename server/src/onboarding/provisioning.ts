@@ -11,6 +11,7 @@ import { config, urlEmpresa } from '../config.js';
 import { encolarDocumentos } from '../documentos/servicio.js';
 import { encolarCorreo } from '../email/servicio.js';
 import * as plantillas from '../email/plantillas.js';
+import { reembolsoBloqueaServicio } from '../modules/reembolsoBloqueo.js';
 import type { Personalizacion } from './personalization.js';
 
 /**
@@ -75,7 +76,7 @@ export interface NuevoTenant {
   catalogo?: CatalogRow[] | null;
   recursos?: string[] | null;
   /** Actividad real elegida en el alta (puede no tener plantilla propia). */
-  actividad?: { sector: string; tipo_negocio?: string | null; descripcion?: string | null } | null;
+  actividad?: { sector: string; tipo_negocio?: string | null; descripcion?: string | null; adicionales?: { sector: string; tipo_negocio: string }[] } | null;
   whatsapp_phone_number_id?: string | null;
   /** Términos del pago que activa la empresa. Sin ellos: un mes comercial (demostración y semillas). */
   suscripcion?: TerminosSuscripcion | null;
@@ -220,6 +221,8 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
   const d = (await tx.query(`SELECT * FROM onboarding_draft WHERE token=$1 FOR UPDATE`, [draftToken])).rows[0];
   if (!d) throw new Error('Borrador inexistente');
   if (d.estado === 'APROVISIONADO') return { tenantId: d.tenant_id, yaExistia: true };
+  // Un pago devuelto por retracto o por falta de activación no abre el servicio.
+  if (await reembolsoBloqueaServicio(tx, draftToken)) throw new Error('El pago de esta alta se devuelve: el espacio no se crea.');
   if (d.creacion_diferida && (!d.personalizacion || d.creacion?.estado !== 'aplicando')) throw new Error('La creación asistida todavía no está preparada');
   // El pago aprobado fija el plan y las condiciones (los términos se congelaron al crear el checkout).
   const pago = (await tx.query(
@@ -236,7 +239,8 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
       admin: { nombre: n.responsable || n.nombre, email: n.email, passwordHash: d.password_hash_inicial ?? undefined, correoVerificadoEn: d.creacion_diferida ? d.email_verificado_en : undefined },
       personalizacion: d.personalizacion,
       tema: d.tema, logo_data_url: d.logo_data_url, catalogo: d.catalogo ?? [], recursos: n.recursos ?? [],
-      actividad: { sector: d.clasificacion.sector ?? 'otro', tipo_negocio: d.clasificacion.tipo_negocio ?? null, descripcion: d.descripcion || d.clasificacion.otro_descripcion || null },
+      actividad: { sector: d.clasificacion.sector ?? 'otro', tipo_negocio: d.clasificacion.tipo_negocio ?? null, descripcion: d.descripcion || d.clasificacion.otro_descripcion || null,
+        adicionales: (d.clasificacion.actividades_adicionales ?? []).map((a: any) => ({ sector: a.sector, tipo_negocio: a.tipo_negocio })) },
       suscripcion: pago ? {
         modalidad: pago.modalidad, accesoDias: pago.acceso_dias ?? null, precioPagado: Number(pago.monto),
         montoReferencia: pago.monto_referencia == null ? null : Number(pago.monto_referencia), paymentId: pago.id,

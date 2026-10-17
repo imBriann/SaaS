@@ -10,6 +10,7 @@ import './support.css';
 import './registration.css';
 import './workspace-birth.css';
 import './creation.css';
+import './legal.css';
 import { ToastProvider } from './components/ui';
 import { PanelLayout } from './components/Layout';
 import { slugDelHost, tenantSlug } from './api';
@@ -23,6 +24,14 @@ const Producto = lazy(() => publico().then(m => ({ default: m.Producto })));
 const Nosotros = lazy(() => publico().then(m => ({ default: m.Nosotros })));
 const Planes = lazy(() => publico().then(m => ({ default: m.Planes })));
 const Ayuda = lazy(() => publico().then(m => ({ default: m.Ayuda })));
+// Zona legal: paquete aparte, solo se descarga al leer un documento.
+const legal = () => import('./pages/public/Legal');
+const Legal = lazy(() => legal().then(m => ({ default: m.Legal })));
+const Terminos = lazy(() => legal().then(m => ({ default: m.Terminos })));
+const Privacidad = lazy(() => legal().then(m => ({ default: m.Privacidad })));
+const EliminacionDatos = lazy(() => legal().then(m => ({ default: m.EliminacionDatos })));
+const Cookies = lazy(() => legal().then(m => ({ default: m.Cookies })));
+const Consumidor = lazy(() => legal().then(m => ({ default: m.Consumidor })));
 const Conversaciones = lazy(() => import('./pages/app/Conversaciones').then((m) => ({ default: m.Conversaciones })));
 const negocio = () => import('./pages/app/Negocio');
 const Agenda = lazy(() => negocio().then((m) => ({ default: m.Agenda })));
@@ -53,6 +62,7 @@ const OpIntegraciones = lazy(() => op().then((m) => ({ default: m.OpIntegracione
 const OpSoporte = lazy(() => op().then((m) => ({ default: m.OpSoporte })));
 const OpTicket = lazy(() => op().then((m) => ({ default: m.OpTicket })));
 const OpAuditoria = lazy(() => op().then((m) => ({ default: m.OpAuditoria })));
+const OpReembolsos = lazy(() => op().then((m) => ({ default: m.OpReembolsos })));
 
 /** En el dominio raíz sin empresa elegida se muestra la landing; con subdominio o empresa, el panel. */
 function Raiz() {
@@ -73,7 +83,7 @@ function App() {
     return () => { observer.disconnect(); clearTimeout(timer); };
   }, [location.pathname, location.hash]);
   useEffect(() => {
-    const titulos: Record<string, string> = { '/bienvenida': 'Todo tu negocio. Un solo lugar.', '/producto': 'Producto y módulos', '/nosotros': 'Nosotros', '/planes': 'Planes y configuración', '/ayuda': 'Centro de ayuda', '/empezar': 'Configura tu negocio', '/entrar': 'Entrar' };
+    const titulos: Record<string, string> = { '/bienvenida': 'Todo tu negocio. Un solo lugar.', '/producto': 'Producto y módulos', '/nosotros': 'Nosotros', '/planes': 'Planes y configuración', '/ayuda': 'Centro de ayuda', '/legal': 'Zona legal', '/empezar': 'Configura tu negocio', '/entrar': 'Entrar' };
     if (titulos[location.pathname]) document.title = `${titulos[location.pathname]} · Omnegia`;
   }, [location.pathname]);
   const sinEmpresa = !slugDelHost() && !tenantSlug();
@@ -85,6 +95,12 @@ function App() {
           <Route path="/nosotros" element={<Nosotros />} />
           <Route path="/planes" element={<Planes />} />
           <Route path="/ayuda" element={<Ayuda />} />
+          <Route path="/legal" element={<Legal />} />
+          <Route path="/terminos" element={<Terminos />} />
+          <Route path="/privacidad" element={<Privacidad />} />
+          <Route path="/eliminacion-de-datos" element={<EliminacionDatos />} />
+          <Route path="/cookies" element={<Cookies />} />
+          <Route path="/consumidor" element={<Consumidor />} />
           <Route path="/empezar" element={<Describir />} />
           <Route path="/empezar/datos" element={<Datos />} />
           <Route path="/empezar/catalogo" element={<Catalogo />} />
@@ -108,6 +124,7 @@ function App() {
             <Route path="integraciones" element={<OpIntegraciones />} />
             <Route path="soporte" element={<OpSoporte />} />
             <Route path="soporte/:id" element={<OpTicket />} />
+            <Route path="reembolsos" element={<OpReembolsos />} />
             <Route path="auditoria" element={<OpAuditoria />} />
           </Route>
           {sinEmpresa && <Route path="/" element={<Raiz />} />}

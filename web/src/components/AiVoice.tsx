@@ -21,7 +21,8 @@ export function useEscrituraEnVivo(objetivo: string, { escribir = 16, borrar = 5
 export function AiVoice({ texto, className = '' }: { texto: string; className?: string }) {
   const { visible, escribiendo } = useEscrituraEnVivo(texto);
   return <>
-    <p className={`ai-voice ${escribiendo ? 'is-typing' : ''} ${className}`} aria-hidden="true">{visible}<span className="ai-voice-caret" /></p>
+    {/* El texto completo, invisible, reserva el alto final: el panel no crece ni empuja el contenido mientras se escribe. */}
+    <p className={`ai-voice ${escribiendo ? 'is-typing' : ''} ${className}`} aria-hidden="true"><span className="ai-voice-ghost">{texto}</span><span className="ai-voice-live">{visible}<span className="ai-voice-caret" /></span></p>
     <p className="sr" role="status" aria-live="polite">{texto}</p>
   </>;
 }

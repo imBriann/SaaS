@@ -26,6 +26,8 @@ import { loadTemplates } from '../../templates/index.js';
 import { MARCA } from '../../brand.js';
 import { estadoIaRegistro } from '../../onboarding/personalization.js';
 import { solicitarCreacion } from '../../onboarding/creation.js';
+import { consultarReembolso, solicitarReembolso } from '../../modules/reembolsos.js';
+import { consultarSolicitudDatos, crearSolicitudDatos, infoLegal, registrarAceptacion } from '../../legal/index.js';
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
@@ -42,6 +44,13 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   );
   app.get('/api/publico/sectores', async () => loadTemplates().map((t) => ({ sector: t.sector, version: t.version, nombre: t.nombre, descripcion: t.descripcion, modulos: t.modulos })));
   app.get('/api/publico/estado', async () => ({ contratacion: onboarding.puedeContratar(), modalidad: resumenModalidad(), simuladores: config.simuladores, integraciones: integraciones().map(({ clave, estado }) => ({ clave, estado })) }));
+
+  // ------------------------------------------------------------------ zona legal
+  app.get('/api/publico/legal', async () => infoLegal());
+  app.post('/api/publico/solicitudes-datos', async (req: any) => crearSolicitudDatos(db, req.body, req.ip));
+  app.post('/api/publico/reembolsos', async (req: any) => solicitarReembolso(db, req.body, req.ip));
+  app.post('/api/publico/reembolsos/consulta', async (req: any) => consultarReembolso(db, req.body?.radicado, req.body?.email));
+  app.post('/api/publico/solicitudes-datos/consulta', async (req: any) => consultarSolicitudDatos(db, req.body?.radicado, req.body?.email));
 
   // ------------------------------------------------------------------ sesión
   app.post('/api/auth/login', async (req: any, reply) => {
@@ -127,6 +136,8 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   });
   app.post('/api/onboarding/borradores/:tk/catalogo/vista-previa', async (req: any) => onboarding.previewCatalog(db, req.params.tk, req.body?.mapeo));
   app.post('/api/onboarding/borradores/:tk/catalogo/confirmar', async (req: any) => onboarding.confirmCatalog(db, req.params.tk, req.body));
+  // Aceptación expresa de los términos y la política de datos, con prueba (versión, fecha y huella del origen).
+  app.post('/api/onboarding/borradores/:tk/aceptacion-legal', async (req: any) => registrarAceptacion(db, req.params.tk, { ip: req.ip, agente: String(req.headers['user-agent'] ?? '') }, req.body));
   app.post('/api/onboarding/borradores/:tk/pago', async (req: any) => onboarding.startCheckout(db, req.params.tk, req.correlacion, req.body?.retorno));
   app.get('/api/onboarding/borradores/:tk/estado', async (req: any) => onboarding.draftStatus(db, req.params.tk, req.correlacion));
   app.post('/api/onboarding/borradores/:tk/reintentar', async (req: any) => onboarding.retryProvisioning(db, req.params.tk, req.correlacion));

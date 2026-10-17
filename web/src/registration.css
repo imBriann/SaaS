@@ -46,7 +46,9 @@
 .registration-ai.is-compact .registration-orb-stage { min-height: 190px; flex: none; }
 .registration-ai.is-compact .ai-orb-large canvas { transform: scale(2.1); }
 .registration-ai-copy { min-height: 132px; margin-bottom: 22px; }
-.ai-voice { margin: 0; font-size: 23px; line-height: 1.4; font-weight: 450; letter-spacing: -.01em; color: #faf8ff; text-wrap: pretty; }
+.ai-voice { display: grid; margin: 0; font-size: 23px; line-height: 1.4; font-weight: 450; letter-spacing: -.01em; color: #faf8ff; text-wrap: pretty; }
+.ai-voice > * { grid-area: 1 / 1; min-width: 0; }
+.ai-voice-ghost { visibility: hidden; }
 .ai-voice-caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 3px; vertical-align: -.15em; background: #c5bfff; animation: voice-caret 1000ms steps(1) infinite; }
 .ai-voice.is-typing .ai-voice-caret { animation: none; }
 @keyframes voice-caret { 50% { opacity: 0; } }
@@ -135,14 +137,18 @@
   .registration-start > .registration-ai .orb-halo, .registration-start > .registration-ai .registration-ai-status { display: none; }
   .registration-start > .registration-ai .ai-orb-large { width: 56px; height: 56px; }
   .registration-start > .registration-ai .ai-orb-large canvas { transform: scale(.85); }
-  .registration-start > .registration-ai .registration-ai-copy { min-height: 0; margin: 0; max-height: 8.8em; overflow-y: auto; align-self: center; overscroll-behavior: contain; }
+  /* El mensaje se lee completo, sin recuadro con barra de desplazamiento. Si es largo, el panel deja de ser fijo y se desplaza con la página. */
+  .registration-start > .registration-ai .registration-ai-copy { min-height: 0; margin: 0; align-self: center; }
+  .registration-start > .registration-ai.is-long:not(.is-folded) { position: static; }
   .registration-start > .registration-ai .ai-voice { font-size: 16px; line-height: 1.45; }
   .registration-ai-toggle { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 10px; background: #ffffff14; color: #ebe5fb; cursor: pointer; }
   .registration-start > .registration-ai.is-folded { grid-template-columns: 40px minmax(0, 1fr) 44px; align-items: center; padding-block: 6px; }
   .registration-start > .registration-ai.is-folded .registration-orb-stage, .registration-start > .registration-ai.is-folded .ai-orb-large { width: 40px; height: 40px; }
   .registration-start > .registration-ai.is-folded .ai-orb-large canvas { transform: scale(.6); }
   .registration-start > .registration-ai.is-folded .registration-ai-copy { max-height: 1.5em; overflow: hidden; cursor: pointer; }
-  .registration-start > .registration-ai.is-folded .ai-voice { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 15px; }
+  .registration-start > .registration-ai.is-folded .ai-voice { font-size: 15px; }
+  .registration-start > .registration-ai.is-folded .ai-voice-ghost { display: none; }
+  .registration-start > .registration-ai.is-folded .ai-voice-live { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ai-novedad { display: block; position: absolute; top: 0; right: 0; z-index: 2; width: 11px; height: 11px; border-radius: 50%; background: #8fe3b1; box-shadow: 0 0 0 3px #19182d; animation: registration-pulse 1400ms ease-in-out infinite; }
   .registration-prompt { position: static; padding: 0; }
   .registration-prompt h1 { font-size: 42px; max-width: 15ch; margin-bottom: 16px; }
@@ -174,3 +180,15 @@
   .registration-ai.is-working .registration-orb-stage .ai-orb { transform: none; }
   .registration-response :is(.ia-propuesta, .ia-fila, .ia-valor, .ia-editor) { animation: none; }
 }
+
+/* Actividades adicionales de un mismo comercio («cafetería y spa») */
+.actividad-extra { margin-top: 18px; padding-top: 16px; border-top: 1px solid #e3deef; display: grid; gap: 12px; }
+.actividad-extra .ia-para { margin: 0; }
+.actividad-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.actividad-chips li { display: inline-flex; align-items: center; gap: 4px; padding: 4px 4px 4px 14px; border: 1px solid #9282c7; border-radius: 999px; background: #f0edf9; color: #302252; font-size: 15px; }
+.actividad-chips button { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: transparent; color: #4b3ccf; cursor: pointer; }
+.actividad-chips button:hover:not(:disabled) { background: #ded8f6; }
+.actividad-chips button:disabled { cursor: not-allowed; opacity: .6; }
+.actividad-extra-nueva { display: grid; gap: 10px; }
+.actividad-extra-nueva select { max-width: 420px; }
+.ia-extras { color: #4b3ccf; }

@@ -20,7 +20,7 @@ const PREGUNTAS_BASE: Record<string, string> = {
 /** Lo que la IA ya entendió, en una línea legible a partir de los valores validados por el servidor. */
 function resumen(c: any) {
   const partes = [
-    c.sector === 'otro' ? c.otro_descripcion || null : c.tipo_negocio,
+    c.sector === 'otro' ? c.otro_descripcion || null : c.tipo_negocio ? `${c.tipo_negocio}${c.actividades_adicionales?.length ? ` y también ${c.actividades_adicionales.map((a: any) => a.tipo_negocio).join(', ')}` : ''}` : null,
     TAMANOS.find(([v]) => v === c.tamano)?.[1]?.toLowerCase(),
     c.volumen_conv_mes ? `${VOLUMENES.find(([v]) => v === c.volumen_conv_mes)?.[1]} en conversaciones` : null,
     c.factura_electronica === true ? 'con factura electrónica' : c.factura_electronica === false ? 'sin factura electrónica por ahora' : null,
@@ -151,7 +151,7 @@ export function RegistrationStart() {
         <p className="registration-saving"><Icon n="candado" size={15} />Puedes cambiar la propuesta antes de pagar.</p>
       </form>
 
-      <aside className={`registration-ai ${ocupado ? 'is-working' : ''} ${c ? 'is-compact' : ''} ${plegado ? 'is-folded' : ''}`} aria-busy={ocupado} aria-label="Asistente de Omnegia">
+      <aside className={`registration-ai ${ocupado ? 'is-working' : ''} ${c ? 'is-compact' : ''} ${plegado ? 'is-folded' : ''} ${mensaje.length > 150 ? 'is-long' : ''}`} aria-busy={ocupado} aria-label="Asistente de Omnegia">
         <div className="registration-orb-stage"><span className="orb-halo" aria-hidden="true" /><span className="orb-halo" aria-hidden="true" />
           <AiOrb large theme="dark" state={orbe} label={ocupado ? 'Análisis en curso' : 'Asistente de Omnegia'} />
           {novedad && <span className="ai-novedad"><span className="sr">Mensaje nuevo de la IA</span></span>}</div>

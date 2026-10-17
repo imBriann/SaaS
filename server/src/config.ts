@@ -73,6 +73,8 @@ export const config = {
     accessToken: v('WHATSAPP_ACCESS_TOKEN'),
     graphVersion: v('WHATSAPP_GRAPH_VERSION') ?? 'v23.0',
     idiomaPlantillas: v('WHATSAPP_IDIOMA_PLANTILLAS') ?? 'es',
+    /** Identificador del número de WhatsApp de Omnegia (no de un comercio): lo atiende el asistente de la plataforma. */
+    plataformaPhoneNumberId: v('WHATSAPP_PLATFORM_PHONE_NUMBER_ID'),
   },
   llm: {
     /** 'anthropic' con clave; 'mock' es el simulador determinista (solo con simuladores habilitados). */

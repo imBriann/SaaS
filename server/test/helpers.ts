@@ -134,4 +134,17 @@ export async function verificarAlta(E: Env, tk: string) {
  const codigo=await codigoDelCorreo(E.db,d.negocio.email);
  const verificado=await E.app.inject({method:'POST',url:`/api/onboarding/borradores/${tk}/correo/verificar`,payload:{codigo}});
  if(verificado.statusCode!==200)throw new Error(verificado.body);
+ await completarRequisitos(E,tk);
+}
+
+/** Teléfono y ubicación del comercio (obligatorios) más la aceptación legal, para llegar al pago. */
+export const DATOS_COMERCIO={telefono_pais:'CO',telefono_nacional:'300 123 4567',pais:'CO',departamento:'54',municipio:'54001',direccion:'Calle 5 # 2-10'};
+export async function completarRequisitos(E: Env, tk: string) {
+ const d=(await E.app.inject({method:'GET',url:`/api/onboarding/borradores/${tk}`})).json();
+ const faltan:Record<string,string>={};
+ if(!d.negocio.telefono)Object.assign(faltan,{telefono_pais:DATOS_COMERCIO.telefono_pais,telefono_nacional:DATOS_COMERCIO.telefono_nacional});
+ if(!d.negocio.direccion||!d.negocio.municipio)Object.assign(faltan,{pais:DATOS_COMERCIO.pais,departamento:DATOS_COMERCIO.departamento,municipio:DATOS_COMERCIO.municipio,direccion:DATOS_COMERCIO.direccion});
+ if(Object.keys(faltan).length){const r=await E.app.inject({method:'PATCH',url:`/api/onboarding/borradores/${tk}`,payload:{negocio:faltan}});if(r.statusCode!==200)throw new Error(r.body);}
+ const a=await E.app.inject({method:'POST',url:`/api/onboarding/borradores/${tk}/aceptacion-legal`,payload:{terminos:true,privacidad:true,inicio_servicio:true}});
+ if(a.statusCode!==200)throw new Error(a.body);
 }

@@ -18,7 +18,12 @@ describe('Registro: datos verificables y prioridad humana',()=>{
   expect(c).toMatchObject({sector:null,tamano:null,volumen_conv_mes:null,factura_electronica:null});
   const neg=await classifyBusiness('Tengo una barbería y no necesito facturación electrónica.');
   expect(neg.sector).toBe('barberia');expect(neg.factura_electronica).toBe(false);
-  expect((await classifyBusiness('Tengo una cafetería y una veterinaria.')).sector).toBeNull();
+  // Un comercio con dos actividades: la primera es la principal y la otra queda como adicional, sin adivinar ni descartar.
+  const mixto=await classifyBusiness('Tengo una cafetería y una veterinaria.');
+  expect(mixto).toMatchObject({sector:'restaurante',tipo_negocio:'Cafetería'});expect(mixto.actividades_adicionales).toEqual([{sector:'mascotas',tipo_negocio:'Veterinaria',evidencia:'veterinaria'}]);
+  const cafeSpa=await classifyBusiness('Tengo un café spa en Cúcuta con tres empleados.');
+  expect(cafeSpa).toMatchObject({sector:'restaurante',tipo_negocio:'Cafetería'});expect(cafeSpa.actividades_adicionales?.map(a=>a.tipo_negocio)).toEqual(['Spa']);expect(cafeSpa.modulos_sugeridos).toEqual(expect.arrayContaining(['agenda','inventario']));
+  expect((await classifyBusiness('Tengo una barbería')).actividades_adicionales).toEqual([]);
  });
  it('catálogo amplio, tipos válidos y reanálisis que conserva las respuestas y el borrador',async()=>{
   const catalog=(await E.app.inject({method:'GET',url:'/api/onboarding/catalogos'})).json();expect(catalog.sectores.length).toBeGreaterThanOrEqual(19);

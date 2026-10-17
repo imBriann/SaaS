@@ -34,6 +34,7 @@ export function SiteFooter() {
       <nav aria-label="Ayuda y acceso"><h2>Estamos cerca</h2><Link to="/ayuda">Centro de ayuda</Link><Link to="/soporte">Solicitar atención humana</Link><Link to="/entrar">Entrar a mi empresa</Link></nav>
       <div className="footer-contact"><h2>Conversemos</h2><a href="mailto:soporte@brianacevedo.dev">soporte@brianacevedo.dev <Icon n="flecha" className="" size={15} /></a><p>Para consultas de tu cuenta, abre una solicitud desde el panel.</p></div>
     </div>
-    <div className="footer-bottom"><span>© {new Date().getFullYear()} Omnegia</span><span>Hecho para el día a día de tu negocio.</span><Link to="/ayuda#datos">Datos y privacidad</Link></div>
+    <nav className="footer-legal" aria-label="Zona legal"><h2>Legal</h2><Link to="/terminos">Términos y condiciones</Link><Link to="/privacidad">Política de privacidad</Link><Link to="/eliminacion-de-datos">Eliminación de datos</Link><Link to="/cookies">Cookies</Link><Link to="/consumidor">Derechos del consumidor y PQR</Link><a href="https://www.sic.gov.co" target="_blank" rel="noopener noreferrer">Superintendencia de Industria y Comercio</a></nav>
+    <div className="footer-bottom"><span>© {new Date().getFullYear()} Omnegia</span><span>Hecho para el día a día de tu negocio.</span><Link to="/legal">Zona legal</Link></div>
   </footer>;
 }

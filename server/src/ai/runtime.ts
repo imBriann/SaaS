@@ -87,7 +87,10 @@ function describirActividad(a: any): string | null {
   if (!a?.sector) return null;
   const s = SECTOR_CATALOG.find((x) => x.id === a.sector);
   const tipo = a.tipo_negocio ?? (a.sector === 'otro' ? a.descripcion : null);
-  return [tipo, s ? `sector ${s.nombre.toLowerCase()}` : null].filter(Boolean).join(', ') || null;
+  const principal = [tipo, s ? `sector ${s.nombre.toLowerCase()}` : null].filter(Boolean).join(', ') || null;
+  // Un comercio puede combinar actividades («cafetería y spa»): el agente debe conocerlas todas.
+  const otras = (Array.isArray(a.adicionales) ? a.adicionales : []).map((x: any) => x?.tipo_negocio).filter(Boolean);
+  return principal && otras.length ? `${principal}; también ofrece ${otras.join(', ')}` : principal;
 }
 
 function systemPrompt(agent: AgentProfile & { prompt_base?: string }, negocio: { nombre: string; sector: string; actividad?: string | null; zona?: string }, extra = '') {

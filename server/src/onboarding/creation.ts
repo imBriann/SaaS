@@ -5,6 +5,7 @@ import { enqueue } from '../core/events.js';
 import { login, validarContrasena, type SessionUser } from '../modules/auth.js';
 import { aprovisionarConReintento } from '../modules/billing.js';
 import { personalizarEspacio } from './personalization.js';
+import { reembolsoBloqueaServicio } from '../modules/reembolsoBloqueo.js';
 
 /** La autorización precede la creación; una llave de borrador nunca abre una cuenta existente. */
 export async function solicitarCreacion(db: Database, tk: string, password: unknown, meta: { ip: string; agente?: string; correlacion: string; usuario?: SessionUser | null }) {
@@ -13,6 +14,7 @@ export async function solicitarCreacion(db: Database, tk: string, password: unkn
   if (!d.creacion_diferida) throw new AppError('CONFLICT', 'Esta alta usa el registro anterior. Continúa desde su estado actual.');
   const pagado = await db.withPlatform(async tx => (await tx.query("SELECT 1 FROM payment WHERE draft_token=$1 AND estado='APROBADO'", [tk])).rows.length > 0);
   if (!pagado || !d.email_verificado_en || d.email_verificado !== d.negocio.email) throw new AppError('CONFLICT', 'Necesitas el correo verificado y el pago aprobado para crear tu espacio.');
+  if (await db.withPlatform(tx => reembolsoBloqueaServicio(tx, tk))) throw new AppError('CONFLICT', 'Este pago se devuelve por tu solicitud de retracto o reembolso, así que el espacio ya no se puede crear.');
   const existente = await db.withPlatform(async tx => (await tx.query('SELECT id FROM users WHERE email=$1', [d.negocio.email])).rows[0]);
   let sesion: Awaited<ReturnType<typeof login>> | null = null;
   let hash: string | null = null;

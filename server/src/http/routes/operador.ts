@@ -4,6 +4,7 @@ import { AppError, notFound } from '../../lib/errors.js';
 import { uuidv7 } from '../../lib/util.js';
 import { loadUser } from '../context.js';
 import * as op from '../../modules/operador.js';
+import * as reembolsos from '../../modules/reembolsos.js';
 
 /**
  * Rutas del panel interno de Omnegia (/api/operador/*).
@@ -59,6 +60,11 @@ export async function registerOperatorRoutes(app: FastifyInstance, db: Database)
   r('GET', '/soporte/:id', (o, req) => op.verTicket(db, o, req.params.id));
   r('POST', '/soporte/:id/responder', (o, req) => op.responderTicket(db, o, req.params.id, req.body));
   r('PATCH', '/soporte/:id', (o, req) => op.actualizarTicket(db, o, req.params.id, req.body));
+
+  // Reembolsos: la cola la ve todo el equipo; decidir y registrar la devolución es solo de administración.
+  r('GET', '/reembolsos', (o, req) => reembolsos.listarReembolsos(db, o, req.query));
+  r('POST', '/reembolsos/:id/decidir', (o, req) => reembolsos.decidirReembolso(db, o, req.params.id, req.body));
+  r('POST', '/reembolsos/:id/devuelto', (o, req) => reembolsos.registrarDevolucion(db, o, req.params.id, req.body));
 
   r('GET', '/auditoria', (o, req) => op.auditoria(db, o, req.query));
 

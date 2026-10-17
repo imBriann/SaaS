@@ -116,6 +116,10 @@ export function RegistrationData({ d, setD }: { d: any; setD: (d: any) => void }
     const r = await run(guardarDatos, undefined, { silencioso: true });
     if (!r) return;
     if (!r.correo_verificado) { setAviso({ grupo: 'acceso', texto: 'Confirma el código que enviamos a tu correo antes de continuar.', tono: 'warn' }); document.getElementById('acceso')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+    const falta = (g: string, texto: string) => { setAviso({ grupo: g, texto, tono: 'warn' }); document.getElementById(g)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+    if (!r.negocio.telefono) return falta('contacto', 'Escribe el teléfono de contacto de tu negocio para continuar.');
+    if (!r.negocio.pais || !r.negocio.departamento || !r.negocio.municipio || !r.negocio.direccion) return falta('ubicacion', 'Completa el país, el departamento, el municipio y la dirección de tu negocio para continuar.');
+    if (factura && (!r.negocio.nit || !r.negocio.nit_dv)) return falta('ubicacion', 'Escribe el NIT y su dígito de verificación para continuar.');
     // El servidor vuelve a comprobar la dirección al confirmar.
     const a = await api.get(`/api/onboarding/subdominio?slug=${encodeURIComponent(r.negocio.slug)}&tk=${d.token}`).catch(() => null);
     if (a && !a.disponible) { setAviso({ grupo: 'negocio', texto: 'Esa dirección web ya no está disponible. Elige otra.', tono: 'err' }); return; }
@@ -126,16 +130,16 @@ export function RegistrationData({ d, setD }: { d: any; setD: (d: any) => void }
   const estados: Record<string, EstadoGrupo> = useMemo(() => {
     const negocio: EstadoGrupo = f.nombre && f.slug && disponibilidad?.disponible !== false ? 'completo' : 'pendiente';
     const acceso: EstadoGrupo = f.email && verificado ? 'completo' : 'pendiente';
-    const contacto: EstadoGrupo = d.negocio.telefono && f.telefono_nacional ? 'completo' : 'opcional';
-    const ubicacion: EstadoGrupo = !factura ? (f.municipio && f.direccion ? 'completo' : 'opcional')
-      : f.nit && f.nit_dv && f.pais && f.departamento && f.municipio && f.direccion ? 'completo' : 'pendiente';
+    const contacto: EstadoGrupo = d.negocio.telefono && f.telefono_nacional ? 'completo' : 'pendiente';
+    // La ubicación del comercio siempre es obligatoria; el NIT, solo si necesita facturación electrónica.
+    const ubicacion: EstadoGrupo = f.pais && f.departamento && f.municipio && f.direccion && (!factura || (f.nit && f.nit_dv)) ? 'completo' : 'pendiente';
     const r: Record<string, EstadoGrupo> = { negocio, acceso, contacto, ubicacion };
     if (aviso?.tono === 'err' && aviso.grupo) r[aviso.grupo] = 'error';
     return r;
   }, [f, disponibilidad, verificado, factura, d.negocio.telefono, aviso]);
-  const requeridos = ['negocio', 'acceso', ...(factura ? ['ubicacion'] : [])];
+  const requeridos = ['negocio', 'acceso', 'contacto', 'ubicacion'];
   const listos = requeridos.filter((g) => estados[g] === 'completo').length;
-  const avisoEn = (g: string) => aviso && aviso.grupo === g && <p className={aviso.tono === 'err' ? 'bloqueado' : aviso.tono === 'warn' ? 'aviso' : 'estado ok'} role={aviso.tono === 'err' ? 'alert' : 'status'}>{aviso.texto}</p>;
+  const avisoEn = (g: string) => aviso && aviso.grupo === g && !(aviso.tono === 'warn' && estados[g] === 'completo') && <p className={aviso.tono === 'err' ? 'bloqueado' : aviso.tono === 'warn' ? 'aviso' : 'estado ok'} role={aviso.tono === 'err' ? 'alert' : 'status'}>{aviso.texto}</p>;
   const direccion = dominio.dominio && !dominio.local ? `${f.slug || 'tu-negocio'}.${dominio.dominio}` : `${f.slug || 'tu-negocio'}.localhost`;
 
   return (
@@ -143,7 +147,7 @@ export function RegistrationData({ d, setD }: { d: any; setD: (d: any) => void }
       <form className="registro-form" onSubmit={continuar} noValidate>
         <header className="registro-cab">
           <h1 className="onb-titulo">Ahora, dale tu identidad.</h1>
-          <p className="sec">El nombre de tu negocio y un correo para entrar. El resto lo puedes completar después.</p>
+          <p className="sec">El nombre de tu negocio, un correo para entrar, un teléfono de contacto y la ubicación del negocio. Todo es necesario para crear tu espacio.</p>
           <div className="registration-context"><AiOrb state="breathing" label="Configuración guardada" /><p><strong>{d.clasificacion?.tipo_negocio ?? 'Tu negocio'}, con sus funciones preparadas.</strong>{d.clasificacion?.motor === 'ia' ? 'La IA organizó tu configuración. ' : 'Tu configuración está guardada. '}Añade tu marca y verifica tu correo para continuar.</p></div>
           <div className="registro-progreso" aria-label={`${listos} de ${requeridos.length} grupos obligatorios completos`}>
             <div className="registro-barra"><span style={{ transform: `scaleX(${listos / requeridos.length})` }} /></div>
@@ -202,17 +206,17 @@ export function RegistrationData({ d, setD }: { d: any; setD: (d: any) => void }
           {avisoEn('acceso')}
         </Grupo>
 
-        <Grupo n={3} id="contacto" titulo="Añadir un teléfono de contacto" para="Opcional. Puedes completarlo ahora o desde tu panel." estado={estados.contacto} plegable>
+        <Grupo n={3} id="contacto" titulo="Teléfono de contacto del negocio" para="Obligatorio. Con este número reconocemos a tu comercio cuando nos escribes y te avisamos de tu cuenta." estado={estados.contacto}>
           <div className="telefono">
-            <Campo etiqueta="País">
-              <select className="input bandera-select" value={f.telefono_pais ?? ''} onChange={(e) => cambiar('telefono_pais', e.target.value)}>
+            <Campo etiqueta="País del teléfono">
+              <select className="input bandera-select" value={f.telefono_pais ?? ''} aria-required="true" onChange={(e) => cambiar('telefono_pais', e.target.value)}>
                 {paises.filter((p) => p.indicativo).map((p) => <option key={p.codigo} value={p.codigo}>{p.bandera} {p.nombre} ({p.indicativo})</option>)}
               </select>
             </Campo>
             <Campo etiqueta="Número">
               <div className="telefono-numero">
                 <span className="telefono-prefijo" aria-hidden="true"><span className="bandera">{paisTel?.bandera}</span>{paisTel?.indicativo ?? '+'}</span>
-                <input className="input" type="tel" inputMode="tel" autoComplete="tel-national" maxLength={20} value={f.telefono_nacional ?? ''} placeholder={f.telefono_pais === 'CO' ? '300 123 4567' : ''}
+                <input className="input" type="tel" inputMode="tel" autoComplete="tel-national" aria-required="true" maxLength={20} value={f.telefono_nacional ?? ''} placeholder={f.telefono_pais === 'CO' ? '300 123 4567' : ''}
                   aria-label={`Número sin indicativo${paisTel?.indicativo ? ` (${paisTel.indicativo})` : ''}`} onChange={(e) => cambiar('telefono_nacional', e.target.value.replace(/[^\d\s()-]/g, ''))} />
               </div>
             </Campo>
@@ -221,8 +225,8 @@ export function RegistrationData({ d, setD }: { d: any; setD: (d: any) => void }
           {avisoEn('contacto')}
         </Grupo>
 
-        <Grupo n={4} id="ubicacion" titulo={factura ? 'Ubicación y datos tributarios' : 'Añadir la ubicación del negocio'} estado={estados.ubicacion} plegable={!factura}
-          para={factura ? 'Necesarios para preparar la facturación electrónica: identificación tributaria y dirección del establecimiento.' : 'Opcional por ahora. Los pediremos si activas una integración que los necesite.'}>
+        <Grupo n={4} id="ubicacion" titulo={factura ? 'Ubicación y datos tributarios' : 'Ubicación del negocio'} estado={estados.ubicacion}
+          para={factura ? 'Necesarios para preparar la facturación electrónica: identificación tributaria y dirección del establecimiento.' : 'Obligatoria: el país, el departamento, el municipio y la dirección donde atiendes. Aparece en tus documentos y nos identifica tu comercio.'}>
           {factura && (
             <div className="nit">
               <Campo etiqueta="NIT" ayuda="solo números, sin puntos ni guiones">
@@ -267,6 +271,7 @@ export function RegistrationData({ d, setD }: { d: any; setD: (d: any) => void }
           <button type="submit" className="btn primario grande" disabled={ocupado}>{ocupado ? 'Guardando…' : 'Guardar y continuar'}</button>
         </footer>
         <p className="tenue peq-txt">Tus datos quedan guardados. Después del pago podrás crear tu espacio con IA.</p>
+        <p className="tenue peq-txt aviso-datos">Recogemos estos datos para crear y operar tu cuenta, verificar tu identidad y atenderte. Sus finalidades, tus derechos y cómo ejercerlos están en la <Link to="/privacidad" target="_blank">Política de tratamiento de datos</Link>. Antes de pagar te pediremos tu autorización expresa.</p>
       </form>
       <IdentidadMarca d={d} setD={setD} nombre={f.nombre} />
     </div>

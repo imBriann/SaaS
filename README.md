@@ -35,10 +35,10 @@ Copia `server/.env.example` a `server/.env`. Nunca subas `.env` al repositorio. 
 | Base | `APP_PUBLIC_URL` (https en producción), `API_PUBLIC_URL`, `BASE_DOMAIN`, `DATABASE_URL`, `APP_KEY` (32+ caracteres: `openssl rand -base64 48`) |
 | Correo | `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS`, `EMAIL_REPLY_TO`, `EMAIL_SUPPORT_INBOX`, `EMAIL_OTP_EXPIRY_MINUTES`, `RESEND_WEBHOOK_SECRET` |
 | SMTP alternativo | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` |
-| WhatsApp (Meta) | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` |
+| WhatsApp (Meta) | `WHATSAPP_PLATFORM_PHONE_NUMBER_ID` (número de Omnegia: reconoce los teléfonos de los comercios), `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` |
 | IA (Claude) | `ANTHROPIC_API_KEY`, `LLM_MODEL` (por defecto `claude-opus-5-5`), `IA_PRECIO_ENTRADA_USD_MTOK`, `IA_PRECIO_SALIDA_USD_MTOK` |
 | Pagos (Wompi) | `WOMPI_ENTORNO`, `WOMPI_LLAVE_PUBLICA`, `WOMPI_LLAVE_PRIVADA`, `WOMPI_SECRETO_INTEGRIDAD`, `WOMPI_SECRETO_EVENTOS`, `TARIFAS_CONFIRMADAS`, `MODO_INSTITUCIONAL`, `PRECIO_INSTITUCIONAL_COP`, `ACCESO_INSTITUCIONAL_DIAS` |
-| Documentos de pago | `EMISOR_RAZON_SOCIAL`, `EMISOR_NUMERO_DOCUMENTO`, `EMISOR_DIRECCION`, `EMISOR_CIUDAD`, `EMISOR_CORREO`, `EMISOR_RESPONSABLE_IVA`, `IVA_PCT`, `FACTURACION_ELECTRONICA_PLATAFORMA` (nunca automática) y `FACTURACION_*` |
+| Documentos de pago y zona legal | `EMISOR_RAZON_SOCIAL`, `EMISOR_NUMERO_DOCUMENTO`, `EMISOR_DIRECCION`, `EMISOR_CIUDAD`, `EMISOR_CORREO`, `EMISOR_TELEFONO` (también identifican a Omnegia en `/legal`), `EMISOR_RESPONSABLE_IVA`, `IVA_PCT`, `FACTURACION_ELECTRONICA_PLATAFORMA` (nunca automática) y `FACTURACION_*` |
 | Sesiones | `SESION_DIAS`, `SESION_INACTIVIDAD_HORAS`, `LOGIN_MAX_INTENTOS`, `LOGIN_VENTANA_MIN` |
 
 El panel muestra el estado de cada integración en Configuración › Integraciones. El operador lo ve en su panel, en Integraciones. `GET /api/salud/listo` responde 200 solo si la base está disponible y las migraciones están aplicadas.

@@ -100,6 +100,7 @@ export function useRetardo<T>(valor: T, ms = 300): T {
 type Tono = 'ok' | 'warn' | 'err' | 'info' | 'neutro' | 'ia';
 const ESTADOS: Record<string, [Tono, string, string]> = {
   // fiscal
+  EN_REVISION: ['warn', 'reloj', 'En revisión'], REEMBOLSADO: ['ok', 'ok', 'Dinero devuelto'], APROBADO: ['warn', 'reloj', 'Aprobado: falta devolver'],
   PENDIENTE: ['warn', 'reloj', 'Pendiente'], ENVIADO: ['warn', 'reloj', 'Enviado a la DIAN'], VALIDADO: ['ok', 'ok', 'Validado DIAN'],
   ENTREGADO: ['ok', 'ok', 'Entregado'], RECHAZADO: ['err', 'x', 'Rechazado'],
   // ventas y citas

@@ -175,8 +175,8 @@ export async function encolarCorreoPago(tx: Tx, paymentId: string, conDocumentos
   const periodo = (await tx.query(`SELECT periodo_fin FROM subscription_period WHERE payment_id=$1`, [paymentId])).rows[0];
   const hasta = new Date(periodo?.periodo_fin ?? t.periodo_fin).toLocaleDateString('es-CO', { timeZone: 'America/Bogota' });
   const correo = p.draft_token
-    ? plantillas.altaConfirmada({ empresa: t.nombre, modalidad: p.modalidad, monto: cop(Number(p.monto)), referencia: p.referencia, vigenteHasta: hasta, urlEmpresa: urlEmpresa(t.slug), documentos })
-    : plantillas.pagoRecibido({ empresa: t.nombre, monto: cop(Number(p.monto)), referencia: p.referencia, modalidad: p.modalidad, periodoFin: hasta, url: `${config.publicUrl}/suscripcion`, documentos });
+    ? plantillas.altaConfirmada({ empresa: t.nombre, modalidad: p.modalidad, monto: cop(Number(p.monto)), referencia: p.referencia, vigenteHasta: hasta, urlEmpresa: urlEmpresa(t.slug), documentos, urlReembolso: `${config.publicUrl}/consumidor#reembolso` })
+    : plantillas.pagoRecibido({ empresa: t.nombre, monto: cop(Number(p.monto)), referencia: p.referencia, modalidad: p.modalidad, periodoFin: hasta, url: `${config.publicUrl}/suscripcion`, documentos, urlReembolso: `${config.publicUrl}/consumidor#reembolso` });
   await encolarCorreo(tx, { tenantId: null, para, clave: `pago:${paymentId}`, adjuntoRef: adjunto ? `docpago:${doc.id}` : null, correo });
 }
 

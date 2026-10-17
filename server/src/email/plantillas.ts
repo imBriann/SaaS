@@ -238,9 +238,9 @@ export const suscripcion = (o: { empresa: string; estado: string; graciaHasta?: 
   });
 };
 
-export const pagoRecibido = (o: { empresa: string; monto: string; referencia: string; periodoFin: string; url: string; modalidad?: 'COMERCIAL' | 'INSTITUCIONAL'; documentos?: DocumentosCorreo | null }) => render({
+export const pagoRecibido = (o: { empresa: string; monto: string; referencia: string; periodoFin: string; url: string; modalidad?: 'COMERCIAL' | 'INSTITUCIONAL'; documentos?: DocumentosCorreo | null; urlReembolso?: string }) => render({
   tipo: 'pago_recibido', asunto: `Recibimos tu pago — ${o.empresa}`, previa: 'Confirmación de pago de tu suscripción.',
-  titulo: 'Pago recibido', parrafos: ['Gracias. Registramos el pago de tu suscripción.', ...(o.modalidad === 'INSTITUCIONAL' ? ['Es un pago único de la modalidad institucional: no hay cobros automáticos.'] : []), ...parrafosDocumentos(o.documentos)],
+  titulo: 'Pago recibido', parrafos: ['Gracias. Registramos el pago de tu suscripción.', ...(o.modalidad === 'INSTITUCIONAL' ? ['Es un pago único de la modalidad institucional: no hay cobros automáticos.'] : []), ...parrafosDocumentos(o.documentos), ...(o.urlReembolso ? [`¿Necesitas retractarte o pedir un reembolso? Hazlo en ${o.urlReembolso} con la referencia de este correo.`] : []),],
   detalles: [['Empresa', o.empresa], ...(o.modalidad ? [['Modalidad', o.modalidad === 'INSTITUCIONAL' ? 'Institucional' : 'Comercial'] as [string, string]] : []), ['Valor', o.monto], ['Referencia', o.referencia], ['Activa hasta', o.periodoFin]],
   boton: { texto: 'Ver la suscripción', url: o.url },
 });
@@ -262,7 +262,7 @@ const parrafosDocumentos = (d: DocumentosCorreo | null | undefined): string[] =>
 };
 
 /** Confirmación del alta pagada: monto real, modalidad, vigencia, acceso al subdominio y documentos. */
-export const altaConfirmada = (o: { empresa: string; modalidad: 'COMERCIAL' | 'INSTITUCIONAL'; monto: string; referencia: string; vigenteHasta: string; urlEmpresa: string; documentos?: DocumentosCorreo | null }) => render({
+export const altaConfirmada = (o: { empresa: string; modalidad: 'COMERCIAL' | 'INSTITUCIONAL'; monto: string; referencia: string; vigenteHasta: string; urlEmpresa: string; documentos?: DocumentosCorreo | null; urlReembolso?: string }) => render({
   tipo: 'alta_confirmada', asunto: `Tu espacio en Omnegia está listo — ${o.empresa}`, previa: 'Confirmamos tu pago y creamos tu espacio de trabajo.',
   titulo: 'Pago confirmado y espacio creado',
   parrafos: [
@@ -271,6 +271,7 @@ export const altaConfirmada = (o: { empresa: string; modalidad: 'COMERCIAL' | 'I
       ? 'Contrataste la modalidad institucional: fue un pago único. No guardamos datos de tu tarjeta ni hacemos cobros automáticos; antes del vencimiento te contaremos cómo continuar.'
       : 'Tu plan es mensual. Te avisaremos antes de cada vencimiento.',
     ...parrafosDocumentos(o.documentos),
+    ...(o.urlReembolso ? [`¿Necesitas retractarte o pedir un reembolso? Hazlo en ${o.urlReembolso} con la referencia de este correo.`] : []),
     'Si es tu primera vez, define tu contraseña de acceso desde la página de tu alta para entrar.',
   ],
   detalles: [['Empresa', o.empresa], ['Modalidad', o.modalidad === 'INSTITUCIONAL' ? 'Institucional' : 'Comercial'], ['Valor pagado', `${o.monto} COP`], ['Referencia', o.referencia], ['Acceso hasta', o.vigenteHasta], ['Dirección', o.urlEmpresa], ...(o.documentos ? [['Comprobante', o.documentos.numero] as [string, string]] : [])],
@@ -357,6 +358,61 @@ export const ticketRespuesta = (o: { nombre: string; numero: string; asunto: str
   tipo: 'soporte_respuesta', asunto: `Respuesta a tu solicitud ${o.numero}`, previa: 'El equipo de soporte respondió tu solicitud.',
   titulo: `Respuesta a ${o.numero}`, saludo: `Hola ${primerNombre(o.nombre)},`, parrafos: [o.respuesta],
   detalles: [['Asunto', o.asunto]], boton: { texto: 'Responder en el panel', url: o.url },
+});
+
+// ------------------------------------------------------------------ datos personales (Ley 1581 de 2012)
+const fechaLarga = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+export const solicitudDatosRecibida = (o: { nombre: string; radicado: string; tipo: string; dias: number; vence: string }) => render({
+  tipo: 'datos_solicitud_recibida', asunto: `Recibimos tu solicitud sobre tus datos ${o.radicado}`, previa: 'Tu solicitud sobre datos personales quedó registrada.',
+  titulo: 'Recibimos tu solicitud', saludo: `Hola ${primerNombre(o.nombre)},`,
+  parrafos: [
+    `Registramos tu solicitud de «${o.tipo}». Antes de actuar verificaremos que seas la persona titular de los datos: responde a este correo si necesitamos algún dato adicional.`,
+    `La ley nos da ${o.dias} días hábiles para responderte. Nuestra meta interna es hacerlo a más tardar el ${fechaLarga(o.vence)}.`,
+    'Si no hiciste esta solicitud, ignora este mensaje: no se modificará ni se eliminará ningún dato sin esa verificación.',
+  ],
+  detalles: [['Radicado', o.radicado], ['Tipo', o.tipo]],
+});
+
+export const solicitudDatosInterna = (o: { radicado: string; tipo: string; calidad: string; nombre: string; email: string; telefono?: string; comercio?: string; detalle: string; vence: string }) => render({
+  tipo: 'datos_solicitud_interna', asunto: `[${o.radicado}] ${o.tipo}`, previa: `${o.nombre} · ${o.tipo}`, titulo: `Solicitud de datos personales ${o.radicado}`,
+  parrafos: [o.detalle, 'Verifica la identidad de quien solicita antes de entregar, corregir o eliminar datos. Si los datos son de clientes de un comercio, da traslado al comercio responsable en un máximo de 2 días hábiles (Ley 1581 de 2012, art. 15).'],
+  detalles: [['Solicitante', o.nombre], ['Correo', o.email], ['Teléfono', o.telefono || 'No indicado'], ['Calidad', o.calidad], ['Comercio', o.comercio || 'No indicado'], ['Fecha objetivo', fechaLarga(o.vence)]],
+});
+
+// ------------------------------------------------------------------ reembolsos y retracto (Ley 1480 de 2011; Ley 2439 de 2024)
+export const reembolsoRecibido = (o: { nombre: string; radicado: string; motivo: string; aprobado: boolean; razon: string; monto: string; vence: string; medio: string }) => render({
+  tipo: 'reembolso_recibido', asunto: `Recibimos tu solicitud de reembolso ${o.radicado}`, previa: o.aprobado ? 'Tu solicitud fue aprobada.' : 'Tu solicitud quedó registrada.',
+  titulo: o.aprobado ? 'Tu solicitud fue aprobada' : 'Recibimos tu solicitud', saludo: `Hola ${primerNombre(o.nombre)},`,
+  parrafos: [
+    o.aprobado ? `${o.razon} Te devolveremos ${o.monto}, sin descuentos ni retenciones, a más tardar el ${fechaLarga(o.vence)} (15 días calendario).` : `${o.razon} Te responderemos por este correo. La ley nos da 15 días calendario para devolver el dinero si procede; nuestra meta es hacerlo a más tardar el ${fechaLarga(o.vence)}.`,
+    o.aprobado ? 'Tu espacio no se creará con este pago. Cuando hagamos la devolución te lo confirmaremos con la referencia.' : 'Mientras tanto no tienes que hacer nada. Si necesitamos algún dato, te escribiremos aquí.',
+    'Nunca te pediremos por correo ni por chat tu clave, tu número de tarjeta completo ni códigos de acceso.',
+  ],
+  detalles: [['Radicado', o.radicado], ['Motivo', o.motivo], ['Valor', o.monto], ['Devolución por', o.medio]],
+});
+
+export const reembolsoInterno = (o: { radicado: string; motivo: string; estado: string; razon: string; referencia: string; monto: string; nombre: string; email: string; medio: string; detalle: string; vence: string; urlOperador: string }) => render({
+  tipo: 'reembolso_interno', asunto: `[${o.radicado}] ${o.estado === 'APROBADO' ? 'Reembolso aprobado: devolver' : 'Reembolso por revisar'} ${o.monto}`, previa: `${o.motivo} · ${o.monto}`,
+  titulo: `Solicitud de reembolso ${o.radicado}`,
+  parrafos: [o.detalle, `Evaluación automática: ${o.razon}`, o.estado === 'APROBADO' ? 'Está aprobada: haz la devolución (en Wompi o por transferencia) y registra su referencia en el panel antes de la fecha límite.' : 'Decide la solicitud en el panel antes de la fecha límite.'],
+  detalles: [['Estado', o.estado === 'APROBADO' ? 'Aprobada' : 'En revisión'], ['Motivo', o.motivo], ['Referencia del pago', o.referencia], ['Valor', o.monto], ['Solicitante', o.nombre], ['Correo', o.email], ['Devolver por', o.medio], ['Fecha límite (15 días calendario)', fechaLarga(o.vence)]],
+  boton: { texto: 'Abrir en el panel del operador', url: o.urlOperador },
+});
+
+export const reembolsoDecision = (o: { nombre: string; radicado: string; aprobado: boolean; motivo: string; monto: string; vence: string; medio: string }) => render({
+  tipo: 'reembolso_decision', asunto: `${o.aprobado ? 'Aprobamos' : 'Respuesta a'} tu solicitud de reembolso ${o.radicado}`, previa: o.aprobado ? 'Vamos a devolverte el dinero.' : 'Revisamos tu solicitud.',
+  titulo: o.aprobado ? 'Aprobamos tu solicitud' : 'Respuesta a tu solicitud', saludo: `Hola ${primerNombre(o.nombre)},`,
+  parrafos: o.aprobado
+    ? [`Revisamos tu caso y aprobamos la devolución de ${o.monto}, sin descuentos ni retenciones. La haremos a más tardar el ${fechaLarga(o.vence)} y te confirmaremos con la referencia.`]
+    : [`Revisamos tu solicitud y no podemos aprobarla por este motivo: ${o.motivo}`, 'Si no estás de acuerdo, responde a este correo con la información que quieras que revisemos. También puedes acudir a la Superintendencia de Industria y Comercio (www.sic.gov.co), que no exige abogado para reclamaciones de consumo.'],
+  detalles: o.aprobado ? [['Radicado', o.radicado], ['Devolución por', o.medio]] : [['Radicado', o.radicado]],
+});
+
+export const reembolsoDevuelto = (o: { nombre: string; radicado: string; monto: string; referencia: string; medio: string }) => render({
+  tipo: 'reembolso_devuelto', asunto: `Te devolvimos ${o.monto} · ${o.radicado}`, previa: 'La devolución ya salió.', titulo: 'Ya hicimos la devolución', saludo: `Hola ${primerNombre(o.nombre)},`,
+  parrafos: ['Registramos la devolución de tu pago. Según tu banco o medio de pago, puede tardar unos días en verse reflejada. Si pasado ese tiempo no la ves, responde a este correo con la referencia.'],
+  detalles: [['Radicado', o.radicado], ['Valor devuelto', o.monto], ['Referencia de la devolución', o.referencia], ['Devuelto por', o.medio]],
 });
 
 // ------------------------------------------------------------------ avisos del negocio (contexto de tenant)

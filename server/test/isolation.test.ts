@@ -32,8 +32,8 @@ describe('Barrera 2 — Row-Level Security', () => {
       );
       expect(acceso, `tabla ${t} sin RLS y accesible para app_rt`).toBe(false);
     }
-    // incidente y auditoria_plataforma son del operador: guardan el id de la empresa, pero app_rt no tiene ningún privilegio sobre ellas.
-    expect(sinRls.sort()).toEqual(['auditoria_plataforma', 'incidente', 'onboarding_draft', 'payment']);
+    // reembolso es de plataforma, como payment (sin privilegios para app_rt, lo verifica el bucle anterior). incidente y auditoria_plataforma son del operador: guardan el id de la empresa, pero app_rt no tiene ningún privilegio sobre ellas.
+    expect(sinRls.sort()).toEqual(['auditoria_plataforma', 'incidente', 'onboarding_draft', 'payment', 'reembolso']);
   });
 
   it('desde el contexto de A no se ve ninguna fila de B en ninguna tabla', async () => {

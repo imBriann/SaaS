@@ -9,7 +9,8 @@ import type { Database, Tx } from '../db/index.js';
 import { AppError, invalid, notFound } from '../lib/errors.js';
 import { hashPassword, slugify, token, uuidv7 } from '../lib/util.js';
 import { auditPlatform } from '../core/audit.js';
-import { classifyBusiness, sanitizeClassification, type Clasificacion } from './classifier.js';
+import { aceptacionVigente, LEGAL } from '../legal/index.js';
+import { classifyBusiness, MAX_ACTIVIDADES_ADICIONALES, sanitizeClassification, type Clasificacion } from './classifier.js';
 import { recommendPlan } from './planRules.js';
 import { applyMapping, inferMapping, readSheet, CAMPOS_DESTINO, type Hoja, type Mapeo } from './importer.js';
 import { deriveTheme } from './theme.js';
@@ -45,6 +46,8 @@ function publicDraft(d: any) {
   return {
     dominio: domainInfo(),
     correo_verificado: !!d.email_verificado_en && d.email_verificado === d.negocio?.email,
+    aceptacion_legal: d.aceptacion_legal ? { version: d.aceptacion_legal.version, aceptado_en: d.aceptacion_legal.aceptado_en, vigente: aceptacionVigente(d.aceptacion_legal) } : null,
+    legal_version: LEGAL.version,
     cotizacion,
     // Lo que se cobraría hoy al pagar (calculado en el servidor; el navegador no lo envía).
     oferta: { modalidad: oferta.modalidad, monto: oferta.monto, monto_referencia: oferta.montoReferencia, acceso_dias: oferta.accesoDias, concepto: oferta.concepto },
@@ -159,8 +162,16 @@ async function updateDraftLocked(db: Database, tk: string, body: unknown) {
       const modules = (d.clasificacion.modulos_sugeridos as string[]).filter(m => m !== 'facturacion');
       corrections.modulos_sugeridos = corrections.factura_electronica ? [...modules, 'facturacion'] : modules;
     }
-    const campos = ['sector','tipo_negocio','tamano','volumen_conv_mes','factura_electronica','modulos_sugeridos','otro_descripcion'];
+    const campos = ['sector','tipo_negocio','actividades_adicionales','tamano','volumen_conv_mes','factura_electronica','modulos_sugeridos','otro_descripcion'];
     for (const k of Object.keys(corrections)) if (!campos.includes(k)) delete corrections[k];
+    if ('actividades_adicionales' in corrections) {
+      const lista = corrections.actividades_adicionales;
+      // Solo se aceptan tipos del catálogo (sin «Otros») y, a lo sumo, tres; no se descarta nada en silencio.
+      const validas = Array.isArray(lista) && lista.length <= MAX_ACTIVIDADES_ADICIONALES
+        && lista.every((a: any) => a && a.sector !== 'otro' && sectorTypes(a.sector).includes(a.tipo_negocio));
+      if (!validas) throw invalid(`Las actividades adicionales deben ser tipos del catálogo, hasta ${MAX_ACTIVIDADES_ADICIONALES}.`);
+      corrections.actividades_adicionales = lista.map((a: any) => ({ sector: a.sector, tipo_negocio: a.tipo_negocio }));
+    }
     if (corrections.sector && corrections.sector !== d.clasificacion.sector && !('tipo_negocio' in corrections)) corrections.tipo_negocio = null;
     const merged = { ...d.clasificacion, ...corrections, confianza: 1 };
     if (merged.tipo_negocio && !sectorTypes(merged.sector).includes(merged.tipo_negocio)) throw invalid('El tipo de negocio no corresponde al sector.');
@@ -295,7 +306,10 @@ export async function startCheckout(db: Database, tk: string, correlacion = uuid
   if (!n.slug) faltan.push('subdominio');
   if (!d.email_verificado_en || d.email_verificado !== n.email) faltan.push('correo_verificado');
   if (d.clasificacion?.factura_electronica && (!n.nit || !n.nit_dv || !nitValido(`${n.nit}-${n.nit_dv}`))) faltan.push('nit');
-  if (d.clasificacion?.factura_electronica && (!n.pais || !n.departamento || !n.municipio || !n.direccion)) faltan.push('direccion');
+  // Teléfono y ubicación del comercio son obligatorios siempre; el NIT, solo si necesita facturación electrónica.
+  if (!n.telefono) faltan.push('telefono');
+  if (!n.pais || !n.departamento || !n.municipio || !n.direccion) faltan.push('direccion');
+  if (!aceptacionVigente(d.aceptacion_legal)) faltan.push('aceptacion_legal');
   const facturacion: FacturacionGuardada | null = n.facturacion?.documento_cifrado ? n.facturacion : null;
   if (cuenta.proveedor === 'wompi' && !facturacion) faltan.push('facturacion');
   if (faltan.length) throw new AppError('VALIDATION', 'Faltan datos para continuar.', { faltan });
