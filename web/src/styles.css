@@ -820,3 +820,27 @@ main.pagina:focus { outline: none; }
 .hilo-soporte .msg-texto { background: none; border: 0; padding: 0; box-shadow: none; max-width: none; }
 .filtros > select.input, .filtros > .input { width: auto; flex: 0 1 auto; }
 .filtros > .buscar { flex: 1 1 260px; }
+/* =====================================================================
+   Asistente IA: conversaciones guardadas + hilo
+   ===================================================================== */
+.asistente-detalle { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
+.asistente-detalle .panel-hilo { height: calc(100dvh - 210px); min-height: 460px; }
+.asistente-lista { position: sticky; top: 16px; display: flex; flex-direction: column; max-height: calc(100dvh - 210px); overflow: hidden; }
+.asistente-detalle .panel-hilo > .cab { flex-wrap: nowrap; }
+.asistente-detalle .conv-cab-txt { flex: 1; }
+.asistente-hilos { overflow-y: auto; margin: 0; padding: 6px 8px 8px; list-style: none; }
+.asistente-hilos > * + * { border-top: 0; }
+.asistente-hilo { display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0; padding: 9px 10px; border: 0; border-radius: var(--r); background: transparent; color: inherit; text-align: left; cursor: pointer; }
+@media (hover: hover) { .asistente-hilo:hover { background: var(--superficie-2); } }
+.asistente-hilo.activo { background: var(--acento-tinte); }
+.asistente-hilo.activo .lista-titulo { color: var(--acento-texto); }
+.asistente-inicio { gap: 10px; max-width: 560px; align-items: flex-start; }
+.asistente-inicio > b { font-size: 16px; font-weight: 600; }
+@media (max-width: 1000px) {
+  .asistente-detalle { grid-template-columns: minmax(0, 1fr); }
+  /* Barra superior y barra inferior ocupan ~120px: el panel cabe entero cuando se llega a él. */
+  .asistente-detalle .panel-hilo { height: calc(100dvh - 130px); }
+  .asistente-lista { display: none; position: static; max-height: none; }
+  .asistente-detalle.ver-lista > .asistente-lista { display: flex; }
+  .asistente-detalle.ver-lista > .panel-hilo { display: none; }
+}

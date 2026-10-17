@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, cop, fechaLarga, hora, hoyLocal } from '../../api';
 import { Cabecera, useSesion } from '../../components/Layout';
 import { Cargando, CicloFiscal, Cifra, ErrorCarga, Estado, Medidor, Mensaje, Recibo, Tarjeta, useApi, Vacio, type TipoMensaje } from '../../components/ui';
@@ -99,7 +99,7 @@ export function Inicio() {
                     )}
                   </Tarjeta>
                 )}
-                <Asistente />
+                <AccesoAsistente />
               </div>
               <div className="col" style={{ gap: 16 }}>
                 {data.fiscal && <Tarjeta titulo="Ciclo fiscal de hoy" acciones={<Link to="/facturacion" className="btn sutil peq">Facturación</Link>}><CicloFiscal conteos={data.fiscal} /></Tarjeta>}
@@ -164,58 +164,28 @@ function Barras({ datos }: { datos: { dia: string; total: number }[] }) {
   );
 }
 
-/** Consultar el negocio en lenguaje natural (CU-10). Cada respuesta muestra sus recibos. */
-function Asistente() {
+/** El asistente tiene su propia sección (conserva la conversación); desde Inicio solo se abre con una pregunta. */
+function AccesoAsistente() {
   const { puede, s } = useSesion();
-  const [hist, setHist] = useState<{ role: 'user' | 'assistant'; text: string; recibos?: any[]; error?: boolean }[]>([]);
+  const nav = useNavigate();
   const [q, setQ] = useState('');
-  const [ocupado, setOcupado] = useState(false);
   if (!puede('ai:assist') || !s.modulos.includes('ia')) return null;
-  const preguntar = async (e?: FormEvent, texto?: string) => {
-    e?.preventDefault();
-    const pregunta = (texto ?? q).trim();
-    if (!pregunta || ocupado) return;
-    setQ('');
-    const nuevo = [...hist, { role: 'user' as const, text: pregunta }];
-    setHist(nuevo);
-    setOcupado(true);
-    try {
-      const r = await api.post('/api/t/asistente', { pregunta, historial: hist.map(({ role, text }) => ({ role, text })) });
-      setHist([...nuevo, { role: 'assistant', text: r.texto, recibos: r.ejecuciones }]);
-    } catch (err) {
-      setQ(pregunta);
-      setHist([...nuevo, { role: 'assistant', text: (err as Error).message, error: true }]);
-    } finally { setOcupado(false); }
-  };
+  const abrir = (texto: string) => { if (texto.trim()) nav(`/asistente?q=${encodeURIComponent(texto.trim())}`); };
   return (
-    <Tarjeta titulo={<span className="fila"><Icon n="ia" className="" size={16} /> Pregúntale a tu negocio</span>}>
-      <div className="hilo" aria-live="polite">
-        {hist.length === 0 && (
-          <div className="col" style={{ gap: 8 }}>
-            <span className="tenue peq-txt">El asistente consulta tus datos con las mismas herramientas y permisos que verás en sus recibos.</span>
-            <div className="fila envolver" style={{ gap: 6 }}>{[
-              { texto: '¿Cuánto vendimos esta semana?', permiso: 'order:read', modulo: 'ventas' },
-              { texto: '¿Qué citas hay hoy?', permiso: 'appointment:read', modulo: 'agenda' },
-              { texto: '¿Qué productos están bajo mínimo?', permiso: 'catalog:read', modulo: 'inventario' },
-              { texto: '¿Cómo va el consumo del plan?', permiso: 'subscription:manage', modulo: 'ia' },
-            ].filter(p => puede(p.permiso) && s.modulos.includes(p.modulo)).map(p => <button key={p.texto} type="button" className="chip" onClick={() => preguntar(undefined, p.texto)} disabled={ocupado}>{p.texto}</button>)}</div>
-          </div>
-        )}
-        {hist.map((h, i) => h.role === 'user'
-          ? <Mensaje key={i} tipo="cliente" rol="Tú">{h.text}</Mensaje>
-          : h.error
-            ? <div key={i} className="bloqueado"><Icon n="alerta" className="" size={16} />{h.text}</div>
-            : <div key={i} className="col" style={{ gap: 6, alignItems: 'flex-end', minWidth: 0 }}>
-                <Mensaje tipo="ia" rol="Asistente">{h.text}</Mensaje>
-                {h.recibos?.map((r) => <Recibo key={r.id} e={{ ...r, nivel_riesgo: r.riesgo, motivo_denegacion: r.motivo }} compacto />)}
-              </div>)}
-        {ocupado && <span className="tenue peq-txt" style={{ alignSelf: 'flex-end' }}>Consultando…</span>}
+    <Tarjeta titulo={<span className="fila"><Icon n="ia" className="" size={16} /> Pregúntale a tu negocio</span>} acciones={<Link to="/asistente" className="btn sutil peq">Abrir el asistente</Link>}>
+      <div className="col" style={{ gap: 8 }}>
+        <span className="tenue peq-txt">El asistente conoce tu negocio, recuerda la conversación y consulta tus datos con tus permisos. Sus consultas dejan recibo.</span>
+        <div className="fila envolver" style={{ gap: 6 }}>{[
+          { texto: '¿Cuánto vendimos esta semana?', permiso: 'order:read', modulo: 'ventas' },
+          { texto: '¿Qué citas hay hoy?', permiso: 'appointment:read', modulo: 'agenda' },
+          { texto: '¿Qué productos están bajo mínimo?', permiso: 'catalog:read', modulo: 'inventario' },
+          { texto: '¿Cómo va el consumo del plan?', permiso: 'subscription:manage', modulo: 'ia' },
+        ].filter(p => puede(p.permiso) && s.modulos.includes(p.modulo)).map(p => <button key={p.texto} type="button" className="chip" onClick={() => abrir(p.texto)}>{p.texto}</button>)}</div>
       </div>
-      <form className="fila" style={{ marginTop: 12 }} onSubmit={preguntar}>
+      <form className="fila" style={{ marginTop: 12 }} onSubmit={(e: FormEvent) => { e.preventDefault(); abrir(q); }}>
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ej.: ¿qué citas tengo mañana?" aria-label="Pregunta al asistente" />
-        <button className="btn primario" disabled={ocupado || !q.trim()}>Preguntar</button>
+        <button className="btn primario" disabled={!q.trim()}>Preguntar</button>
       </form>
-      <div className="assistant-support"><span>Si la respuesta no resuelve tu consulta, puedes pedir ayuda.</span><Link to="/soporte">Solicitar atención humana <Icon n="flecha" size={14} className="" /></Link></div>
     </Tarjeta>
   );
 }

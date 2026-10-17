@@ -32,6 +32,7 @@ const Privacidad = lazy(() => legal().then(m => ({ default: m.Privacidad })));
 const EliminacionDatos = lazy(() => legal().then(m => ({ default: m.EliminacionDatos })));
 const Cookies = lazy(() => legal().then(m => ({ default: m.Cookies })));
 const Consumidor = lazy(() => legal().then(m => ({ default: m.Consumidor })));
+const Asistente = lazy(() => import('./pages/app/Asistente').then((m) => ({ default: m.Asistente })));
 const Conversaciones = lazy(() => import('./pages/app/Conversaciones').then((m) => ({ default: m.Conversaciones })));
 const negocio = () => import('./pages/app/Negocio');
 const Agenda = lazy(() => negocio().then((m) => ({ default: m.Agenda })));
@@ -131,6 +132,8 @@ function App() {
           <Route element={<PanelLayout />}>
             <Route path="/" element={<Inicio />} />
             <Route path="/panel" element={<Navigate to="/" replace />} />
+            <Route path="/asistente" element={<Asistente />} />
+            <Route path="/asistente/:id" element={<Asistente />} />
             <Route path="/conversaciones" element={<Conversaciones />} />
             <Route path="/conversaciones/:id" element={<Conversaciones />} />
             <Route path="/clientes" element={<Clientes />} />

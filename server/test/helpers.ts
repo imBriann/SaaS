@@ -80,6 +80,7 @@ export function api(app: FastifyInstance, cookie: string, slug: string) {
     get: (u: string) => call('GET', u),
     post: (u: string, p?: unknown) => call('POST', u, p ?? {}),
     patch: (u: string, p?: unknown) => call('PATCH', u, p ?? {}),
+    del: (u: string) => call('DELETE', u),
   };
 }
 

@@ -251,6 +251,11 @@ export class MockLlm implements LlmClient {
     if (input.tarea === 'mapear_columnas') raw = mapColumnsHeuristic(input.datos as any);
     if (input.tarea === 'resumir_caso') raw = summarizeHeuristic(input.datos as any);
     if (input.tarea === 'sugerir_respuesta') raw = suggestHeuristic(input.datos as any);
+    if (input.tarea === 'resumir_hilo') {
+      const d = input.datos as { previo: string | null; mensajes: { rol: string; contenido: string }[] };
+      const preguntas = d.mensajes.filter((m) => m.rol === 'user').map((m) => m.contenido.replace(/\s+/g, ' ').slice(0, 80));
+      raw = { resumen: [d.previo, preguntas.length ? `Se preguntó: ${preguntas.join(' | ')}` : null].filter(Boolean).join('\n').slice(0, 2500) };
+    }
     if (input.tarea === 'personalizar_espacio') {
       const d = input.datos as { nombre: string; modulos: string[] };
       raw = { titulo: `El día a día de ${d.nombre}`.slice(0, 90), descripcion: 'Este espacio de demostración reúne las herramientas que elegiste para organizar tu negocio.',

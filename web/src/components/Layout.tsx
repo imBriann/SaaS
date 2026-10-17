@@ -44,6 +44,7 @@ function aplicarTema(tema: any) {
 type Item = { to: string; n: string; t: string; permiso?: string; modulo?: string; movil?: boolean };
 const OPERACION: Item[] = [
   { to: '/', n: 'inicio', t: 'Inicio', movil: true },
+  { to: '/asistente', n: 'ia', t: 'Asistente IA', permiso: 'ai:assist', modulo: 'ia' },
   { to: '/conversaciones', n: 'conversaciones', t: 'Conversaciones', permiso: 'conversation:read', modulo: 'conversaciones', movil: true },
   { to: '/agenda', n: 'agenda', t: 'Agenda', permiso: 'appointment:read', modulo: 'agenda', movil: true },
   { to: '/ventas', n: 'ventas', t: 'Ventas', permiso: 'order:read', modulo: 'ventas', movil: true },
@@ -236,7 +237,7 @@ export function PanelLayout() {
         <a className="saltar" href="#contenido">Saltar al contenido</a>
         <header className="barra-movil">
           <Link to="/" className="contexto" aria-label={`${t.nombre}, inicio`}>{marca}<span className="contexto-txt"><b>{t.nombre}</b><span>{data.usuario.rol_nombre}</span></span></Link>
-          {escaladas > 0 && visible(OPERACION[1]) && <Link to="/conversaciones" className="estado info" aria-label={`${escaladas} conversaciones con una persona`}><Icon n="persona" className="" />{escaladas}</Link>}
+          {escaladas > 0 && visible(OPERACION.find((i) => i.to === '/conversaciones')!) && <Link to="/conversaciones" className="estado info" aria-label={`${escaladas} conversaciones con una persona`}><Icon n="persona" className="" />{escaladas}</Link>}
         </header>
 
         <aside className="lateral" id="nav-lateral" aria-label="Navegación del panel">

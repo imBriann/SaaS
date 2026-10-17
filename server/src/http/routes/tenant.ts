@@ -21,6 +21,7 @@ import * as payments from '../../modules/payments.js';
 import * as admin from '../../modules/admin.js';
 import * as team from '../../modules/team.js';
 import * as soporte from '../../modules/soporte.js';
+import * as asistente from '../../modules/asistente.js';
 import * as exportsMod from '../../modules/exports.js';
 import { iniciarPagoSuscripcion } from '../../modules/billing.js';
 import { documentosTenant, enlaceDocumentosTenant } from '../../documentos/servicio.js';
@@ -186,9 +187,12 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
     requirePerm(ctx, 'ai:assist');
     const pregunta = String(req.body?.pregunta ?? '').trim().slice(0, 1000);
     if (!pregunta) throw invalid('Escribe una pregunta.');
-    const historial = Array.isArray(req.body?.historial) ? req.body.historial.filter((h: any) => ['user', 'assistant'].includes(h?.role) && typeof h?.text === 'string').slice(-8).map((h: any) => ({ role: h.role, text: String(h.text).slice(0, 2000) })) : [];
-    return askAssistant(db, ctx, pregunta, historial);
+    // Sin hilo_id se abre una conversación nueva; con él se continúa y el servidor recuerda el contexto.
+    return askAssistant(db, ctx, pregunta, req.body?.hilo_id || null);
   });
+  r('get', '/asistente/hilos', (tx, ctx) => asistente.listarHilos(tx, ctx));
+  r('get', '/asistente/hilos/:id', (tx, ctx, req) => asistente.verHilo(tx, ctx, req.params.id));
+  r('delete', '/asistente/hilos/:id', (tx, ctx, req) => asistente.eliminarHilo(tx, ctx, req.params.id));
 
   // --- Configuración
   r('get', '/configuracion', (tx, ctx) => admin.settings(tx, ctx));
