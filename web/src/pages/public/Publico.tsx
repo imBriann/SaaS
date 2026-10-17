@@ -1,7 +1,8 @@
 import { ImportSummary } from '../../components/ImportSummary';
 import { ImportarCatalogo } from '../../components/ImportarCatalogo';
-import { AnalisisEnCurso, PropuestaIA } from '../../components/PropuestaIA';
+import { RegistrationStart } from '../../components/RegistrationStart';
 import { RegistrationData } from '../../components/RegistrationData';
+import { RegistrationCompletion } from '../../components/RegistrationCompletion';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError, cop, descargarDocumentos, guardar, irAEmpresa, leer, slugDelHost } from '../../api';
@@ -16,15 +17,18 @@ import { SiteHeader, SiteFooter } from '../../components/SiteChrome';
 import { WorkspaceAssembly } from '../../components/SystemScene';
 import { Icon } from '../../components/icons';
 import { MARCA } from '../../brand';
+import { AiOrb } from '../../components/AiOrb';
 
 /** Estado del alta visible en la cabecera: borrador, pago verificado y aprovisionamiento no se confunden. */
 export type EstadoAlta = { tono: 'neutro' | 'warn' | 'ok' | 'err'; icono: string; texto: string };
-const BORRADOR: EstadoAlta = { tono: 'neutro', icono: 'reloj', texto: 'Borrador guardado · tu panel aún no existe' };
+const BORRADOR: EstadoAlta = { tono: 'neutro', icono: 'reloj', texto: 'Tu configuración está guardada' };
 
 /** `hechos`: pasos realmente cumplidos; por defecto, los anteriores al actual. */
 export function PublicoLayout({ children, paso, hechos, transparente, estado, notaAlta }: { children: ReactNode; paso?: number; hechos?: number; transparente?: boolean; estado?: EstadoAlta; notaAlta?: string }) {
-  const pasos = ['Tu negocio', 'Funciones', 'Datos', 'Catálogo', 'Propuesta y pago', 'Tu panel'];
+  const pasos = ['Tu negocio', 'Tu identidad', 'Catálogo', 'Pago', 'Tu espacio'];
   const n = hechos ?? paso ?? 0;
+  const pasoVisual = paso == null ? 0 : Math.max(0, paso - 1);
+  const hechosVisual = Math.max(0, n - 1);
   const e = estado ?? (paso === 0 ? { tono: 'neutro', icono: 'nota', texto: 'Empieza con una descripción de tu negocio' } : BORRADOR);
   const pasosRef = useRef<HTMLOListElement>(null);
   useEffect(() => {
@@ -36,12 +40,12 @@ export function PublicoLayout({ children, paso, hechos, transparente, estado, no
       <a className="saltar" href="#public-content">Saltar al contenido</a>
       {paso === undefined ? <SiteHeader oscuro={transparente} /> : <header className="nav onboarding-nav">
         <Link to="/bienvenida" className="marca-logo" aria-label={`${MARCA.nombre}, inicio`}><img src={MARCA.logo} alt={MARCA.nombre} width={132} height={40} /></Link>
-        <span className={`estado ${e.tono} borrador`} role="status"><Icon n={e.icono} className="" />{e.texto}</span>
+        <span className={`estado ${e.tono} borrador`} role="status"><AiOrb state="breathing" size={20} label="Asistente disponible" />{e.texto}</span>
       </header>}
       {paso !== undefined && (
         <div className="centro" style={{ paddingBottom: 0, paddingTop: 8 }}>
-          <ol ref={pasosRef} className="pasos-onb" aria-label={n >= pasos.length ? 'Alta completada' : `Paso ${paso + 1} de ${pasos.length}`}>
-            {pasos.map((p, i) => <li key={p} className={`p ${i < n ? 'hecho' : i === paso ? 'on' : ''}`} aria-current={i === paso && i >= n ? 'step' : undefined}><b>{i < n ? <Icon n="ok" className="" size={12} /> : i + 1}</b>{p}{i < n && <span className="sr"> (hecho)</span>}</li>)}
+          <ol ref={pasosRef} className="pasos-onb" aria-label={hechosVisual >= pasos.length ? 'Alta completada' : `Paso ${pasoVisual + 1} de ${pasos.length}`}>
+            {pasos.map((p, i) => <li key={p} className={`p ${i < hechosVisual ? 'hecho' : i === pasoVisual ? 'on' : ''}`} aria-current={i === pasoVisual && i >= hechosVisual ? 'step' : undefined}><b>{i < hechosVisual ? <Icon n="ok" className="" size={12} /> : i + 1}</b>{p}{i < hechosVisual && <span className="sr"> (hecho)</span>}</li>)}
           </ol>
         </div>
       )}
@@ -91,92 +95,7 @@ export function useBorrador() {
   return { tk, d, setD, cargando, error, recargar: () => setIntento(n => n + 1) };
 }
 
-/** Pistas de escritura: indican qué datos ayudan a la IA y si el texto parece mencionarlos (no son confirmaciones). */
-const PISTAS: [string, RegExp][] = [
-  ['Qué vendes o qué servicio das', /\b(vend|ofrec|servicio|tienda|negocio|barber|veterin|restaur|academ|taller|consultor|clinica|cafe|panader|gimnas|almac|distribu)/i],
-  ['Cuántas personas atienden', /\b(\d+|solo yo|yo sol[oa]|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s*(person|emplead|barber|medic|auxiliar|asesor|trabajador|vendedor|estilist|socio|colaborador)?|\batiendo yo\b/i],
-  ['Cuántos mensajes o clientes recibes', /\b\d+\s*(mensaje|chat|conversaci|cliente|pedido|cita)/i],
-  ['Si necesitas facturar electrónicamente', /factur|dian/i],
-];
-
-export function Describir() {
-  const nav = useNavigate();
-  const { d, setD, error: errorBorrador, recargar: recargarBorrador } = useBorrador();
-  const [texto, setTexto] = useState('');
-  const analisis = useAccion();
-  const edicion = useAccion();
-  useEffect(() => { if (d?.descripcion && !texto) setTexto(d.descripcion); }, [d]); // eslint-disable-line
-
-  const analizar = async (descripcion: string) => {
-    const r = await analisis.run(() => api.post(d ? `/api/onboarding/borradores/${d.token}/analizar` : '/api/onboarding/borradores', { descripcion }));
-    if (r) {
-      guardar('borrador', r.token);
-      const stored = sessionStorage.getItem('funciones_elegidas');
-      if (stored) {
-        const updated = await edicion.run(() => api.patch(`/api/onboarding/borradores/${r.token}`, { clasificacion: { modulos_sugeridos: JSON.parse(stored) } }));
-        if (updated) { setD(updated); sessionStorage.removeItem('funciones_elegidas'); } else setD(r);
-      } else setD(r);
-    }
-  };
-  const enviar = (e: FormEvent) => { e.preventDefault(); analizar(texto); };
-  // Llega desde la captura del héroe: se analiza sin pedir la misma frase dos veces.
-  useEffect(() => {
-    let inicial = '';
-    try { inicial = sessionStorage.getItem('descripcion_inicial') ?? ''; sessionStorage.removeItem('descripcion_inicial'); } catch { /* sin almacenamiento */ }
-    if (inicial.trim()) { setTexto(inicial); if (inicial.trim().length >= 15) analizar(inicial); }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const cambiar = async (cambios: Record<string, unknown>) => {
-    const r = await edicion.run(() => api.patch(`/api/onboarding/borradores/${d.token}`, { clasificacion: cambios }));
-    if (r) setD(r);
-  };
-  const c = d?.clasificacion;
-  const largo = texto.trim().length;
-  const cambioTexto = !!d && texto.trim() !== (d.descripcion ?? '').trim();
-  const actividadLista = !!c?.sector && (c.sector !== 'otro' ? !!c.tipo_negocio : !!c.otro_descripcion);
-
-  return (
-    <PublicoLayout paso={d ? 1 : 0}>
-      {errorBorrador && <ErrorCarga error={errorBorrador} reintentar={recargarBorrador} />}
-      <div className="describir">
-        <form className="describir-texto" onSubmit={enviar}>
-          <span className="ia-etiqueta"><Icon n="ia" className="" size={14} />Configuración asistida por IA</span>
-          <h1 className="onb-titulo">Cuéntanos de tu negocio con tus palabras.</h1>
-          <p className="sec">La IA de {MARCA.nombre} lee lo que escribas, te propone una configuración y tú decides qué se queda. Nada se confirma sin ti.</p>
-          <label className="campo"><span>Describe tu negocio</span>
-            <textarea maxLength={2000} className="input describir-area" value={texto} onChange={(e) => setTexto(e.target.value)} disabled={analisis.ocupado}
-              placeholder="Ej.: Tengo una barbería en Cúcuta con tres barberos. Nos escriben unos 20 mensajes al día por WhatsApp para pedir turno y necesito empezar a facturar electrónicamente." aria-describedby="desc-ayuda desc-pistas" />
-          </label>
-          <ul className="describir-pistas" id="desc-pistas" aria-label="Lo que ayuda a la IA">
-            {PISTAS.map(([p, re]) => { const ok = re.test(texto); return <li key={p} className={ok ? 'on' : ''}><span aria-hidden="true">{ok ? <Icon n="ok" className="" size={12} /> : null}</span>{p}<span className="sr">{ok ? ' (mencionado)' : ''}</span></li>; })}
-          </ul>
-          <div className="fila entre envolver" style={{ gap: 12 }}>
-            <span className="tenue peq-txt" id="desc-ayuda">{largo < 15 ? `Escribe al menos 15 caracteres (${largo}/15).` : cambioTexto ? 'Cambiaste la descripción: vuelve a analizar para actualizar la propuesta. Tus respuestas se conservan.' : `${texto.length}/2000`}</span>
-            <button className="btn primario" disabled={analisis.ocupado || largo < 15 || (!!d && !cambioTexto)}>{analisis.ocupado ? 'Analizando…' : d ? 'Volver a analizar' : 'Analizar mi negocio'}</button>
-          </div>
-          {analisis.error && <p className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{analisis.error.message}</p>}
-        </form>
-
-        <div className="describir-resultado">
-          {analisis.ocupado ? <AnalisisEnCurso /> : !c ? (
-            <aside className="onboarding-intro"><img src={MARCA.isologo} width={56} height={56} alt="" /><h2>Una frase basta para empezar.</h2>
-              <p>Con tu descripción la IA propone actividad, equipo, volumen de conversaciones, facturación y funciones.</p>
-              <ol><li>La IA interpreta lo que escribiste</li><li>Sugiere una configuración con sus razones</li><li>Tú confirmas o corriges cada dato</li></ol>
-              <span>Tu espacio se crea solo después de confirmar el pago.</span></aside>
-          ) : (
-            <>
-              <PropuestaIA c={c} ocupado={edicion.ocupado} cambiar={cambiar} />
-              <section className="col" style={{ gap: 12 }} aria-label="Estimación">
-                <Quote quote={d.cotizacion} loading={edicion.ocupado} modalidad={d.modalidad} />
-                <button className="btn primario grande" disabled={edicion.ocupado || !actividadLista} onClick={() => nav('/empezar/datos')}>Continuar con los datos del negocio <Icon n="flecha" className="" size={16} /></button>
-                {!actividadLista && <p className="tenue peq-txt" style={{ margin: 0 }}>Elige tu actividad en la propuesta para continuar.</p>}
-              </section>
-            </>
-          )}
-        </div>
-      </div>
-    </PublicoLayout>
-  );
-}
+export function Describir() { return <RegistrationStart />; }
 
 // ---------------------------------------------------------------- SCR-004
 export function Datos() {
@@ -511,6 +430,13 @@ function PanelPersonalizado({ d, st, real, fase }: { d: any; st: any; real: bool
       </figcaption>
     </figure>
   );
+}
+
+/** El registro nuevo separa el pago de la creación con IA; las altas anteriores conservan su cierre. */
+export function CierreAlta() {
+  const { tk, d, cargando } = useBorrador();
+  if (tk && !d && cargando) return <PublicoLayout paso={4}><div className="centro"><Cargando filas={4} /></div></PublicoLayout>;
+  return d && !d.creacion_diferida ? <Aprovisionamiento /> : <RegistrationCompletion />;
 }
 
 export function Aprovisionamiento() {

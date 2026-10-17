@@ -464,7 +464,8 @@ describe('Animación del recibo', () => {
     const { faseRecibo, reciboEnCurso } = await import('../../web/src/pages/public/recibo.js');
     expect(faseRecibo(null)).toBe('validando');
     expect(faseRecibo({ estado: 'PAGO_INICIADO', pago: { estado: 'PENDIENTE' } })).toBe('validando');
-    expect(faseRecibo({ estado: 'BORRADOR', pago: { estado: 'APROBADO' } })).toBe('validando');
+    // El recibo se emite al aprobarse el pago, antes de crear el espacio (registro con creación diferida).
+    expect(faseRecibo({ estado: 'PAGO_INICIADO', pago: { estado: 'APROBADO' } })).toBe('generando');
     expect(faseRecibo({ estado: 'APROVISIONADO', pago: { estado: 'APROBADO' }, documentos: null })).toBe('generando');
     expect(faseRecibo({ estado: 'APROVISIONADO', pago: { estado: 'APROBADO' }, documentos: { estado: 'GENERANDO' } })).toBe('generando');
     expect(faseRecibo({ estado: 'APROVISIONADO', pago: { estado: 'APROBADO' }, documentos: { estado: 'LISTO', disponible: true } })).toBe('listo');

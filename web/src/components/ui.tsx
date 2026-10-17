@@ -215,7 +215,7 @@ const ENFOCABLES = 'a[href], button:not([disabled]), input:not([disabled]):not([
  * dentro; Escape, la ✕ y el clic fuera llaman a onCerrar; al cerrar, el foco
  * vuelve al disparador si sigue en la página.
  */
-export function Modal({ titulo, children, onCerrar, pie }: { titulo: string; children: ReactNode; onCerrar: () => void; pie?: ReactNode }) {
+export function Modal({ titulo, children, onCerrar, pie, className = '' }: { titulo: string; children: ReactNode; onCerrar: () => void; pie?: ReactNode; className?: string }) {
   const ref = useRef<HTMLDialogElement>(null);
   const cerrar = useRef(onCerrar);
   cerrar.current = onCerrar;
@@ -225,10 +225,12 @@ export function Modal({ titulo, children, onCerrar, pie }: { titulo: string; chi
     if (!dlg) return;
     const previo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!dlg.open) dlg.showModal();
-    const campo = dlg.querySelector<HTMLElement>('.cuerpo :is(input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]))');
+    const campo = dlg.querySelector<HTMLElement>('.cuerpo :is(input:not([type="hidden"]):not([type="range"]):not([disabled]), select:not([disabled]), textarea:not([disabled]))');
     (campo ?? dlg).focus();
     const tecla = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
+      // showModal contiene el foco; el navegador recorre los controles internos del medio.
+      if (dlg.querySelector('video[controls], audio[controls]')) return;
       const els = [...dlg.querySelectorAll<HTMLElement>(ENFOCABLES)].filter((el) => el.getClientRects().length > 0);
       if (!els.length) { e.preventDefault(); return; }
       const primero = els[0], ultimo = els[els.length - 1], act = document.activeElement;
@@ -252,7 +254,7 @@ export function Modal({ titulo, children, onCerrar, pie }: { titulo: string; chi
     if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) onCerrar();
   };
   return (
-    <dialog ref={ref} className="modal" aria-labelledby={idTitulo} tabIndex={-1} onClick={fuera}>
+    <dialog ref={ref} className={`modal ${className}`} aria-labelledby={idTitulo} tabIndex={-1} onClick={fuera}>
       <div className="cab"><h2 id={idTitulo} className="titulo-tarjeta" style={{ fontSize: 17 }}>{titulo}</h2><button type="button" className="btn sutil peq icono" style={{ marginLeft: 'auto' }} onClick={onCerrar} aria-label="Cerrar"><Icon n="x" className="" size={16} /></button></div>
       <div className="cuerpo col" style={{ gap: 16 }}>{children}</div>
       {pie && <div className="pie">{pie}</div>}

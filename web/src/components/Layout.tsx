@@ -4,6 +4,7 @@ import { api, fecha, guardar, setZona, slugDelHost, tenantSlug } from '../api';
 import { useApi, Medidor, Cargando, Modal, Campo, useAccion, CodigoOtp, useCuentaAtras, useToast } from './ui';
 import { Icon } from './icons';
 import { MARCA } from '../brand';
+import { WorkspaceBirth } from './WorkspaceBirth';
 
 export interface Sesion {
   usuario: { id: string; nombre: string; rol: string; rol_nombre: string; email: string | null; correo_verificado: boolean };
@@ -230,6 +231,7 @@ export function PanelLayout() {
 
   return (
     <SesionCtx.Provider value={{ s: data, puede, recargar }}>
+      <WorkspaceBirth nombre={t.nombre}>
       <div className={`app ${navAbierta ? 'nav-abierta' : ''}`}>
         <a className="saltar" href="#contenido">Saltar al contenido</a>
         <header className="barra-movil">
@@ -304,6 +306,7 @@ export function PanelLayout() {
         </nav>
       </div>
       {contrasena && <CambiarContrasena onCerrar={() => setContrasena(false)} />}
+      </WorkspaceBirth>
     </SesionCtx.Provider>
   );
 }

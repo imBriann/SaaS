@@ -251,6 +251,11 @@ export class MockLlm implements LlmClient {
     if (input.tarea === 'mapear_columnas') raw = mapColumnsHeuristic(input.datos as any);
     if (input.tarea === 'resumir_caso') raw = summarizeHeuristic(input.datos as any);
     if (input.tarea === 'sugerir_respuesta') raw = suggestHeuristic(input.datos as any);
+    if (input.tarea === 'personalizar_espacio') {
+      const d = input.datos as { nombre: string; modulos: string[] };
+      raw = { titulo: `El día a día de ${d.nombre}`.slice(0, 90), descripcion: 'Este espacio de demostración reúne las herramientas que elegiste para organizar tu negocio.',
+        prioridades: d.modulos.slice(0, 3).map(modulo => ({ modulo, titulo: `Organiza ${modulo}`, descripcion: `Empieza a preparar ${modulo} con la información de tu negocio.` })) };
+    }
     const parsed = input.schema.safeParse(raw);
     return { data: parsed.success ? parsed.data : null, raw, tokens: Math.ceil(input.user.length / 4) + 80 };
   }

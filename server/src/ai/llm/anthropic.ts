@@ -7,9 +7,30 @@ import type { LlmClient, LoopInput, LoopOutput, StructuredInput, ToolCallOutcome
  * El bucle es manual a propósito: cada tool_use propuesto por el modelo se
  * entrega al Gateway antes de ejecutarse; el modelo nunca ejecuta nada.
  *
- * - Se habilitan los fallbacks del lado del servidor ante rechazos (refusal).
+ * - Se habilitan los fallbacks del lado del servidor ante rechazos (refusal) solo en los modelos que
+ *   los admiten: Claude Haiku 5.5 no tiene respaldo y responde 400 si se envía el parámetro.
  * - Se devuelve response.content completo al historial (bloques de thinking incluidos).
  */
+/**
+ * La salida estructurada no admite límites de longitud, de cantidad de elementos ni rangos numéricos
+ * (p. ej. 400 «For 'array' type, property 'maxItems' is not supported»). Se quitan del esquema que viaja
+ * a la API; la respuesta se revalida después contra el esquema Zod completo, así que nada se relaja.
+ */
+const RESTRICCIONES_NO_ADMITIDAS = ['maxItems', 'minLength', 'maxLength', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'];
+export function esquemaCompatible(nodo: unknown): unknown {
+  if (Array.isArray(nodo)) return nodo.map(esquemaCompatible);
+  if (!nodo || typeof nodo !== 'object') return nodo;
+  const salida: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(nodo)) {
+    if (RESTRICCIONES_NO_ADMITIDAS.includes(k)) continue;
+    if (k === 'minItems' && typeof v === 'number' && v > 1) continue;
+    salida[k] = esquemaCompatible(v);
+  }
+  return salida;
+}
+
+const MODELOS_CON_RESPALDO = new Set(['claude-fable-5-1', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5']);
+
 export class AnthropicLlm implements LlmClient {
   nombre = 'anthropic';
   private client: Anthropic;
@@ -19,6 +40,9 @@ export class AnthropicLlm implements LlmClient {
     this.maxIteraciones = opts.maxIteraciones ?? 6;
   }
   private maxIteraciones: number;
+  private respaldo() {
+    return MODELOS_CON_RESPALDO.has(this.model) ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {};
+  }
 
   async runLoop(input: LoopInput, onToolCall: (name: string, args: unknown) => Promise<ToolCallOutcome>): Promise<LoopOutput> {
     const messages: Anthropic.Beta.BetaMessageParam[] = [];
@@ -48,8 +72,7 @@ export class AnthropicLlm implements LlmClient {
         messages,
         tools,
         output_config: { effort: 'low' },
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
+        ...this.respaldo(),
       } as Anthropic.Beta.MessageCreateParamsNonStreaming);
       tokens += (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0) + (response.usage.cache_read_input_tokens ?? 0);
       entrada += (response.usage.input_tokens ?? 0) + (response.usage.cache_read_input_tokens ?? 0);
@@ -82,16 +105,16 @@ export class AnthropicLlm implements LlmClient {
   }
 
   async structured<T>(input: StructuredInput<T>): Promise<{ data: T | null; raw: unknown; tokens: number }> {
-    const schema = z.toJSONSchema(input.schema, { target: 'draft-7' }) as Record<string, unknown>;
+    const schema = esquemaCompatible(z.toJSONSchema(input.schema, { target: 'draft-7' })) as Record<string, unknown>;
     delete schema.$schema;
     const response = await this.client.beta.messages.create({
       model: this.model,
-      max_tokens: 2048,
+      // El pensamiento adaptativo también consume max_tokens: margen para que el JSON no quede truncado.
+      max_tokens: 4096,
       system: input.system,
       messages: [{ role: 'user', content: input.user }],
       output_config: { effort: 'low', format: { type: 'json_schema', schema } },
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
+      ...this.respaldo(),
     } as Anthropic.Beta.MessageCreateParamsNonStreaming);
     const tokens = (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0);
     if (response.stop_reason === 'refusal') return { data: null, raw: null, tokens };

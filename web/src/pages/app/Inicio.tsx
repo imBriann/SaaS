@@ -4,6 +4,8 @@ import { api, cop, fechaLarga, hora, hoyLocal } from '../../api';
 import { Cabecera, useSesion } from '../../components/Layout';
 import { Cargando, CicloFiscal, Cifra, ErrorCarga, Estado, Medidor, Mensaje, Recibo, Tarjeta, useApi, Vacio, type TipoMensaje } from '../../components/ui';
 import { Icon } from '../../components/icons';
+import { ThinkingOrb } from 'thinking-orbs';
+import { useWorkspaceBirthReady } from '../../components/WorkspaceBirth';
 
 const TIPO: Record<string, TipoMensaje> = { CUSTOMER: 'cliente', AI: 'ia', HUMAN: 'humano' };
 
@@ -11,16 +13,29 @@ const TIPO: Record<string, TipoMensaje> = { CUSTOMER: 'cliente', AI: 'ia', HUMAN
 export function Inicio() {
   const { s, puede } = useSesion();
   const { data, error, cargando, recargar } = useApi<any>(() => api.get('/api/t/inicio'), [], { cada: 20000 });
+  useWorkspaceBirthReady(!!data || !!error);
+  const personalizacion = s.tenant.registro_datos?.inicio_ia;
   const accesos = ([
     ['appointment:create', '/agenda', 'agenda', 'Agendar una cita'], ['order:create', '/ventas', 'ventas', 'Registrar una venta'],
     ['customer:write', '/clientes', 'clientes', 'Añadir un cliente'], ['conversation:read', '/conversaciones', 'conversaciones', 'Revisar mensajes'],
   ] as const).filter(([p]) => puede(p));
   return (
     <>
-      <Cabecera titulo={`Hola, ${s.usuario.nombre.split(' ')[0]}`} sub={data ? `${fechaLarga(data.fecha)} · ${s.tenant.nombre}` : s.tenant.nombre}>
+      <Cabecera titulo={personalizacion?.titulo || `Hola, ${s.usuario.nombre.split(' ')[0]}`} sub={data ? `${fechaLarga(data.fecha)} · ${s.tenant.nombre}` : s.tenant.nombre}>
         {accesos.map(([p, to, icon, label]) => <Link key={p} className="btn" to={to}><Icon n={icon} className="" size={16} />{label}</Link>)}
       </Cabecera>
       <div className="contenido">
+        {personalizacion?.descripcion && <section className="workspace-personalized" aria-label="Tu espacio personalizado">
+          <ThinkingOrb state="breathing" size={64} theme="light" aria-label="Configuración personalizada de Omnegia" />
+          <div><span className="workspace-personalized-tag"><Icon n="ia" size={14} className="" />Preparado por la IA para {s.tenant.nombre}</span><p>{personalizacion.descripcion}</p>
+            {Array.isArray(personalizacion.prioridades) && <ul>{personalizacion.prioridades.slice(0, 3).map((priority: any, i: number) => {
+              const destinations: Record<string, [string, string]> = { clientes: ['/clientes', 'customer:read'], catalogo: ['/inventario', 'catalog:read'], inventario: ['/inventario', 'catalog:read'], ventas: ['/ventas', 'order:read'], agenda: ['/agenda', 'appointment:read'], conversaciones: ['/conversaciones', 'conversation:read'], ia: ['/ia', 'ai:read'], facturacion: ['/facturacion', 'invoice:read'], comisiones: ['/configuracion', 'tenant:configure'], membresias: ['/configuracion', 'tenant:configure'] };
+              const destination = destinations[priority.modulo];
+              if (!destination || !puede(destination[1]) || !s.modulos.includes(priority.modulo)) return null;
+              return <li key={`${priority.modulo}-${i}`}><Link to={destination[0]}><strong>{priority.titulo}</strong><span>{priority.descripcion}</span><Icon n="flecha" size={16} className="" /></Link></li>;
+            })}</ul>}
+          </div>
+        </section>}
         {error && <ErrorCarga error={error} reintentar={recargar} />}
         {cargando && !data && <div className="tarjeta"><Cargando filas={8} /></div>}
         {data && (

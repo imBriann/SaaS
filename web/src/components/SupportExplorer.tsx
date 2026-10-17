@@ -51,16 +51,15 @@ function EscenaEquipo() {
 export function SupportExplorer() {
   const [id, setId] = useState<Opcion>('asistente');
   const mover = (e: KeyboardEvent, actual: number) => {
-    const salto = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : e.key === 'Home' ? -actual : e.key === 'End' ? OPCIONES.length : 0;
-    if (!salto) return;
+    const indice = e.key === 'Home' ? 0 : e.key === 'End' ? OPCIONES.length - 1 : e.key === 'ArrowRight' || e.key === 'ArrowDown' ? (actual + 1) % OPCIONES.length : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? (actual - 1 + OPCIONES.length) % OPCIONES.length : null;
+    if (indice === null) return;
     e.preventDefault();
-    const siguiente = OPCIONES[(actual + salto + OPCIONES.length) % OPCIONES.length];
+    const siguiente = OPCIONES[indice];
     setId(siguiente.id);
     document.getElementById(`se-tab-${siguiente.id}`)?.focus();
   };
   return <div className="support-explorer">
-    <p className="se-label" id="se-label"><Icon n="info" size={18} className="" />Elige una opción para ver cómo funciona</p>
-    <div className="se-tabs" role="tablist" aria-labelledby="se-label">
+    <div className="se-tabs" role="tablist" aria-label="Opciones de acompañamiento" aria-orientation="vertical">
       {OPCIONES.map((o, i) => {
         const activa = id === o.id;
         return <button type="button" role="tab" key={o.id} id={`se-tab-${o.id}`} aria-selected={activa} aria-controls="se-panel" tabIndex={activa ? 0 : -1} className="se-tab" onClick={() => setId(o.id)} onKeyDown={e => mover(e, i)}>

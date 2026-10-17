@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, type ApiError } from '../api';
 import { Campo, CodigoOtp, useAccion } from './ui';
 import { Icon } from './icons';
+import { AiOrb } from './AiOrb';
 
 /**
  * Datos del negocio en el alta. Cuatro grupos con estado propio (completo, pendiente u opcional):
@@ -16,7 +17,11 @@ type EstadoGrupo = 'completo' | 'pendiente' | 'opcional' | 'error';
 
 const ETIQUETA_GRUPO: Record<EstadoGrupo, string> = { completo: 'Completo', pendiente: 'Pendiente', opcional: 'Opcional', error: 'Revisar' };
 
-function Grupo({ n, id, titulo, para, estado, children }: { n: number; id: string; titulo: string; para: string; estado: EstadoGrupo; children: ReactNode }) {
+function Grupo({ n, id, titulo, para, estado, children, plegable = false }: { n: number; id: string; titulo: string; para: string; estado: EstadoGrupo; children: ReactNode; plegable?: boolean }) {
+  if (plegable) return <details className={`grupo-datos grupo-optional ${estado}`} id={id} open={estado === 'error' ? true : undefined}>
+    <summary><div><h2>{titulo}</h2><p>{para}</p></div><Icon n="derecha" size={18} /></summary>
+    <div className="grupo-cuerpo">{children}</div>
+  </details>;
   return (
     <section className={`grupo-datos ${estado}`} id={id} aria-labelledby={`${id}-t`} style={{ ['--i' as any]: n }}>
       <header>
@@ -137,8 +142,9 @@ export function RegistrationData({ d, setD }: { d: any; setD: (d: any) => void }
     <div className="registro">
       <form className="registro-form" onSubmit={continuar} noValidate>
         <header className="registro-cab">
-          <h1 className="onb-titulo">Los datos de tu negocio</h1>
-          <p className="sec">Con esto preparamos tu espacio. Al equipo lo invitas después, desde Equipo y comisiones.</p>
+          <h1 className="onb-titulo">Ahora, dale tu identidad.</h1>
+          <p className="sec">El nombre de tu negocio y un correo para entrar. El resto lo puedes completar después.</p>
+          <div className="registration-context"><AiOrb state="breathing" label="Configuración guardada" /><p><strong>{d.clasificacion?.tipo_negocio ?? 'Tu negocio'}, con sus funciones preparadas.</strong>{d.clasificacion?.motor === 'ia' ? 'La IA organizó tu configuración. ' : 'Tu configuración está guardada. '}Añade tu marca y verifica tu correo para continuar.</p></div>
           <div className="registro-progreso" aria-label={`${listos} de ${requeridos.length} grupos obligatorios completos`}>
             <div className="registro-barra"><span style={{ transform: `scaleX(${listos / requeridos.length})` }} /></div>
             <span className="tenue peq-txt">{listos} de {requeridos.length} grupos obligatorios completos</span>
@@ -196,7 +202,7 @@ export function RegistrationData({ d, setD }: { d: any; setD: (d: any) => void }
           {avisoEn('acceso')}
         </Grupo>
 
-        <Grupo n={3} id="contacto" titulo="Teléfono de contacto" para="Opcional. Elige el país y escribe el número sin el indicativo." estado={estados.contacto}>
+        <Grupo n={3} id="contacto" titulo="Añadir un teléfono de contacto" para="Opcional. Puedes completarlo ahora o desde tu panel." estado={estados.contacto} plegable>
           <div className="telefono">
             <Campo etiqueta="País">
               <select className="input bandera-select" value={f.telefono_pais ?? ''} onChange={(e) => cambiar('telefono_pais', e.target.value)}>
@@ -215,7 +221,7 @@ export function RegistrationData({ d, setD }: { d: any; setD: (d: any) => void }
           {avisoEn('contacto')}
         </Grupo>
 
-        <Grupo n={4} id="ubicacion" titulo={factura ? 'Ubicación y datos tributarios' : 'Ubicación del negocio'} estado={estados.ubicacion}
+        <Grupo n={4} id="ubicacion" titulo={factura ? 'Ubicación y datos tributarios' : 'Añadir la ubicación del negocio'} estado={estados.ubicacion} plegable={!factura}
           para={factura ? 'Necesarios para preparar la facturación electrónica: identificación tributaria y dirección del establecimiento.' : 'Opcional por ahora. Los pediremos si activas una integración que los necesite.'}>
           {factura && (
             <div className="nit">
@@ -260,7 +266,7 @@ export function RegistrationData({ d, setD }: { d: any; setD: (d: any) => void }
           <Link to="/empezar" className="btn sutil">Volver a la propuesta</Link>
           <button type="submit" className="btn primario grande" disabled={ocupado}>{ocupado ? 'Guardando…' : 'Guardar y continuar'}</button>
         </footer>
-        <p className="tenue peq-txt">Tus datos se guardan como borrador. La empresa se crea al confirmar el pago.</p>
+        <p className="tenue peq-txt">Tus datos quedan guardados. Después del pago podrás crear tu espacio con IA.</p>
       </form>
       <IdentidadMarca d={d} setD={setD} nombre={f.nombre} />
     </div>

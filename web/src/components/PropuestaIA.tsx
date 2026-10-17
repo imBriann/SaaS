@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { Icon } from './icons';
+import { AiOrb } from './AiOrb';
 
 /**
  * Propuesta de la IA a partir de la descripción del negocio. Cada dato muestra su estado real:
@@ -30,7 +31,7 @@ const PREGUNTA: Record<string, { pregunta: string; para: string }> = {
   modulos_sugeridos: { pregunta: '¿Qué funciones quieres activar?', para: 'Clientes y catálogo son la base. Puedes cambiar las demás cuando quieras.' },
 };
 
-const ETIQUETA_ESTADO: Record<Estado, string> = { confirmado: 'Confirmado por ti', sugerido: 'Sugerencia de la IA', pendiente: 'Pendiente' };
+const ETIQUETA_ESTADO: Record<Estado, string> = { confirmado: 'Ajustado por ti', sugerido: 'Preseleccionado', pendiente: 'Por completar' };
 
 function EstadoDato({ estado }: { estado: Estado }) {
   return <span className={`ia-estado ${estado}`}><Icon n={estado === 'confirmado' ? 'ok' : estado === 'sugerido' ? 'ia' : 'reloj'} className="" size={13} />{ETIQUETA_ESTADO[estado]}</span>;
@@ -45,21 +46,20 @@ function Opciones({ valor, opciones, onElegir, ocupado, nombre }: { valor: strin
   );
 }
 
-function FilaDato({ indice, titulo, estado, valor, evidencia, pregunta, para, ocupado, onConfirmar, children }: {
-  indice: number; titulo: string; estado: Estado; valor: ReactNode; evidencia?: string; pregunta: string; para: string; ocupado: boolean; onConfirmar?: () => void; children: ReactNode;
+function FilaDato({ indice, titulo, estado, valor, evidencia, pregunta, para, ocupado, children }: {
+  indice: number; titulo: string; estado: Estado; valor: ReactNode; evidencia?: string; pregunta: string; para: string; ocupado: boolean; children: ReactNode;
 }) {
   const [editando, setEditando] = useState(estado === 'pendiente');
-  useEffect(() => { if (estado === 'pendiente') setEditando(true); }, [estado]);
+  useEffect(() => { setEditando(estado === 'pendiente'); }, [estado]);
   return (
-    <article className={`ia-fila ${estado}`} style={{ ['--i' as any]: indice }}>
-      <header className="ia-fila-cab"><h3>{titulo}</h3><EstadoDato estado={estado} /></header>
+    <article className={`ia-fila ${estado} ${editando ? 'is-editing' : ''}`} style={{ ['--i' as any]: indice }}>
+      <header className="ia-fila-cab"><h3>{titulo}</h3>{estado !== 'sugerido' && <EstadoDato estado={estado} />}</header>
       {estado !== 'pendiente' && !editando && <p className="ia-valor" key={String(valor)}>{valor}</p>}
-      {estado === 'sugerido' && evidencia && <p className="ia-evidencia"><span>Lo deduje de</span> «{evidencia}»</p>}
+      {editando && evidencia && <p className="ia-evidencia"><span>En tu descripción:</span> «{evidencia}»</p>}
       {(estado === 'pendiente' || editando) && <><p className="ia-pregunta">{pregunta}</p><p className="ia-para">{para}</p></>}
       {editando && <div className="ia-editor">{children}</div>}
       <div className="ia-fila-acciones">
-        {estado === 'sugerido' && !editando && onConfirmar && <button type="button" className="btn peq" disabled={ocupado} onClick={onConfirmar}><Icon n="ok" className="" size={14} />Es correcto</button>}
-        {estado !== 'pendiente' && <button type="button" className="btn sutil peq" onClick={() => setEditando(!editando)}>{editando ? 'Listo' : 'Cambiar'}</button>}
+        {estado !== 'pendiente' && <button type="button" className="btn sutil peq ia-ajustar" disabled={ocupado} aria-expanded={editando} aria-label={`${editando ? 'Cerrar ajuste de' : 'Ajustar'} ${titulo.toLowerCase()}`} onClick={() => setEditando(!editando)}>{!editando && <Icon n="editar" className="" size={15} />}{editando ? 'Cerrar' : 'Ajustar'}</button>}
       </div>
     </article>
   );
@@ -120,25 +120,19 @@ export function PropuestaIA({ c, ocupado, cambiar }: { c: any; ocupado: boolean;
   const sector = sectores.find((s) => s.id === c.sector);
   const pregunta = (k: string) => c.preguntas?.[k] || PREGUNTA[k].pregunta;
   const nombreDe = (lista: [string, string][], v: unknown) => lista.find(([k]) => k === v)?.[1] ?? '';
-  // Confirma de una vez lo que la IA sugirió y la persona revisó.
-  const sugeridos = ['sector', 'tipo_negocio', 'tamano', 'volumen_conv_mes', 'factura_electronica', 'modulos_sugeridos'].filter((k) => c[k] != null && !c.confirmados?.includes(k));
-  const confirmarTodo = () => cambiar(Object.fromEntries(sugeridos.map((k) => [k, c[k]])));
   const pendientes = [estadoActividad, estado('tamano'), estado('volumen_conv_mes'), estado('factura_electronica')].filter((e) => e === 'pendiente').length;
 
   return (
     <section className="ia-propuesta" aria-busy={ocupado} aria-labelledby="ia-propuesta-titulo">
       <header className="ia-propuesta-cab">
-        <span className="ia-sello" aria-hidden="true"><Icon n="ia" className="" size={18} /></span>
         <div>
-          <h2 id="ia-propuesta-titulo">Lo que entendí de tu negocio</h2>
+          <h2 id="ia-propuesta-titulo">Tu espacio toma forma.</h2>
           <p className="sec">{c.motor === 'reglas'
-            ? 'Propuesta preparada con reglas porque el análisis con IA no respondió. Revísala con más cuidado.'
-            : 'Propuesta de la IA a partir de tu descripción. Revisa cada dato: nada queda confirmado hasta que tú lo digas.'}</p>
+            ? 'Usamos una lectura básica, no el modelo de IA. Puedes ajustar la propuesta o reintentar el análisis.'
+            : 'La IA ya dejó seleccionado lo que encontró. Ajusta solo lo que quieras cambiar.'}</p>
+          {c.motor !== 'reglas' && <p className="ia-firma"><Icon n="ia" className="" size={14} />Análisis hecho con IA a partir de tu texto</p>}
         </div>
       </header>
-      <ul className="ia-leyenda" aria-label="Estados de los datos">
-        <li><EstadoDato estado="confirmado" /></li><li><EstadoDato estado="sugerido" /></li><li><EstadoDato estado="pendiente" /></li>
-      </ul>
       {c.justificacion && <p className="ia-resumen">{c.justificacion}</p>}
       {errorCatalogo && <p className="aviso" role="alert">{errorCatalogo}</p>}
 
@@ -157,25 +151,25 @@ export function PropuestaIA({ c, ocupado, cambiar }: { c: any; ocupado: boolean;
         <FilaDato indice={0} titulo="Actividad" estado={estadoActividad} ocupado={ocupado}
           valor={c.sector === 'otro' ? `Otra actividad${c.otro_descripcion ? `: ${c.otro_descripcion}` : ''}` : <>{c.tipo_negocio} <span className="tenue">· {sector?.nombre ?? ''}</span></>}
           evidencia={c.evidencia?.tipo_negocio ?? c.evidencia?.sector} pregunta={c.preguntas?.sector || c.preguntas?.tipo_negocio || PREGUNTA.actividad.pregunta} para={PREGUNTA.actividad.para}
-          onConfirmar={() => cambiar({ sector: c.sector, tipo_negocio: c.tipo_negocio })}>
+          >
           <SelectorActividad sectores={sectores} c={c} ocupado={ocupado} cambiar={cambiar} />
         </FilaDato>
         <FilaDato indice={1} titulo="Equipo que atenderá" estado={estado('tamano')} ocupado={ocupado} valor={nombreDe(TAMANOS, c.tamano)}
-          evidencia={c.evidencia?.tamano} pregunta={pregunta('tamano')} para={PREGUNTA.tamano.para} onConfirmar={() => cambiar({ tamano: c.tamano })}>
+          evidencia={c.evidencia?.tamano} pregunta={pregunta('tamano')} para={PREGUNTA.tamano.para}>
           <Opciones nombre="Personas que atenderán" valor={c.tamano ?? null} opciones={TAMANOS} ocupado={ocupado} onElegir={(v) => cambiar({ tamano: v })} />
         </FilaDato>
         <FilaDato indice={2} titulo="Conversaciones al mes" estado={estado('volumen_conv_mes')} ocupado={ocupado} valor={nombreDe(VOLUMENES, c.volumen_conv_mes)}
-          evidencia={c.evidencia?.volumen_conv_mes} pregunta={pregunta('volumen_conv_mes')} para={PREGUNTA.volumen_conv_mes.para} onConfirmar={() => cambiar({ volumen_conv_mes: c.volumen_conv_mes })}>
+          evidencia={c.evidencia?.volumen_conv_mes} pregunta={pregunta('volumen_conv_mes')} para={PREGUNTA.volumen_conv_mes.para}>
           <Opciones nombre="Conversaciones al mes" valor={c.volumen_conv_mes ?? null} opciones={VOLUMENES} ocupado={ocupado} onElegir={(v) => cambiar({ volumen_conv_mes: v })} />
         </FilaDato>
         <FilaDato indice={3} titulo="Factura electrónica" estado={estado('factura_electronica')} ocupado={ocupado} valor={c.factura_electronica ? 'Sí, la necesito' : 'No por ahora'}
-          evidencia={c.evidencia?.factura_electronica} pregunta={pregunta('factura_electronica')} para={PREGUNTA.factura_electronica.para} onConfirmar={() => cambiar({ factura_electronica: c.factura_electronica })}>
+          evidencia={c.evidencia?.factura_electronica} pregunta={pregunta('factura_electronica')} para={PREGUNTA.factura_electronica.para}>
           <Opciones nombre="Factura electrónica" valor={c.factura_electronica == null ? null : String(c.factura_electronica)} opciones={[['true', 'Sí, la necesito'], ['false', 'No por ahora']]} ocupado={ocupado}
             onElegir={(v) => cambiar({ factura_electronica: v === null ? null : v === 'true' })} />
         </FilaDato>
         <FilaDato indice={4} titulo="Funciones" estado={estado('modulos_sugeridos')} ocupado={ocupado}
           valor={FUNCIONES.filter(([k]) => c.modulos_sugeridos?.includes(k)).map(([, n]) => n).join(' · ')}
-          pregunta={PREGUNTA.modulos_sugeridos.pregunta} para={PREGUNTA.modulos_sugeridos.para} onConfirmar={() => cambiar({ modulos_sugeridos: c.modulos_sugeridos })}>
+          pregunta={PREGUNTA.modulos_sugeridos.pregunta} para={PREGUNTA.modulos_sugeridos.para}>
           <div className="ia-funciones">
             {FUNCIONES.map(([k, n, desc]) => {
               const on = c.modulos_sugeridos?.includes(k);
@@ -188,8 +182,7 @@ export function PropuestaIA({ c, ocupado, cambiar }: { c: any; ocupado: boolean;
       </div>
 
       <footer className="ia-propuesta-pie">
-        <span className="tenue peq-txt">{pendientes ? `${pendientes} ${pendientes === 1 ? 'dato pendiente' : 'datos pendientes'}. Solo la actividad es necesaria para continuar.` : 'Todo revisado. Puedes seguir ajustando después.'}</span>
-        {sugeridos.length > 1 && <button type="button" className="btn peq" disabled={ocupado} onClick={confirmarTodo}><Icon n="ok" className="" size={14} />Confirmar las {sugeridos.length} sugerencias</button>}
+        <span className="tenue peq-txt">{pendientes ? `${pendientes} ${pendientes === 1 ? 'dato por completar' : 'datos por completar'}. Solo necesitamos la actividad para continuar.` : 'La configuración está lista para continuar. No tienes que confirmar cada dato.'}</span>
       </footer>
     </section>
   );
@@ -199,22 +192,13 @@ export function PropuestaIA({ c, ocupado, cambiar }: { c: any; ocupado: boolean;
  * Lo que hace la IA mientras analiza. Los pasos describen la tarea y se resaltan por turnos mientras
  * la petición está en curso; los resultados solo aparecen cuando el servidor responde.
  */
-const PASOS_ANALISIS = ['Leyendo tu descripción', 'Identificando sector y actividad', 'Estimando equipo y conversaciones', 'Revisando si necesitas facturar', 'Eligiendo funciones útiles'];
-
 export function AnalisisEnCurso() {
-  const [paso, setPaso] = useState(0);
-  useEffect(() => {
-    // Indicación cíclica de lo que hace la IA: no marca pasos como terminados (no hay progreso parcial real).
-    const t = window.setInterval(() => setPaso((p) => (p + 1) % PASOS_ANALISIS.length), 1300);
-    return () => clearInterval(t);
-  }, []);
   return (
     <section className="ia-analisis" role="status" aria-live="polite">
-      <span className="ia-sello pulso" aria-hidden="true"><Icon n="ia" className="" size={18} /></span>
+      <AiOrb state="solving" label="Analizando tu descripción" />
       <div>
         <h2>Analizando tu negocio…</h2>
-        <ol>{PASOS_ANALISIS.map((p, i) => <li key={p} className={i === paso ? 'curso' : ''} aria-current={i === paso ? 'step' : undefined}>{p}</li>)}</ol>
-        <p className="tenue peq-txt">Suele tardar unos segundos. Nada se guarda como confirmado.</p>
+        <p className="tenue peq-txt">Buscamos tu actividad, equipo y funciones. Los resultados aparecerán cuando responda el análisis.</p>
       </div>
     </section>
   );

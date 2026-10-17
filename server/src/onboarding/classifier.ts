@@ -16,16 +16,23 @@ export const TAMANOS = ['unipersonal', '2_5', '6_15', 'mas_15'] as const;
 export const VOLUMENES = ['bajo', 'medio', 'alto'] as const;
 export const MODULOS_CONOCIDOS = ['clientes', 'catalogo', 'ventas', 'agenda', 'inventario', 'facturacion', 'conversaciones', 'ia', 'comisiones', 'membresias'] as const;
 
+// Objetos con claves fijas: la salida estructurada exige additionalProperties: false (no admite z.record).
+const PorCampo = z.object({
+  sector: z.string().nullable(), tipo_negocio: z.string().nullable(), tamano: z.string().nullable(),
+  volumen_conv_mes: z.string().nullable(), factura_electronica: z.string().nullable(),
+});
+
 export const ClasificacionSchema = z.object({
   sector: z.enum(SECTORES).nullable(),
-  tipo_negocio: z.string().nullable().optional(),
+  tipo_negocio: z.string().nullable(),
   tamano: z.enum(TAMANOS).nullable(),
   volumen_conv_mes: z.enum(VOLUMENES).nullable(),
   modulos_sugeridos: z.array(z.enum(MODULOS_CONOCIDOS)),
   factura_electronica: z.boolean().nullable(),
-  evidencia: z.record(z.string(), z.string()).optional(),
-  /** Pregunta concreta por cada campo que no se pudo determinar con el texto. */
-  preguntas: z.record(z.string(), z.string()).optional(),
+  /** Frase literal que sustenta cada campo con valor; null en los demás. */
+  evidencia: PorCampo,
+  /** Pregunta concreta por cada campo que no se pudo determinar con el texto; null en los demás. */
+  preguntas: PorCampo,
   confianza: z.number().min(0).max(1),
   justificacion: z.string().max(600),
 });
@@ -42,6 +49,7 @@ export interface Clasificacion {
   /** Pregunta concreta para cada dato pendiente (la formula el modelo; la interfaz tiene preguntas por defecto). */
   preguntas?: Record<string, string>;
   motor?: string;
+  analisis?: { estado: 'completado' | 'respaldo'; proveedor: string; motivo?: string };
   sector: (typeof SECTORES)[number] | null;
   tamano: (typeof TAMANOS)[number] | null;
   volumen_conv_mes: (typeof VOLUMENES)[number] | null;
@@ -147,5 +155,8 @@ export async function classifyBusiness(descripcion: string): Promise<Clasificaci
   const preguntas: Record<string, string> = Object.fromEntries(Object.entries((raw?.preguntas ?? {}) as Record<string, unknown>)
     .filter(([k, v]) => typeof v === 'string' && v.trim() && estados[k] === 'pendiente')
     .map(([k, v]) => [k, String(v).trim().slice(0, 160)]));
-  return { ...c, evidencia, preguntas, prellenar: c.sector !== null, estados, confirmados: [], motor, tokens: r.tokens };
+  const proveedor = llm().nombre;
+  const analisis: Clasificacion['analisis'] = { estado: motor === 'ia' ? 'completado' : 'respaldo', proveedor,
+    ...(motor === 'reglas' ? { motivo: proveedor === 'simulador' ? 'simulador' : proveedor === 'sin_modelo' ? 'sin_configurar' : 'no_disponible' } : {}) };
+  return { ...c, evidencia, preguntas, prellenar: c.sector !== null, estados, confirmados: [], motor, analisis, tokens: r.tokens };
 }

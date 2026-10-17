@@ -12,7 +12,7 @@ export type FaseRecibo = 'validando' | 'generando' | 'listo' | 'pendiente';
 export interface EstadoDocumentos { estado: string; disponible?: boolean; estado_fiscal?: string; validez_fiscal?: boolean }
 
 export function faseRecibo(st: { estado?: string; pago?: { estado?: string } | null; documentos?: EstadoDocumentos | null } | null): FaseRecibo {
-  if (!st || st.pago?.estado !== 'APROBADO' || st.estado !== 'APROVISIONADO') return 'validando';
+  if (!st || st.pago?.estado !== 'APROBADO') return 'validando';
   const d = st.documentos;
   if (!d || d.estado === 'PENDIENTE' || d.estado === 'GENERANDO') return 'generando';
   if (d.estado === 'LISTO' && d.disponible !== false) return 'listo';
@@ -26,5 +26,5 @@ export const TEXTO_RECIBO: Record<FaseRecibo, { titulo: string; detalle: string 
   validando: { titulo: 'Validando el pago', detalle: 'Esperamos la confirmación de Wompi antes de emitir el recibo.' },
   generando: { titulo: 'Generando tu comprobante', detalle: 'Preparamos el PDF protegido y el archivo .zip con tus documentos.' },
   listo: { titulo: 'Recibo listo', detalle: 'Tus documentos están disponibles para descargar.' },
-  pendiente: { titulo: 'Documentos pendientes', detalle: 'No pudimos prepararlos todavía. Tu pago y tu empresa están confirmados; puedes reintentar.' },
+  pendiente: { titulo: 'Documentos pendientes', detalle: 'Tu pago está confirmado. Puedes reintentar la descarga cuando los documentos estén preparados.' },
 };

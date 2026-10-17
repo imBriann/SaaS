@@ -10,7 +10,7 @@ const report = { checks: [], errors: [], viewports: [] };
 const check = (condition, label) => { assert(condition, label); report.checks.push(label); };
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-  page.on('pageerror', e => report.errors.push(e.message));
+  page.on('pageerror', e => report.errors.push(e.stack || e.message));
   let videoRequested = false;
   page.on('request', r => { if (r.url().endsWith('.webm')) videoRequested = true; });
   for (const width of process.argv.includes('--media-only') ? [] : [1440, 768, 390, 320]) {
@@ -41,9 +41,26 @@ try {
     check(await page.getByRole('tab', { name: /Asistente de tu empresa/ }).getAttribute('aria-selected') === 'true', `${width}: la ayuda abre con un ejemplo visible`);
     await page.getByRole('tab', { name: /Equipo de Omnegia/ }).click();
     check(await page.getByRole('tabpanel').innerText().then(t => t.includes('No logro conectar WhatsApp')), `${width}: la pestaña del equipo abre su ejemplo`);
+    if (width === 1440 || width === 390) {
+      await page.waitForTimeout(3900);
+      await page.locator('.om-support').screenshot({ path: `${out}/${width}-support-team.png`, style: '.site-header { visibility: hidden; }' });
+    }
     check(await page.getByRole('tab', { name: /Equipo de Omnegia/ }).evaluate(e => e.getBoundingClientRect().height >= 44), `${width}: pestañas con objetivo táctil suficiente`);
     await page.keyboard.press('ArrowLeft');
     check(await page.getByRole('tab', { name: /Asistente de tu empresa/ }).getAttribute('aria-selected') === 'true', `${width}: pestañas navegables con flechas`);
+    await page.keyboard.press('End');
+    check(await page.getByRole('tab', { name: /Equipo de Omnegia/ }).getAttribute('aria-selected') === 'true', `${width}: Fin selecciona la última opción de ayuda`);
+    await page.keyboard.press('Home');
+    check(await page.getByRole('tab', { name: /Asistente de tu empresa/ }).getAttribute('aria-selected') === 'true', `${width}: Inicio vuelve a la primera opción de ayuda`);
+    await page.waitForTimeout(3900);
+    await page.locator('.om-support').screenshot({ path: `${out}/${width}-support.png`, style: '.site-header { visibility: hidden; }' });
+    const supportLayout = await page.locator('.om-support').evaluate(el => {
+      const heading = el.querySelector('.support-heading').getBoundingClientRect();
+      const tabs = el.querySelector('.se-tabs').getBoundingClientRect();
+      const example = el.querySelector('.se-stage').getBoundingClientRect();
+      return { above: heading.bottom < tabs.top, aligned: Math.abs(tabs.top - example.top) < 2, stacked: tabs.bottom < example.top };
+    });
+    check(supportLayout.above && (width > 760 ? supportLayout.aligned : supportLayout.stacked), `${width}: introducción y opciones de ayuda ordenadas`);
     if (width <= 900) {
       const selector = page.getByRole('button', { name: 'Explorar Agenda', exact: true });
       await selector.click();
@@ -83,9 +100,41 @@ try {
   check(await page.getByRole('button', { name: /Vista simple|Pausar movimiento|Reanudar movimiento/ }).count() === 0, 'Controles de pausa y vista simple retirados');
   await page.setViewportSize({ width: 1440, height: 1000 });
   if (process.argv.includes('--media-only')) await page.goto('http://127.0.0.1:5173/bienvenida');
-  const trigger = page.getByRole('button', { name: /Ver cómo funciona Omnegia/ });
+  const trigger = page.getByRole('button', { name: 'Ver video', exact: true });
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    check(await trigger.evaluate(e => e.scrollWidth <= e.clientWidth + 1), `${width}: botón de video sin recortes`);
+  }
+  await trigger.screenshot({ path: `${out}/video-button-mobile.png` });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await trigger.evaluate(e => e.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await page.waitForTimeout(120);
+  await trigger.screenshot({ path: `${out}/video-button.png` });
   await trigger.click();
   await page.getByRole('dialog').waitFor();
+  const sampleMotion = page.locator('.cinema-modal').evaluate(el => new Promise(resolve => {
+    const start = performance.now(), frames = [];
+    const sample = () => {
+      const style = getComputedStyle(el), matrix = new DOMMatrix(style.transform);
+      frames.push({ ms: Math.round(performance.now() - start), opacity: Number(style.opacity), scale: matrix.m11, backdrop: Number(getComputedStyle(el, '::backdrop').opacity) });
+      if (performance.now() - start >= 950) resolve(frames);
+      else requestAnimationFrame(sample);
+    };
+    sample();
+  }));
+  await page.waitForTimeout(210);
+  await page.screenshot({ path: `${out}/video-opening.png` });
+  const frames = await sampleMotion;
+  report.motion = frames;
+  check(Math.min(...frames.map(f => f.scale)) <= .84, 'La apertura comienza desde una escala claramente menor');
+  check(frames.some(f => f.opacity > .05 && f.opacity < .95), 'El video entra gradualmente en pantalla');
+  check(frames[0].backdrop < .95 && frames.at(-1).backdrop === 1, 'El fondo se oscurece de forma progresiva');
+  check(frames.at(-1).scale > .999 && frames.at(-1).opacity === 1, 'La apertura termina en su tamaño y opacidad completos');
+  check(await page.locator('.product-tour > :not(video, .tour-media-controls)').count() === 0, 'El reproductor solo presenta video y controles esenciales');
+  check(await page.locator('video').evaluate(v => !v.controls), 'Sin menú de opciones del navegador');
+  check(await page.getByRole('group', { name: 'Controles del video' }).getByRole('button').count() === 2 && await page.getByRole('group', { name: 'Controles del video' }).getByRole('slider').count() === 2, 'Solo reproducci?n, avance y volumen');
+  check(await page.locator('.tour-current, .tour-context, .tour-chapters, .tour-transcript').count() === 0, 'Sin texto ni capítulos debajo del video');
+  check(await page.evaluate(() => document.body.style.overflow === 'hidden'), 'La página queda inmóvil detrás del reproductor');
   const video = page.locator('video');
   await video.evaluate(v => new Promise((resolve, reject) => {
     if (v.error) return reject(new Error('No se pudo cargar el video.'));
@@ -99,22 +148,71 @@ try {
   await page.waitForTimeout(1200);
   check(await video.evaluate(v => v.currentTime > 0 && !v.paused), 'El video se reproduce al abrirlo');
   check(await video.evaluate(v => v.webkitAudioDecodedByteCount > 0 && v.volume < 1), 'El video trae su banda sonora, con volumen inicial moderado');
-  await page.getByRole('button', { name: /1:30.*Permisos y auditoría/ }).click();
+  await page.getByRole('dialog').focus();
+  await page.keyboard.press('Tab');
+  check(await page.getByRole('button', { name: 'Cerrar', exact: true }).evaluate(e => e === document.activeElement), 'Tab alcanza el cierre del reproductor');
+  await page.keyboard.press('Tab');
+  check(await page.getByRole('button', { name: 'Pausar video', exact: true }).evaluate(e => e === document.activeElement), 'Tab alcanza la reproducción del video');
+  await page.keyboard.press('Space');
+  check(await video.evaluate(v => v.paused), 'El teclado pausa el video');
+  await page.keyboard.press('Space');
+  await page.waitForFunction(() => !document.querySelector('video').paused);
+  check(true, 'El teclado reanuda el video');
+  await page.keyboard.press('Space');
+  await page.keyboard.press('Tab');
+  const seek = page.getByRole('slider', { name: 'Avance del video', exact: true });
+  check(await seek.evaluate(e => e === document.activeElement), 'Tab alcanza la barra de avance');
+  const beforeSeek = await video.evaluate(v => v.currentTime);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(time => document.querySelector('video').currentTime > time + .05, beforeSeek);
+  check(true, 'La barra adelanta el video usando teclado');
+  await page.keyboard.press('Home');
+  check(await video.evaluate(v => v.currentTime < .1), 'Inicio vuelve al comienzo del video');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Space');
+  check(await video.evaluate(v => v.muted), 'El teclado permite silenciar');
+  await page.keyboard.press('Space');
+  check(await video.evaluate(v => !v.muted), 'El teclado recupera el sonido');
+  await page.keyboard.press('Tab');
+  const volume = page.getByRole('slider', { name: 'Volumen', exact: true });
+  check(await volume.evaluate(e => e === document.activeElement), 'Tab alcanza el volumen');
+  const beforeVolume = await video.evaluate(v => v.volume);
+  await page.keyboard.press('ArrowDown');
+  check(await video.evaluate(v => v.volume) < beforeVolume, 'La barra ajusta el volumen usando teclado');
+  check(await seek.evaluate(e => e.getBoundingClientRect().height >= 44) && await volume.evaluate(e => e.getBoundingClientRect().height >= 44), 'Las barras tienen zonas táctiles de 44px');
+  const seekBox = await seek.boundingBox();
+  await seek.click({ position: { x: seekBox.width / 2, y: seekBox.height / 2 } });
+  check(await video.evaluate(v => v.currentTime > 50 && v.currentTime < 70), 'Pulsar la barra mueve el video a la posición elegida');
+  const volumeBox = await volume.boundingBox();
+  await volume.click({ position: { x: volumeBox.width / 2, y: volumeBox.height / 2 } });
+  check(await video.evaluate(v => Math.abs(v.volume - .5) < .1), 'Pulsar la barra de volumen cambia el sonido');
+  await video.evaluate(v => { for (const track of v.textTracks) track.mode = 'disabled'; v.currentTime = 94.25; void v.play(); });
   await page.waitForFunction(() => { const v = document.querySelector('video'); return v.currentTime >= 90 && !v.seeking && v.readyState >= 2; });
   await page.waitForTimeout(1250);
-  check(true, 'Los capítulos permiten saltar a permisos y auditoría');
-  check(await page.locator('.tour-current h3').innerText().then(t => t.includes('quién puede hacer qué')), 'La explicación legible sigue el capítulo elegido');
+  check(true, 'La posición del video se actualiza en la barra');
   await video.evaluate(v => v.pause());
+  await page.getByRole('dialog').focus();
   await page.getByRole('dialog').evaluate(e => e.scrollTo({ top: 0, behavior: 'instant' }));
-  await video.hover();
+  await page.locator('.product-tour').hover();
   await page.screenshot({ path: `${out}/video-desktop.png` });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('dialog').evaluate(e => e.scrollTo({ top: 0, behavior: 'instant' }));
   await page.screenshot({ path: `${out}/video-mobile.png` });
   check(await page.locator('dialog').evaluate(e => e.scrollWidth <= e.clientWidth + 1), 'Reproductor sin desbordamiento en móvil');
-  check(await page.locator('.tour-current p').evaluate(e => parseFloat(getComputedStyle(e).fontSize) >= 16), 'Video acompañado por explicación legible en móvil');
+  check(await seek.evaluate(e => e.getBoundingClientRect().width >= 90), 'La barra de avance conserva espacio en móvil');
+  check(await page.locator('dialog').evaluate(e => e.getBoundingClientRect().bottom < innerHeight && e.getBoundingClientRect().top > 48), 'Video y cierre dentro de la pantalla móvil');
   await page.keyboard.press('Escape');
+  await page.waitForSelector('dialog', { state: 'detached' });
   check(await trigger.evaluate(e => e === document.activeElement), 'Escape cierra el video y devuelve el foco');
+  check(await page.evaluate(() => document.body.style.overflow !== 'hidden'), 'Cerrar el video recupera el desplazamiento de la página');
+  await trigger.click();
+  await page.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  await page.waitForSelector('dialog', { state: 'detached' });
+  check(await trigger.evaluate(e => e === document.activeElement), 'El botón de cierre también restaura el foco');
+  await trigger.click();
+  await page.mouse.click(4, 4);
+  await page.waitForSelector('dialog', { state: 'detached' });
+  check(true, 'Pulsar el fondo oscuro cierra el video');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.getByRole('button', { name: 'Agenda', exact: true }).focus();
   await page.keyboard.press('Enter');
@@ -122,6 +220,10 @@ try {
   check(await page.locator('.system-piece.is-selected').evaluate(e => getComputedStyle(e).transform === 'none' && getComputedStyle(e).animationName === 'none'), 'Movimiento reducido conserva selección sin elevación ni bucle');
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${out}/reduced-motion.png` });
+  await trigger.click();
+  check(await page.locator('.cinema-modal').evaluate(e => getComputedStyle(e).transform === 'none'), 'El reproductor respeta movimiento reducido');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('dialog', { state: 'detached' });
   check(report.errors.length === 0, 'Sin excepciones JavaScript');
   console.log(JSON.stringify({ checks: report.checks.length, errors: report.errors }, null, 2));
 } catch (e) { report.failure = e.stack; console.error(e); process.exitCode = 1; }

@@ -25,7 +25,7 @@ import * as plantillas from '../email/plantillas.js';
 // ---------------------------------------------------------------------------
 export async function me(tx: Tx, ctx: Ctx) {
   const t = (await tx.query(
-    `SELECT t.id, t.slug, t.nombre, t.nit, t.ciudad, t.sector, t.sector_version, t.plan_codigo, t.tema, t.logo_data_url, t.zona_horaria, t.email_contacto,
+    `SELECT t.id, t.slug, t.nombre, t.nit, t.ciudad, t.sector, t.sector_version, t.plan_codigo, t.tema, t.logo_data_url, t.zona_horaria, t.email_contacto, t.registro_datos,
             t.whatsapp_phone_number_id, t.whatsapp_estado, t.whatsapp_numero_visible, p.nombre AS plan_nombre, s.estado AS suscripcion, s.periodo_fin,
             st.contenido->'widgets_panel' AS widgets, st.contenido->>'etiqueta_recurso' AS etiqueta_recurso
      FROM tenant t JOIN plan p ON p.codigo=t.plan_codigo LEFT JOIN subscription s ON s.tenant_id=t.id

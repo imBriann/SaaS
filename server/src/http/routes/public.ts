@@ -24,6 +24,8 @@ import { FirmaInvalida, webhookResend } from '../../email/servicio.js';
 import { auditPlatform } from '../../core/audit.js';
 import { loadTemplates } from '../../templates/index.js';
 import { MARCA } from '../../brand.js';
+import { estadoIaRegistro } from '../../onboarding/personalization.js';
+import { solicitarCreacion } from '../../onboarding/creation.js';
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
@@ -102,13 +104,20 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   app.post('/api/invitaciones/:tk/aceptar', async (req: any) => team.acceptInvitation(db, String(req.params.tk), { password: req.body?.password }, req.correlacion));
 
   app.get('/api/onboarding/catalogos', async () => ({ sectores: SECTOR_CATALOG, paises: countries, dominio: domainInfo() }));
+  app.get('/api/onboarding/ia/estado', async () => estadoIaRegistro());
   app.get('/api/onboarding/territorios', async (req:any) => req.query?.departamento ? cities(String(req.query.pais),String(req.query.departamento)) : divisions(String(req.query?.pais ?? 'CO')));
   app.get('/api/onboarding/subdominio', async (req:any) => availability(db,String(req.query?.slug ?? ''),String(req.query?.tk ?? '')));
   app.post('/api/onboarding/borradores/:tk/analizar', async (req:any) => onboarding.reanalyzeDraft(db,req.params.tk,req.body?.descripcion));
   app.post('/api/onboarding/borradores/:tk/correo/enviar', async (req:any) => sendDraftCode(db,req.params.tk,req.ip));
   app.post('/api/onboarding/borradores/:tk/correo/verificar', async (req:any) => verifyDraftCode(db,req.params.tk,req.body?.codigo));
   // ------------------------------------------------------------------ onboarding
-  app.post('/api/onboarding/borradores', async (req: any) => onboarding.createDraft(db, req.body?.descripcion));
+  app.post('/api/onboarding/borradores', async (req: any) => onboarding.createDraft(db, req.body?.descripcion, req.body?.creacion_diferida === true));
+  app.post('/api/onboarding/borradores/:tk/crear', async (req: any, reply) => {
+    const r = await solicitarCreacion(db, req.params.tk, req.body?.password, { ip: req.ip, agente: String(req.headers['user-agent'] ?? ''), correlacion: req.correlacion, usuario: req.user });
+    if ('segundo_factor' in r) return { segundo_factor: true, desafio: r.desafio, destino: r.destino, minutos: r.minutos };
+    if (r.sesion?.tipo === 'sesion') reply.setCookie(SESSION_COOKIE, r.sesion.token, cookieSesion());
+    return { ok: true, creacion: r.creacion };
+  });
   app.get('/api/onboarding/borradores/:tk', async (req: any) => onboarding.getDraft(db, req.params.tk));
   app.patch('/api/onboarding/borradores/:tk', async (req: any) => onboarding.updateDraft(db, req.params.tk, req.body));
   app.post('/api/onboarding/borradores/:tk/catalogo/archivo', async (req: any) => {

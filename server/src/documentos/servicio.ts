@@ -338,7 +338,7 @@ export async function estadoDocumentosBorrador(tx: Tx, draftToken: string) {
 /** Reintento manual tras un fallo (portador del borrador). */
 export async function reintentarDocumentosBorrador(db: Database, draftToken: string) {
   return db.withPlatform(async (tx) => {
-    const p = (await tx.query(`SELECT id FROM payment WHERE draft_token=$1 AND estado='APROBADO' AND tenant_id IS NOT NULL LIMIT 1`, [draftToken])).rows[0];
+    const p = (await tx.query(`SELECT id FROM payment WHERE draft_token=$1 AND estado='APROBADO' LIMIT 1`, [draftToken])).rows[0];
     if (!p) throw notFound();
     const d = (await tx.query(`SELECT estado, intentos FROM documento_pago WHERE payment_id=$1`, [p.id])).rows[0];
     if (d?.estado === 'LISTO') return { ok: true, estado: 'LISTO' };

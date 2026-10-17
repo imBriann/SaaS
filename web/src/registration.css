@@ -1,0 +1,176 @@
+/* Registration: a writing surface paired with the live assistant. */
+.publico.onboarding { background: #f6f5f1; min-height: 100dvh; }
+.publico .onboarding-nav { background: transparent; }
+.onboarding :is(input, textarea) { caret-color: var(--acento); }
+.onboarding ::selection { background: #ded9ff; color: #241c4a; }
+.onboarding .pasos-onb { scrollbar-color: #b8b2cb transparent; }
+.onboarding .pasos-onb .p { border-radius: 4px; }
+.onboarding .onb-titulo { letter-spacing: -.035em; }
+.ai-orb { position: relative; display: inline-grid; place-items: center; flex-shrink: 0; line-height: 0; }
+/* Cambio de estado del orbe: el nuevo aparece sobre el anterior; sin saltos. */
+.ai-orb-layer { grid-area: 1 / 1; display: grid; place-items: center; }
+.ai-orb-layer.is-current { animation: orb-layer-in 650ms var(--ease-out) both; }
+.ai-orb-layer.is-leaving { animation: orb-layer-out 650ms ease both; }
+@keyframes orb-layer-in { from { opacity: 0; transform: scale(.9); } }
+@keyframes orb-layer-out { to { opacity: 0; transform: scale(1.08); } }
+.ai-orb canvas { display: block; }
+.ai-orb-large { width: 192px; height: 192px; }
+.ai-orb-large canvas { transform: scale(2.75); transition: transform 800ms var(--ease-out); }
+.registration-start { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); grid-template-areas: 'prompt ai' 'prompt resp'; grid-template-rows: auto 1fr; align-items: start; gap: 18px clamp(32px, 5vw, 80px); margin: 40px 0 64px; }
+.registration-start > .registration-prompt { grid-area: prompt; }
+.registration-start > .registration-ai { grid-area: ai; }
+.registration-start > .registration-response { grid-area: resp; }
+.registration-ai-toggle, .ai-novedad { display: none; }
+.registration-prompt { position: sticky; top: 28px; min-width: 0; padding: 12px 0; }
+.registration-prompt h1 { font-size: clamp(36px, 4.2vw, 56px); line-height: 1.06; letter-spacing: -.04em; font-weight: 450; margin: 0 0 22px; color: #242438; text-wrap: balance; }
+.registration-lead { font-size: 18px; line-height: 1.65; color: #5d5b6c; max-width: 48ch; margin: 0 0 30px; }
+.registration-composer { background: #fff; border: 1px solid #aaa5b7; border-radius: 8px; padding: 22px 22px 12px; box-shadow: 0 8px 24px -20px #28233b50; transition: border-color 180ms ease, box-shadow 180ms ease; }
+.registration-composer:focus-within { border-color: #6952d7; box-shadow: 0 0 0 3px #6952d71a; }
+.registration-composer.is-working { border-color: #6952d7; }
+.registration-composer label { display: block; font-size: 15px; font-weight: 550; color: #343044; margin-bottom: 14px; }
+.registration-composer textarea { width: 100%; min-height: 172px; display: block; resize: vertical; border: 0; background: transparent; font: inherit; font-size: 17px; line-height: 1.65; color: #242438; outline: none; padding: 0; box-shadow: none; }
+.registration-composer textarea:focus { outline: none; box-shadow: none; }
+.registration-composer textarea::placeholder { color: #767181; opacity: 1; }
+.composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; border-top: 1px solid #e8e5ec; margin-top: 18px; padding-top: 12px; }
+.composer-footer > span { font-size: 14px; line-height: 1.4; color: #5f596c; }
+.composer-send { display: grid; place-items: center; border: 0; width: 44px; height: 44px; flex: 0 0 44px; color: #fff; background: #5742c9; border-radius: 50%; cursor: pointer; transition: background-color 180ms ease, transform 140ms var(--ease-out); }
+.composer-send:disabled { background: #e4e0ed; color: #706780; cursor: default; }
+.composer-send:not(:disabled) { animation: send-ready 2400ms ease-in-out infinite; }
+@keyframes send-ready { 50% { box-shadow: 0 0 0 6px #5742c926; } }
+.composer-send:active:not(:disabled) { transform: scale(.95); }
+.registration-saving { display: flex; align-items: center; gap: 8px; margin-top: 24px; color: #5f596c; font-size: 14px; }
+.registration-saving svg { flex-shrink: 0; }
+.registration-response { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.registration-ai { background: #19182d; border-radius: 10px; overflow: hidden; color: #faf8ff; min-height: 580px; display: flex; flex-direction: column; padding: 24px 36px 22px; transition: min-height 700ms var(--ease-out); }
+.registration-ai.is-compact { min-height: 0; }
+.registration-ai.is-compact .registration-orb-stage { min-height: 190px; flex: none; }
+.registration-ai.is-compact .ai-orb-large canvas { transform: scale(2.1); }
+.registration-ai-copy { min-height: 132px; margin-bottom: 22px; }
+.ai-voice { margin: 0; font-size: 23px; line-height: 1.4; font-weight: 450; letter-spacing: -.01em; color: #faf8ff; text-wrap: pretty; }
+.ai-voice-caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 3px; vertical-align: -.15em; background: #c5bfff; animation: voice-caret 1000ms steps(1) infinite; }
+.ai-voice.is-typing .ai-voice-caret { animation: none; }
+@keyframes voice-caret { 50% { opacity: 0; } }
+.registration-proposal { display: flex; flex-direction: column; gap: 18px; animation: proposal-in 700ms var(--ease-out) both; transition: opacity 400ms ease, filter 400ms ease; }
+.registration-proposal.is-stale { opacity: .55; filter: saturate(.6); }
+@keyframes proposal-in { from { opacity: 0; transform: translateY(18px); } }
+.registration-orb-stage { position: relative; display: grid; place-items: center; min-height: 290px; flex: 1; }
+.registration-orb-stage > .ai-orb { position: relative; z-index: 1; }
+.orb-halo { position: absolute; left: 50%; top: 50%; width: 230px; height: 230px; margin: -115px 0 0 -115px; border-radius: 50%; border: 1px solid #b9a8ff; opacity: 0; animation: orb-halo 4200ms ease-out infinite; }
+.orb-halo + .orb-halo { animation-delay: 2100ms; }
+.registration-ai.is-working .orb-halo { animation-duration: 1800ms; border-color: #d4c8ff; }
+.registration-ai.is-working .orb-halo + .orb-halo { animation-delay: 900ms; }
+@keyframes orb-halo { 0% { opacity: .5; transform: scale(.55); } 100% { opacity: 0; transform: scale(1.25); } }
+.registration-orb-stage .ai-orb { transition: transform 500ms var(--ease-out); }
+.registration-ai.is-working .registration-orb-stage .ai-orb { transform: scale(1.12); }
+.registration-ai-status { border-top: 1px solid #3b3550; padding-top: 20px; display: flex; align-items: center; gap: 10px; color: #ddd6ee; font-size: 15px; }
+.ai-status-dot { width: 8px; height: 8px; border-radius: 50%; background: #c5bfff; flex-shrink: 0; }
+.ai-status-dot.live { background: #8fe3b1; animation: registration-pulse 2400ms ease-in-out infinite; }
+.ai-status-dot.active { animation: registration-pulse 1600ms ease-in-out infinite; }
+@keyframes registration-pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.registration-response .ia-propuesta { padding: 24px; border-color: #d9d4e1; background: #fffefa; border-radius: 8px; gap: 18px; }
+.registration-response .ia-propuesta-cab { align-items: center; gap: 10px; }
+.registration-response .ia-propuesta-cab h2 { font-size: 25px; letter-spacing: -.025em; line-height: 1.15; margin: 0 0 8px; }
+.registration-response .ia-propuesta-cab .sec { font-size: 15px; color: #5f5870; line-height: 1.5; margin: 0; }
+.ia-firma { display: inline-flex; align-items: center; gap: 6px; margin: 8px 0 0; font-size: 14px; font-weight: 500; color: #5742c9; }
+.registration-response .ia-resumen { display: none; } /* La voz de la IA ya lo dice en el panel superior. */
+.registration-response .ia-filas { gap: 0; }
+.registration-response .ia-fila { border: 0; border-bottom: 1px solid #e4e0e9; border-radius: 0; background: transparent; padding: 18px 0; gap: 7px; }
+.registration-response .ia-fila.confirmado::before { display: none; }
+.registration-response .ia-fila:not(.is-editing) { padding-right: 110px; }
+.registration-response .ia-fila-cab { gap: 8px; flex-wrap: wrap; }
+.registration-response .ia-fila-cab h3 { font-size: 14px; color: #5f5870; font-weight: 500; }
+.registration-response .ia-estado { font-size: 13px; padding: 0; gap: 4px; color: #6b5c88; background: none; border: 0; }
+.registration-response .ia-estado svg { display: none; }
+.registration-response .ia-estado.confirmado { color: #2b704e; }
+.registration-response .ia-estado.pendiente { color: #77551e; }
+.registration-response .ia-valor { margin: 0; font-size: 18px; line-height: 1.45; font-weight: 450; }
+.registration-response .ia-fila:not(.is-editing) .ia-fila-acciones { position: absolute; right: -8px; top: 19px; }
+.registration-response .ia-fila-acciones .btn { min-height: 44px; padding-inline: 12px; font-size: 15px; color: #4b3a96; gap: 6px; }
+.registration-response .ia-fila.pendiente { background: #f5f2e9; padding: 16px; margin: 10px -6px; border: 1px solid #e3dac7; border-radius: 4px; }
+.registration-response .ia-pregunta { font-size: 16px; line-height: 1.45; }
+.registration-response .ia-opciones { gap: 7px; }
+.registration-response .ia-opcion { min-height: 44px; }
+.registration-response .ia-propuesta-pie { border: 0; padding-top: 0; }
+.registration-response .ia-propuesta-pie .tenue { color: #5f5870; font-size: 14px; }
+.registration-continue { width: 100%; justify-content: space-between; min-height: 52px; }
+.onboarding .registro { gap: 40px; margin-top: 36px; }
+.onboarding .registro-cab { padding-bottom: 8px; }
+.onboarding .registro-cab .onb-titulo { font-size: 38px; line-height: 1.12; }
+.onboarding .grupo-datos { border-radius: 6px; background: #fffefa; box-shadow: none; }
+.onboarding .grupo-datos > header { padding-top: 24px; }
+.onboarding .grupo-datos h2 { font-size: 19px; }
+.grupo-optional > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 20px 22px; }
+.grupo-optional > summary::-webkit-details-marker { display: none; }
+.grupo-optional > summary p { color: #5f5870; margin: 6px 0 0; font-size: 15px; line-height: 1.5; }
+.grupo-optional > summary svg { flex-shrink: 0; transition: transform 180ms var(--ease-out); }
+.grupo-optional[open] > summary svg { transform: rotate(90deg); }
+.grupo-optional:not([open]) .grupo-cuerpo { display: none; }
+.onboarding .grupo-cuerpo { padding-top: 24px; }
+.registration-context { display: flex; align-items: center; gap: 14px; padding: 16px 0; color: #4f4664; border-bottom: 1px solid #dcd5e4; margin-bottom: 12px; }
+.registration-context p { margin: 0; font-size: 15px; line-height: 1.5; }
+.registration-context strong { display: block; font-size: 16px; font-weight: 500; color: #30273f; }
+.onboarding .registro-pie { position: sticky; bottom: 0; background: #f6f5f1f5; border-top: 1px solid #ddd7e6; padding: 18px 0; z-index: 2; }
+.optional-data { border-top: 1px solid #ddd7e6; }
+.optional-data > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; cursor: pointer; padding: 22px 0; color: #4f4664; font-size: 15px; }
+.optional-data > summary::-webkit-details-marker { display: none; }
+.optional-data > summary svg { transition: transform 180ms var(--ease-out); }
+.optional-data[open] > summary svg { transform: rotate(90deg); }
+.optional-data > .grupo-datos { margin-bottom: 18px; }
+@media (hover: hover) and (pointer: fine) {
+  .composer-send:hover:not(:disabled) { background: #42329f; }
+  .registration-response .ia-fila-acciones .btn:hover { color: #3f267d; background: #eee9f8; }
+  .optional-data > summary:hover { color: #5847df; }
+}
+@media (max-width: 1000px) {
+  .registration-start { gap: 30px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .registration-prompt h1 { font-size: 40px; }
+  .registration-ai { padding-inline: 25px; min-height: 580px; }
+  .ai-voice { font-size: 21px; }
+}
+@media (max-width: 760px) {
+  .registration-start { grid-template-columns: 1fr; grid-template-areas: 'ai' 'prompt' 'resp'; grid-template-rows: auto; gap: 22px; margin-top: 16px; }
+  /* Teléfono: la IA va arriba y fija, para leerla sin bajar. Se puede plegar a una línea. */
+  .registration-start > .registration-ai, .registration-start > .registration-ai.is-compact { position: sticky; top: 0; z-index: 30; min-height: 0; display: grid; grid-template-columns: 56px minmax(0, 1fr) 44px; align-items: start; gap: 12px; padding: 12px 10px 12px 12px; border-radius: 14px; box-shadow: 0 14px 30px -18px #0f0c24cc; }
+  .registration-start > .registration-ai .registration-orb-stage { min-height: 0; width: 56px; height: 56px; flex: none; }
+  .registration-start > .registration-ai .orb-halo, .registration-start > .registration-ai .registration-ai-status { display: none; }
+  .registration-start > .registration-ai .ai-orb-large { width: 56px; height: 56px; }
+  .registration-start > .registration-ai .ai-orb-large canvas { transform: scale(.85); }
+  .registration-start > .registration-ai .registration-ai-copy { min-height: 0; margin: 0; max-height: 8.8em; overflow-y: auto; align-self: center; overscroll-behavior: contain; }
+  .registration-start > .registration-ai .ai-voice { font-size: 16px; line-height: 1.45; }
+  .registration-ai-toggle { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 10px; background: #ffffff14; color: #ebe5fb; cursor: pointer; }
+  .registration-start > .registration-ai.is-folded { grid-template-columns: 40px minmax(0, 1fr) 44px; align-items: center; padding-block: 6px; }
+  .registration-start > .registration-ai.is-folded .registration-orb-stage, .registration-start > .registration-ai.is-folded .ai-orb-large { width: 40px; height: 40px; }
+  .registration-start > .registration-ai.is-folded .ai-orb-large canvas { transform: scale(.6); }
+  .registration-start > .registration-ai.is-folded .registration-ai-copy { max-height: 1.5em; overflow: hidden; cursor: pointer; }
+  .registration-start > .registration-ai.is-folded .ai-voice { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 15px; }
+  .ai-novedad { display: block; position: absolute; top: 0; right: 0; z-index: 2; width: 11px; height: 11px; border-radius: 50%; background: #8fe3b1; box-shadow: 0 0 0 3px #19182d; animation: registration-pulse 1400ms ease-in-out infinite; }
+  .registration-prompt { position: static; padding: 0; }
+  .registration-prompt h1 { font-size: 42px; max-width: 15ch; margin-bottom: 16px; }
+  .registration-lead { font-size: 16px; line-height: 1.6; margin-bottom: 24px; }
+  .registration-composer { padding: 18px 18px 12px; }
+  .registration-composer textarea { min-height: 170px; font-size: 16px; }
+  .registration-saving { margin-top: 22px; }
+
+  .registration-response .ia-propuesta { padding: 20px; }
+  .registration-response .ia-propuesta-cab h2 { font-size: 23px; }
+  .onboarding .registro-cab .onb-titulo { font-size: 32px; }
+  .onboarding .registro { margin-top: 26px; gap: 25px; }
+}
+@media (max-width: 360px) {
+  .registration-prompt h1 { font-size: 36px; }
+  .registration-composer { padding-inline: 14px; }
+  .registration-response .ia-fila:not(.is-editing) { padding-right: 0; }
+  .registration-response .ia-fila:not(.is-editing) .ia-fila-acciones { position: static; }
+  .registration-response .ia-propuesta { padding: 16px; }
+  .registration-response .ia-propuesta-cab { flex-direction: column; align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-status-dot.active, .ai-status-dot.live, .orb-halo, .composer-send:not(:disabled), .ai-orb-layer, .ai-voice-caret, .registration-proposal { animation: none; }
+  .ai-orb-layer.is-leaving { display: none; }
+  .ai-novedad { animation: none; }
+  .ai-orb-large canvas, .registration-ai, .registration-proposal { transition: none; }
+  .orb-halo { opacity: .2; }
+  .registration-orb-stage .ai-orb { transition: none; }
+  .registration-ai.is-working .registration-orb-stage .ai-orb { transform: none; }
+  .registration-response :is(.ia-propuesta, .ia-fila, .ia-valor, .ia-editor) { animation: none; }
+}

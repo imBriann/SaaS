@@ -18,6 +18,7 @@ import { config } from '../config.js';
 import { emitirFacturaPago, encolarCorreoFactura, encolarCorreoPago, generarDocumentosPago } from '../documentos/servicio.js';
 import { cop, uuidv7 } from '../lib/util.js';
 import { formatFechaLarga, utcToLocal } from '../lib/time.js';
+import { crearEspacio } from '../onboarding/creation.js';
 
 /**
  * Proceso trabajador. Toda llamada saliente a un tercero sale de aquí, con
@@ -263,6 +264,7 @@ export const HANDLERS: Record<string, Handler> = {
   },
 
   reintentar_aprovisionamiento: async (db, _t, p, job) => { await aprovisionarConReintento(db, p.draft_token, job.id); },
+  crear_espacio_ia: async (db, _t, p, job) => { await crearEspacio(db, p.draft_token, p.intento, job.id); },
 
   /** Comprobante PDF protegido + ZIP del pago; después, el correo de confirmación (una vez por pago). */
   generar_documentos_pago: async (db, _t, p, job) => {

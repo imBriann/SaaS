@@ -11,6 +11,7 @@ import { config, urlEmpresa } from '../config.js';
 import { encolarDocumentos } from '../documentos/servicio.js';
 import { encolarCorreo } from '../email/servicio.js';
 import * as plantillas from '../email/plantillas.js';
+import type { Personalizacion } from './personalization.js';
 
 /**
  * Aprovisionamiento (PRO-SW-002 fig. 10). Todo ocurre en UNA transacción: un fallo
@@ -67,7 +68,8 @@ export interface NuevoTenant {
   telefono?: string | null;
   plan: string;
   sector: string;
-  admin: { nombre: string; email: string; password?: string };
+  admin: { nombre: string; email: string; password?: string; passwordHash?: string; correoVerificadoEn?: string };
+  personalizacion?: Personalizacion | null;
   tema?: TemaTenant | null;
   logo_data_url?: string | null;
   catalogo?: CatalogRow[] | null;
@@ -123,7 +125,7 @@ export async function createTenantFromTemplate(tx: Tx, d: NuevoTenant, etapa: (e
     // tenant.sector = plantilla aplicada (la política de riesgo y el escalamiento se resuelven con ella);
     // la actividad real queda en registro_datos para mostrarla y describir el negocio a los agentes.
     [tenantId, slug, d.nombre, d.nit ?? null, d.ciudad ?? null, d.email, d.telefono ?? null, tpl.sector, tpl.version, d.plan, JSON.stringify(tema), d.logo_data_url ?? null, d.whatsapp_phone_number_id ?? null,
-      JSON.stringify({ actividad: d.actividad ?? { sector: d.sector } })],
+      JSON.stringify({ actividad: d.actividad ?? { sector: d.sector }, ...(d.personalizacion ? { inicio_ia: d.personalizacion } : {}) })],
   );
   await etapa('empresa_creada');
 
@@ -200,8 +202,8 @@ export async function createTenantFromTemplate(tx: Tx, d: NuevoTenant, etapa: (e
   let passwordToken: string | null = null;
   if (!user) {
     user = { id: uuidv7() };
-    await tx.query(`INSERT INTO users (id, email, nombre, password_hash) VALUES ($1,$2,$3,$4)`, [user.id, d.admin.email.toLowerCase(), d.admin.nombre, d.admin.password ? hashPassword(d.admin.password) : null]);
-    if (!d.admin.password) passwordToken = token(24);
+    await tx.query(`INSERT INTO users (id, email, nombre, password_hash, email_verificado_en) VALUES ($1,$2,$3,$4,$5)`, [user.id, d.admin.email.toLowerCase(), d.admin.nombre, d.admin.passwordHash ?? (d.admin.password ? hashPassword(d.admin.password) : null), d.admin.correoVerificadoEn ?? null]);
+    if (!d.admin.password && !d.admin.passwordHash) passwordToken = token(24);
   }
   await tx.query(`INSERT INTO user_tenant (user_id, tenant_id, role_id) VALUES ($1,$2,$3)`, [user.id, tenantId, roleIds[tpl.rol_administrador]]);
   await etapa('administrador_creado');
@@ -218,6 +220,7 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
   const d = (await tx.query(`SELECT * FROM onboarding_draft WHERE token=$1 FOR UPDATE`, [draftToken])).rows[0];
   if (!d) throw new Error('Borrador inexistente');
   if (d.estado === 'APROVISIONADO') return { tenantId: d.tenant_id, yaExistia: true };
+  if (d.creacion_diferida && (!d.personalizacion || d.creacion?.estado !== 'aplicando')) throw new Error('La creación asistida todavía no está preparada');
   // El pago aprobado fija el plan y las condiciones (los términos se congelaron al crear el checkout).
   const pago = (await tx.query(
     `SELECT id, referencia, monto, monto_referencia, modalidad, acceso_dias, plan_codigo FROM payment WHERE draft_token=$1 AND estado='APROBADO' ORDER BY verificado_en NULLS LAST, creado_en LIMIT 1`, [draftToken])).rows[0];
@@ -230,9 +233,10 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
     {
       nombre: n.nombre, slug: n.slug || n.nombre, nit: n.nit ? `${n.nit}-${n.nit_dv}` : null, ciudad: n.ciudad, email: n.email, telefono: n.telefono,
       plan, sector: d.clasificacion.sector ?? 'otro',
-      admin: { nombre: n.responsable || n.nombre, email: n.email },
+      admin: { nombre: n.responsable || n.nombre, email: n.email, passwordHash: d.password_hash_inicial ?? undefined, correoVerificadoEn: d.creacion_diferida ? d.email_verificado_en : undefined },
+      personalizacion: d.personalizacion,
       tema: d.tema, logo_data_url: d.logo_data_url, catalogo: d.catalogo ?? [], recursos: n.recursos ?? [],
-      actividad: { sector: d.clasificacion.sector ?? 'otro', tipo_negocio: d.clasificacion.tipo_negocio ?? null, descripcion: d.clasificacion.otro_descripcion || null },
+      actividad: { sector: d.clasificacion.sector ?? 'otro', tipo_negocio: d.clasificacion.tipo_negocio ?? null, descripcion: d.descripcion || d.clasificacion.otro_descripcion || null },
       suscripcion: pago ? {
         modalidad: pago.modalidad, accesoDias: pago.acceso_dias ?? null, precioPagado: Number(pago.monto),
         montoReferencia: pago.monto_referencia == null ? null : Number(pago.monto_referencia), paymentId: pago.id,
@@ -248,19 +252,23 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
   const sus = (await tx.query(`SELECT modalidad, periodo_fin FROM subscription WHERE tenant_id=$1`, [r.tenantId])).rows[0];
   const acceso = { url: urlEmpresa(tenant.slug), modalidad: sus.modalidad, vigente_hasta: new Date(sus.periodo_fin).toISOString(), monto_pagado: pago ? Number(pago.monto) : null, referencia: pago?.referencia ?? null };
   const cierre = {
-    nombre: tenant.nombre, slug: tenant.slug, tema: tenant.tema, logo_data_url: tenant.logo_data_url, modulos, acceso,
+    nombre: tenant.nombre, slug: tenant.slug, tema: tenant.tema, logo_data_url: tenant.logo_data_url, modulos, acceso, personalizacion: d.personalizacion ?? null,
     catalogo: { origen: d.catalogo?.length ? 'propio' : 'vacio', total: productos.length, muestra: productos.slice(0, 4).map((x: any) => ({ ...x, precio: Number(x.precio) })) },
   };
   // Documentos del pago (comprobante y ZIP) y, al terminarlos, el correo de confirmación: en la misma
   // transacción, así que si el alta se revierte no queda nada encolado.
-  if (pago) await encolarDocumentos(tx, pago.id);
+  if (pago) {
+    await tx.query('UPDATE documento_pago SET tenant_id=$2 WHERE payment_id=$1 AND tenant_id IS NULL', [pago.id, r.tenantId]);
+    await encolarDocumentos(tx, pago.id, d.creacion_diferida ? 'espacio_creado' : 'inicial');
+  }
   // Enlace para continuar (definir la contraseña, descargar documentos) aunque se haya cerrado el navegador.
   if (r.passwordToken && d.email_verificado) {
     await encolarCorreo(tx, { tenantId: null, para: d.email_verificado, sensible: true, clave: `continuar:${r.tenantId}`, caducaEn: new Date(Date.now() + 7 * 86_400_000),
       correo: plantillas.continuarAlta({ nombre: n.responsable || n.nombre || '', empresa: tenant.nombre, url: `${config.publicUrl}/empezar/listo#borrador=${draftToken}` }) });
   }
   await tx.query(
-    `UPDATE onboarding_draft SET estado='APROVISIONADO', tenant_id=$2, password_token=$3, etapas=$4, cierre=$5, actualizado_en=now() WHERE token=$1`,
+    `UPDATE onboarding_draft SET estado='APROVISIONADO', tenant_id=$2, password_token=$3, etapas=$4, cierre=$5, password_hash_inicial=NULL,
+      creacion=creacion || '{"estado":"completado","error":null}'::jsonb, actualizado_en=now() WHERE token=$1`,
     [draftToken, r.tenantId, r.passwordToken, JSON.stringify(etapas), JSON.stringify(cierre)],
   );
   await tx.query(`UPDATE payment SET tenant_id=$2 WHERE draft_token=$1`, [draftToken, r.tenantId]);

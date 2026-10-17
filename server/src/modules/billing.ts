@@ -118,6 +118,12 @@ export async function procesarEventoPago(db: Database, ev: EventoPago, correlaci
   const pago = (r as any).pago;
   // Alta: se aprovisiona tras confirmar el pago. Un evento repetido también reintenta un alta pendiente.
   if (pago?.draft_token && (r.estado === 'APROBADO' || ((r as any).duplicado && pago.estado === 'APROBADO'))) {
+    const diferido = await db.withPlatform(async tx => {
+      const d = (await tx.query('SELECT creacion_diferida FROM onboarding_draft WHERE token=$1', [pago.draft_token])).rows[0];
+      if (d?.creacion_diferida) await encolarDocumentos(tx, pago.id);
+      return !!d?.creacion_diferida;
+    });
+    if (diferido) return { ok: true, duplicado: !!(r as any).duplicado, estado: 'APROBADO' };
     const p = await aprovisionarConReintento(db, pago.draft_token, correlacion);
     return { ok: true, duplicado: !!(r as any).duplicado, estado: 'APROBADO', tenant_id: p.tenantId ?? undefined };
   }
@@ -154,6 +160,8 @@ async function aplicarRenovacion(tx: Tx, pago: any, correlacion: string) {
 export async function aprovisionarConReintento(db: Database, draftToken: string, correlacion: string): Promise<{ tenantId: string | null; error?: string }> {
   try {
     const r = await db.withPlatform(async (tx) => {
+      const draft = (await tx.query('SELECT creacion_diferida,personalizacion,creacion FROM onboarding_draft WHERE token=$1', [draftToken])).rows[0];
+      if (draft?.creacion_diferida && (!draft.personalizacion || !['aplicando', 'completado'].includes(draft.creacion.estado))) return { tenantId: null };
       const pago = (await tx.query(`SELECT 1 FROM payment WHERE draft_token=$1 AND estado='APROBADO'`, [draftToken])).rows[0];
       if (!pago) throw new AppError('CONFLICT', 'El pago de esta alta no está aprobado.');
       return provisionDraft(tx, draftToken, correlacion);
@@ -209,6 +217,7 @@ export async function conciliarPagosPendientes(db: Database, correlacion: string
     borradores: (await tx.query(
       `SELECT DISTINCT p.draft_token FROM payment p JOIN onboarding_draft d ON d.token=p.draft_token
        WHERE p.estado='APROBADO' AND d.estado <> 'APROVISIONADO' AND d.intentos_aprovisionamiento < 5 AND p.actualizado_en < now() - interval '1 minute'
+         AND (NOT d.creacion_diferida OR (d.personalizacion IS NOT NULL AND d.creacion->>'estado'='aplicando'))
        LIMIT 25`)).rows.map((x: any) => x.draft_token as string),
   }));
   for (const ref of referencias) await conciliarReferencia(db, ref, correlacion, 240);

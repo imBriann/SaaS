@@ -1,6 +1,10 @@
 /** Iconografía mínima en línea (sin dependencias). Trazo 1.8, 24×24. */
 const P: Record<string, string> = {
   play: 'M8 5l11 7-11 7z',
+  pause: 'M7 5h3v14H7zM14 5h3v14h-3z',
+  editar: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
+  volume: 'M11 5L6 9H3v6h3l5 4zM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14',
+  'volume-mute': 'M11 5L6 9H3v6h3l5 4zM16 9l6 6M22 9l-6 6',
   inicio: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
   conversaciones: 'M4 5h16v11H8l-4 4z',
   clientes: 'M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7M22 19v-1a4 4 0 0 0-3-3.87M16 3.13a3.5 3.5 0 0 1 0 6.75',
@@ -27,6 +31,7 @@ const P: Record<string, string> = {
   plataforma: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
   enviar: 'M22 2L11 13M22 2l-7 20-4-9-9-4z',
   abajo: 'M6 9l6 6 6-6',
+  arriba: 'M6 15l6-6 6 6',
   mas: 'M12 5v14M5 12h14',
   menu: 'M4 6h16M4 12h16M4 18h16',
   atras: 'M15 18l-6-6 6-6',

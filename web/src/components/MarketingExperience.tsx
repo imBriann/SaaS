@@ -56,7 +56,10 @@ export function MarketingExperience() {
         <span className="trust-preview-note">Ejemplo ilustrativo de permisos y auditoría</span>
       </div>
     </div></section>
-    <section className="om-support"><div className="om-section support-inner"><div><h2>Ayuda para el día a día.<br /><span>Personas para acompañarte.</span></h2><p>Consulta al asistente desde tu panel. Si necesitas ayuda del equipo de Omnegia, abre una solicitud y sigue las respuestas y el estado de tu caso en el mismo lugar.</p><Link to="/ayuda" className="text-link">Conocer las opciones de ayuda <Icon n="flecha" size={18} className="" /></Link></div><SupportExplorer /></div></section>
+    <section className="om-support" aria-labelledby="support-title"><div className="om-section support-inner">
+      <div className="support-heading"><h2 id="support-title">Ayuda para el día a día.<br /><span>Personas para acompañarte.</span></h2><div className="support-intro"><p>Consulta al asistente desde tu panel. Si necesitas ayuda del equipo de Omnegia, abre una solicitud y sigue las respuestas y el estado de tu caso en el mismo lugar.</p><Link to="/ayuda" className="text-link">Ir al centro de ayuda <Icon n="flecha" size={18} className="" /></Link></div></div>
+      <SupportExplorer />
+    </div></section>
     <Closing />
   </>;
 }

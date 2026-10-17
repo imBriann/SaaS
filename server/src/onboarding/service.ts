@@ -56,7 +56,7 @@ function publicDraft(d: any) {
     facturacion_requerida: cuentaPlataforma()?.proveedor === 'wompi',
     facturacion_electronica: { habilitada: requisitosFacturacion().length === 0 },
     error_aprovisionamiento: d.error_aprovisionamiento ?? null,
-    token: d.token, estado: d.estado, descripcion: d.descripcion, clasificacion: d.clasificacion, recomendacion: d.recomendacion,
+    token: d.token, estado: d.estado, creacion_diferida: !!d.creacion_diferida, creacion: d.creacion, descripcion: d.descripcion, clasificacion: d.clasificacion, recomendacion: d.recomendacion,
     plan_codigo: d.plan_codigo, negocio: sinFacturacion(d.negocio), tema: d.tema, logo_data_url: d.logo_data_url,
     catalogo: d.catalogo, import_mapping: d.import_mapping,
     hoja_pendiente: d.hoja_pendiente ? { encabezados: d.hoja_pendiente.hoja.encabezados, filas: d.hoja_pendiente.hoja.filas.length, mapeo: d.hoja_pendiente.mapeo } : null,
@@ -77,7 +77,7 @@ function editable(d: any) {
   if (d.estado !== 'BORRADOR') throw new AppError('CONFLICT', 'Este borrador ya no se puede modificar.');
 }
 
-export async function createDraft(db: Database, descripcion: string) {
+export async function createDraft(db: Database, descripcion: string, creacionDiferida = false) {
   const texto = String(descripcion ?? '').trim();
   if (texto.length < 15) throw invalid('Cuéntanos un poco más de tu negocio (al menos una frase).');
   if (texto.length > 2000) throw invalid('La descripción es demasiado larga.');
@@ -87,8 +87,8 @@ export async function createDraft(db: Database, descripcion: string) {
   const negocio = { recursos: [] as string[] };
   await db.withPlatform((tx) =>
     tx.query(
-      `INSERT INTO onboarding_draft (token, descripcion, clasificacion, recomendacion, plan_codigo, negocio) VALUES ($1,$2,$3,$4,$5,$6)`,
-      [tk, texto, JSON.stringify(c), JSON.stringify(rec), rec.plan, JSON.stringify(negocio)],
+      `INSERT INTO onboarding_draft (token, descripcion, clasificacion, recomendacion, plan_codigo, negocio, creacion_diferida) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [tk, texto, JSON.stringify(c), JSON.stringify(rec), rec.plan, JSON.stringify(negocio), creacionDiferida === true],
     ),
   );
   return publicDraft(await loadDraft(db, tk));
@@ -167,7 +167,7 @@ async function updateDraftLocked(db: Database, tk: string, body: unknown) {
     const s = sanitizeClassification(merged);
     for (const k of Object.keys(corrections)) if (k !== 'otro_descripcion' && corrections[k] != null && (s as any)[k] == null) throw invalid(`Revisa el campo ${k}.`);
     const confirmados = [...new Set([...(d.clasificacion.confirmados ?? []), ...Object.keys(corrections).filter(k => corrections[k] != null)])].filter(k => (s as any)[k] != null);
-    clasificacion = { ...s, confirmados, motor: d.clasificacion.motor, otro_descripcion: String(merged.otro_descripcion ?? '').slice(0,160),
+    clasificacion = { ...s, confirmados, motor: d.clasificacion.motor, analisis: d.clasificacion.analisis, otro_descripcion: String(merged.otro_descripcion ?? '').slice(0,160),
       estados: Object.fromEntries(campos.map(k => [k, (s as any)[k] == null ? 'pendiente' : confirmados.includes(k) ? 'confirmado' : 'sugerido'])),
       conflictos: (d.clasificacion.conflictos ?? []).filter((x: any) => !Object.keys(corrections).includes(x.campo)), justificacion: d.clasificacion.justificacion, tokens: d.clasificacion.tokens,
       // La evidencia deja de aplicar en lo que la persona cambió con su propio valor.
@@ -392,9 +392,14 @@ export async function draftStatus(db: Database, tk: string, correlacion = uuidv7
   // Altas anteriores a la instantánea: solo el subdominio y el nombre, necesarios para entrar.
   const t = c ? { slug: c.slug, nombre: c.nombre }
     : d.tenant_id ? await db.withPlatform(async (tx) => (await tx.query(`SELECT slug, nombre FROM tenant WHERE id=$1`, [d.tenant_id])).rows[0]) : null;
-  const panel = c ? { tema: c.tema, logo_data_url: c.logo_data_url, modulos: c.modulos, catalogo: c.catalogo } : null;
+  const panel = c ? { tema: c.tema, logo_data_url: c.logo_data_url, modulos: c.modulos, catalogo: c.catalogo, personalizacion: c.personalizacion ?? null } : null;
+  const cuentaExistente = !!d.negocio?.email && await db.withPlatform(async tx => (await tx.query('SELECT 1 FROM users WHERE email=$1', [d.negocio.email])).rows.length > 0);
   return {
     estado: d.estado, etapas: d.etapas,
+    creacion_diferida: !!d.creacion_diferida, creacion: d.creacion, cuenta_existente: cuentaExistente,
+    // Lo que la IA ya redactó para el inicio: la vista previa lo muestra en cuanto existe, antes de crear la empresa.
+    personalizacion: d.personalizacion ? { titulo: d.personalizacion.titulo, descripcion: d.personalizacion.descripcion, prioridades: d.personalizacion.prioridades, motor: d.personalizacion.motor } : null,
+    negocio: { nombre: d.negocio?.nombre ?? null, slug: d.negocio?.slug ?? null },
     pago: pago ? {
       estado: pago.estado, referencia: pago.referencia, monto: Number(pago.monto), modalidad: pago.modalidad, acceso_dias: pago.acceso_dias ?? null,
       monto_referencia: pago.monto_referencia == null ? null : Number(pago.monto_referencia), proveedor: pago.proveedor,
@@ -406,7 +411,7 @@ export async function draftStatus(db: Database, tk: string, correlacion = uuidv7
     // Comprobante y ZIP: estado sin contenido (la descarga exige un enlace temporal).
     documentos: await db.withPlatform((tx) => estadoDocumentosBorrador(tx, tk)),
     // El portador del token de borrador es quien pagó: puede fijar la contraseña una vez.
-    requiere_contrasena: !!d.password_token,
+    requiere_contrasena: d.creacion_diferida && d.estado !== 'APROVISIONADO' ? !cuentaExistente : !!d.password_token,
   };
 }
 

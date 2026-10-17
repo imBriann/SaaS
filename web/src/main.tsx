@@ -7,10 +7,13 @@ import './omnegia.css';
 import './japanese.css';
 import './landing.css';
 import './support.css';
+import './registration.css';
+import './workspace-birth.css';
+import './creation.css';
 import { ToastProvider } from './components/ui';
 import { PanelLayout } from './components/Layout';
 import { slugDelHost, tenantSlug } from './api';
-import { Aprovisionamiento, Catalogo, Datos, Describir, Empresas, Entrar, Invitacion, Landing, Pago, Pasarela, Recuperar, Restablecer, ResultadoPago } from './pages/public/Publico';
+import { CierreAlta, Catalogo, Datos, Describir, Empresas, Entrar, Invitacion, Landing, Pago, Pasarela, Recuperar, Restablecer, ResultadoPago } from './pages/public/Publico';
 import { Cargando } from './components/ui';
 
 // El panel se carga aparte: quien visita la página pública no descarga el panel.
@@ -86,7 +89,7 @@ function App() {
           <Route path="/empezar/datos" element={<Datos />} />
           <Route path="/empezar/catalogo" element={<Catalogo />} />
           <Route path="/empezar/pago" element={<Pago />} />
-          <Route path="/empezar/listo" element={<Aprovisionamiento />} />
+          <Route path="/empezar/listo" element={<CierreAlta />} />
           <Route path="/pasarela/checkout" element={<Pasarela />} />
           <Route path="/entrar" element={<Entrar />} />
           <Route path="/recuperar" element={<Recuperar />} />
