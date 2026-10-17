@@ -4,6 +4,7 @@ import { api, type ApiError } from '../api';
 import { Campo, CodigoOtp, useAccion } from './ui';
 import { Icon } from './icons';
 import { AiOrb } from './AiOrb';
+import { LogoError, pesoLegible, prepararLogo } from '../lib/logo';
 
 /**
  * Datos del negocio en el alta. Cuatro grupos con estado propio (completo, pendiente u opcional):
@@ -288,6 +289,7 @@ const SUGERIDOS = ['#5847DF', '#1F6F5C', '#B4541D', '#2B5AA8', '#8C3B6E', '#3F4A
 function IdentidadMarca({ d, setD, nombre }: { d: any; setD: (d: any) => void; nombre?: string }) {
   const [color, setColor] = useState(d.tema?.acento ?? '#5847DF');
   const [error, setError] = useState('');
+  const [nota, setNota] = useState('');
   const [arrastrando, setArrastrando] = useState(false);
   const { run, ocupado } = useAccion();
   useEffect(() => { if (d.tema?.acento) setColor(d.tema.acento); }, [d.tema?.acento]);
@@ -297,21 +299,13 @@ function IdentidadMarca({ d, setD, nombre }: { d: any; setD: (d: any) => void; n
     if (r) setD(r); else setError('No pudimos aplicar el cambio. Inténtalo de nuevo.');
   };
   const subir = async (archivo: File) => {
-    setError('');
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(archivo.type)) return setError('Usa una imagen PNG, JPG o WEBP. Si tu logotipo es SVG, expórtalo como PNG.');
-    if (archivo.size > 200_000) return setError(`El archivo pesa ${Math.round(archivo.size / 1000)} KB; el máximo es 200 KB. Redúcelo o expórtalo con menos resolución.`);
+    setError(''); setNota('');
     try {
-      const src = await new Promise<string>((ok, mal) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = mal; r.readAsDataURL(archivo); });
-      const img = new Image(); img.src = src; await img.decode();
-      if (img.width < 32 || img.height < 32) return setError(`La imagen mide ${img.width}×${img.height} px; usa al menos 32 px por lado para que se vea nítida.`);
-      if (img.width > 4096 || img.height > 4096) return setError(`La imagen mide ${img.width}×${img.height} px; el máximo es 4096 px por lado.`);
-      // Colores dominantes del logotipo para proponer la paleta.
-      const lienzo = document.createElement('canvas'); lienzo.width = lienzo.height = 24;
-      const ctx = lienzo.getContext('2d')!; ctx.drawImage(img, 0, 0, 24, 24);
-      const px = ctx.getImageData(0, 0, 24, 24).data; const colores: string[] = [];
-      for (let i = 0; i < px.length; i += 64) if (px[i + 3] > 128) colores.push('#' + [px[i], px[i + 1], px[i + 2]].map((n) => n.toString(16).padStart(2, '0')).join(''));
-      await aplicar({ logo_data_url: src, colores_logo: colores.slice(0, 12) });
-    } catch { setError('No pudimos leer esta imagen. Prueba exportarla de nuevo como PNG o JPG.'); }
+      // Se reduce y se comprime aquí mismo: la persona sube lo que tenga, sin límite de peso ni de formato que le estorbe.
+      const l = await prepararLogo(archivo);
+      await aplicar({ logo_data_url: l.dataUrl, colores_logo: l.colores });
+      setNota(l.optimizado && l.bytes < l.bytesOriginal ? `Ajustamos tu logotipo por ti: de ${pesoLegible(l.bytesOriginal)} a ${pesoLegible(l.bytes)}.` : '');
+    } catch (e) { setError(e instanceof LogoError ? e.message : 'No pudimos leer esta imagen. Prueba exportarla de nuevo como PNG o JPG.'); }
   };
   const tema = d.tema ?? {};
   const acento = tema.acento ?? color;
@@ -339,10 +333,11 @@ function IdentidadMarca({ d, setD, nombre }: { d: any; setD: (d: any) => void; n
         onDrop={(e) => { e.preventDefault(); setArrastrando(false); const a = e.dataTransfer.files[0]; if (a && !ocupado) subir(a); }}>
         <Icon n="subir" className="" size={18} />
         <span><b>{d.logo_data_url ? 'Cambiar logotipo' : 'Sube tu logotipo'}</b> · arrástralo aquí o
-          <label className="enlace"> elige un archivo<input className="sr" type="file" accept="image/png,image/jpeg,image/webp" disabled={ocupado} onChange={(e) => { const a = e.target.files?.[0]; if (a) subir(a); e.target.value = ''; }} /></label></span>
-        <small className="tenue">PNG, JPG o WEBP · hasta 200 KB · de 32 a 4096 px por lado</small>
+          <label className="enlace"> elige un archivo<input className="sr" type="file" accept="image/*" disabled={ocupado} onChange={(e) => { const a = e.target.files?.[0]; if (a) subir(a); e.target.value = ''; }} /></label></span>
+        <small className="tenue">PNG, JPG, WEBP, GIF o SVG · de cualquier peso: lo ajustamos por ti</small>
       </div>
       {error && <p className="bloqueado" role="alert">{error}</p>}
+      {nota && !error && <p className="estado ok" role="status"><Icon n="ok" className="" size={13} />{nota}</p>}
 
       <fieldset className="identidad-colores">
         <legend>Color de las acciones</legend>

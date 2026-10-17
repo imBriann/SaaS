@@ -227,7 +227,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   rx('post', '/configuracion/tema', async (ctx, req) => {
     const colores = Array.isArray(req.body?.colores) ? req.body.colores.slice(0, 12) : [];
     const logo = req.body?.logo_data_url;
-    if (logo && (typeof logo !== 'string' || logo.length > 300_000 || !/^data:image\/(png|jpeg|webp);base64,/.test(logo))) throw invalid('Logotipo no válido: PNG, JPG o WEBP de hasta 200 KB.');
+    if (logo && (typeof logo !== 'string' || logo.length > 300_000 || !/^data:image\/(png|jpeg|webp);base64,/.test(logo))) throw invalid('No pudimos usar este logotipo. Vuelve a subirlo: se ajusta solo al cargarlo.');
     const tema = await db.withTenant(ctx.tenantId, (tx) => admin.updateTheme(tx, ctx, colores, logo));
     await db.withPlatform((tx) => tx.query(`UPDATE tenant SET tema=$2 ${logo !== undefined ? ', logo_data_url=$3' : ''} WHERE id=$1`, logo !== undefined ? [ctx.tenantId, JSON.stringify(tema), logo] : [ctx.tenantId, JSON.stringify(tema)]));
     await db.withTenant(ctx.tenantId, (tx) => audit(tx, ctx, { accion: 'tenant.tema', recurso: 'tenant', recursoId: ctx.tenantId, resultado: 'EXITO', detalle: { acento: tema.acento, ajustado: tema.ajustado, contraste: tema.contraste } }));

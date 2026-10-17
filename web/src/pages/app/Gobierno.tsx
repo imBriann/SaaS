@@ -1,4 +1,5 @@
 import { TeamCommissions } from '../../components/TeamCommissions';
+import { LogoError, pesoLegible, prepararLogo } from '../../lib/logo';
 import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, cop, descargar, descargarDocumentos, fecha, fechaHora, hora, num } from '../../api';
@@ -110,14 +111,10 @@ export function Configuracion() {
   const tema = data.tenant.tema;
   const guardarEmpresa = (campos: Record<string, unknown>, ok = 'Datos guardados') => run(() => api.patch('/api/t/configuracion/empresa', campos), ok).then((r) => { if (r) { recargar(); recargarSesion(); } return r; });
   const subirLogo = async (file: File) => {
-    if (file.size > 200_000) return run(() => Promise.reject(new Error(`El logotipo pesa ${Math.round(file.size / 1000)} KB. Usa uno de menos de 200 KB.`)));
-    const url = await new Promise<string>((ok) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.readAsDataURL(file); });
-    const img = new Image(); img.src = url; await img.decode();
-    const cv = document.createElement('canvas'); cv.width = cv.height = 48; const cx = cv.getContext('2d')!; cx.drawImage(img, 0, 0, 48, 48);
-    const px = cx.getImageData(0, 0, 48, 48).data; const m = new Map<string, number>();
-    for (let i = 0; i < px.length; i += 4) { if (px[i + 3] < 128) continue; const k = '#' + [0, 1, 2].map((j) => Math.min(255, Math.round(px[i + j] / 24) * 24).toString(16).padStart(2, '0')).join(''); m.set(k, (m.get(k) ?? 0) + 1); }
-    const colores = [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k]) => k);
-    const r = await run(() => api.post('/api/t/configuracion/tema', { colores, logo_data_url: url }), 'Identidad actualizada');
+    // La imagen se reduce y se comprime aquí: no se le pide a nadie que baje el peso del archivo.
+    let l;
+    try { l = await prepararLogo(file); } catch (e) { return run(() => Promise.reject(e instanceof LogoError ? e : new Error('No pudimos leer esta imagen. Prueba con otra.'))); }
+    const r = await run(() => api.post('/api/t/configuracion/tema', { colores: l.colores, logo_data_url: l.dataUrl }), l.optimizado && l.bytes < l.bytesOriginal ? `Identidad actualizada. Ajustamos el logotipo: de ${pesoLegible(l.bytesOriginal)} a ${pesoLegible(l.bytes)}.` : 'Identidad actualizada');
     if (r) { recargar(); recargarSesion(); }
   };
   const campo = (k: string, l: string, extra: any = {}) => <Campo key={k} etiqueta={l} ayuda={extra.ayuda}><input className="input" value={empresa[k] ?? ''} onChange={(e) => setEmpresa({ ...empresa, [k]: e.target.value })} {...extra.input} /></Campo>;
@@ -194,7 +191,7 @@ export function Configuracion() {
                   <div className="muestra-logo" style={{ background: tema.acento }}>{data.tenant.logo_data_url ? <img src={data.tenant.logo_data_url} alt="Logotipo" /> : tema.monograma}</div>
                   <div className="col" style={{ gap: 2 }}><span className="mono">{tema.acento}</span><span className="tenue peq-txt">Contraste del botón con texto blanco: {tema.contraste.acento_blanco}:1 (mínimo recomendado 4,5:1)</span>{tema.ajustado && <span className="tenue peq-txt">Ajustamos el tono para que se lea bien.</span>}</div>
                 </div>
-                <Escritura permiso="tenant:configure"><label className="btn" style={{ alignSelf: 'flex-start' }}><Icon n="subir" className="" size={16} /> Cambiar logotipo<input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => e.target.files?.[0] && subirLogo(e.target.files[0])} /></label></Escritura>
+                <Escritura permiso="tenant:configure"><label className="btn" style={{ alignSelf: 'flex-start' }}><Icon n="subir" className="" size={16} /> Cambiar logotipo<input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) subirLogo(f); e.target.value = ''; }} /></label></Escritura>
                 <span className="tenue peq-txt">Tu panel toma su color de tu logotipo. Tu equipo ve tu negocio, no nuestra marca.</span>
               </div>
             </Tarjeta>

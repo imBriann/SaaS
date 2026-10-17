@@ -202,7 +202,7 @@ async function updateDraftLocked(db: Database, tk: string, body: unknown) {
   if(p.logo_data_url) {
     try { const bytes=Buffer.from(p.logo_data_url.split(',')[1],'base64'); const size=imageSize(bytes);
       if(bytes.length>200000||!['png','jpg','webp'].includes(size.type??'')||size.width<32||size.height<32||size.width>4096||size.height>4096) throw new Error();
-    } catch { throw invalid('Logotipo inválido: usa PNG, JPG o WEBP de hasta 200 KB y entre 32 y 4096 px por lado.'); }
+    } catch { throw invalid('No pudimos usar este logotipo. Vuelve a subirlo: se ajusta solo al cargarlo.'); }
   }
   if (p.colores_logo || p.logo_data_url !== undefined || (p.negocio?.nombre && !d.tema)) {
     tema = deriveTheme(p.colores_logo ?? [], negocio.nombre ?? 'Negocio');
