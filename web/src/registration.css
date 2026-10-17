@@ -192,3 +192,39 @@
 .actividad-extra-nueva { display: grid; gap: 10px; }
 .actividad-extra-nueva select { max-width: 420px; }
 .ia-extras { color: #4b3ccf; }
+
+/* Pago con formulario propio */
+.pago-directo { display: grid; gap: 16px; margin: 20px 0; padding: 22px; border: 1px solid var(--borde-2); border-radius: 14px; background: #fff; }
+.pago-directo h2 { font-size: 20px; margin: 0; }
+.pago-directo form { display: grid; gap: 16px; }
+.pago-directo .grid { display: grid; gap: 14px; }
+.pago-directo .grid.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pago-directo .grid.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pago-directo .campo { margin: 0; }
+.pago-directo .input, .pago-directo select { width: 100%; }
+.pago-tarjeta, .pago-pse { display: grid; gap: 14px; }
+.pago-metodos { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.pago-metodos legend { font-weight: 500; margin-bottom: 8px; padding: 0; color: var(--tinta); }
+.pago-metodos label { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 14px; border: 1px solid var(--borde-2); border-radius: 10px; background: #fff; cursor: pointer; transition: border-color 160ms, background-color 160ms; }
+.pago-metodos label.on { border-color: var(--acento); background: #f0edf9; }
+.pago-metodos label:has(:focus-visible) { outline: 3px solid #8b7eff; outline-offset: 2px; }
+.pago-metodos input { accent-color: var(--acento); width: 18px; height: 18px; flex: none; }
+.pago-metodos svg { flex: none; color: #4b3ccf; }
+.pago-wompi-acepta { display: grid; gap: 4px; padding: 14px 16px; border-radius: 10px; background: #f9fafc; border: 1px solid var(--borde); }
+.pago-wompi-acepta label { display: flex; gap: 12px; align-items: flex-start; padding: 6px 0; font-size: 14.5px; line-height: 1.55; cursor: pointer; }
+.pago-wompi-acepta input { flex: none; margin-top: 3px; width: 18px; height: 18px; accent-color: var(--acento); }
+.pago-wompi-acepta a { color: #4b3ccf; text-underline-offset: 3px; }
+.pago-estado { text-align: left; }
+.pago-estado p { display: flex; gap: 10px; align-items: flex-start; margin: 0; line-height: 1.6; }
+.pago-estado p svg { flex: none; margin-top: 3px; }
+.pago-qr { display: grid; justify-items: center; gap: 12px; padding: 18px; border: 1px solid var(--borde); border-radius: 12px; background: #fff; }
+.pago-qr img { background: #fff; padding: 8px; border-radius: 8px; image-rendering: pixelated; }
+.pago-qr p { text-align: center; display: block; }
+.pago-3ds { display: grid; gap: 12px; }
+.pago-mc { justify-self: start; height: auto; }
+@media (max-width: 640px) {
+  .pago-directo { padding: 16px; }
+  .pago-directo .grid.g2, .pago-directo .grid.g3 { grid-template-columns: 1fr; }
+  .pago-metodos { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .pago-metodos label { transition: none; } }

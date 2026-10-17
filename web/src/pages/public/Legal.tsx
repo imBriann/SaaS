@@ -91,7 +91,8 @@ export function Terminos() {
       </> },
       { id: 'precio', titulo: 'Contratación, precio y pago', cuerpo: <>
         <p>Armas tu configuración y, antes de pagar, ves un <b>resumen del pedido</b> con el detalle de cada módulo, el valor total y el tratamiento de impuestos que corresponda. Puedes corregirlo o cancelar la operación hasta antes de concluirla (Ley 1480 de 2011, art. 50, literal d). El precio que pagas es el del resumen que aceptas.</p>
-        <p>El pago se hace en el sitio seguro de Wompi, nuestra pasarela de pagos; Omnegia no ve ni guarda los datos de tu tarjeta. Los medios de pago disponibles son los que Wompi confirma para nuestra cuenta, y se informan en la pantalla de pago.</p>
+        <p>El pago lo procesa Wompi, nuestra pasarela de pagos, ya sea en su propia página o en el formulario de pago de Omnegia. En ambos casos <b>los datos de tu tarjeta los recibe Wompi</b>: en nuestro formulario se cifran en tu navegador y viajan directo a Wompi, así que Omnegia no los ve ni los guarda. Para pagar con Nequi o PSE, el celular o el documento que escribes pasan por nuestro servidor solo para enviarlos a Wompi y no se guardan. Los medios de pago disponibles son los que Wompi confirma para nuestra cuenta, y se informan en la pantalla de pago.</p>
+        <p>Con el formulario de Omnegia, además de nuestros textos aceptas los términos y la autorización de datos de Wompi, que se enlazan en esa pantalla.</p>
         <p>Cuando el pago se confirma te enviamos por correo la confirmación de la contratación, con la referencia, el valor pagado y la vigencia, y el comprobante de pago. La factura electrónica solo se emite cuando el proveedor tecnológico correspondiente esté configurado; mientras tanto, el comprobante de pago no tiene validez fiscal y se informa así en el propio documento.</p>
         <p>Las ofertas especiales o institucionales, con vigencia o precio distintos, se rigen además por las condiciones que se muestren en el resumen del pedido.</p>
       </> },
@@ -221,7 +222,7 @@ export function Privacidad() {
         <ul>
           <li><b>De tu cuenta:</b> nombre, correo electrónico (verificado con un código), contraseña (guardada solo como huella irreversible) y rol dentro de tu empresa.</li>
           <li><b>De tu negocio:</b> nombre comercial, dirección web elegida, descripción de tu actividad, logotipo y colores, teléfono de contacto, ubicación (país, departamento, municipio y dirección), NIT cuando lo indicas, y el catálogo que cargas.</li>
-          <li><b>De facturación y pago:</b> datos del contratante, con el documento de identificación guardado cifrado; referencia, valor y estado de cada pago. Los datos de tu tarjeta los recibe Wompi: nosotros no los vemos ni los guardamos.</li>
+          <li><b>De facturación y pago:</b> datos del contratante, con el documento de identificación guardado cifrado; referencia, valor y estado de cada pago. Los datos de tu tarjeta los recibe Wompi: nosotros no los vemos ni los guardamos (en nuestro formulario de pago se cifran en tu navegador y viajan directo a Wompi). El celular de Nequi o el documento de PSE pasan por nuestro servidor solo para enviarlos a Wompi y no se guardan.</li>
           <li><b>De uso y seguridad:</b> sesiones, intentos de ingreso, huellas técnicas del origen de la conexión (no la dirección IP en claro), agente del navegador, registro de acciones relevantes y métricas técnicas del servicio.</li>
           <li><b>De comunicación:</b> las solicitudes que nos envías (soporte, datos personales, PQR) y los correos que te enviamos con su estado de entrega.</li>
           <li><b>De los clientes de tu comercio</b> (como encargado): los que tu negocio carga o recibe por los canales que conectas, como nombre, teléfono, historial de conversaciones, citas, compras y documentos. Qué datos recolectas y por qué lo decide tu comercio.</li>
@@ -259,7 +260,7 @@ export function Privacidad() {
               <tr><th scope="row">Supabase</th><td>Base de datos</td><td>Datos de cuentas, empresas y registros</td></tr>
               <tr><th scope="row">Resend</th><td>Enviar correos automáticos</td><td>Correo, nombre y contenido del mensaje</td></tr>
               <tr><th scope="row">Zoho Mail</th><td>Recibir el correo de soporte</td><td>Lo que nos escribes</td></tr>
-              <tr><th scope="row">Wompi</th><td>Procesar pagos</td><td>Datos de pago que ingresas en su sitio</td></tr>
+              <tr><th scope="row">Wompi</th><td>Procesar pagos</td><td>Datos de pago que ingresas en su sitio o en el formulario de pago de Omnegia</td></tr>
               <tr><th scope="row">Meta (WhatsApp)</th><td>Mensajería con los clientes de cada comercio</td><td>Número, nombre de perfil y mensajes</td></tr>
               <tr><th scope="row">Anthropic</th><td>Modelo de IA (Claude)</td><td>Descripción del negocio y mensajes que atiende el asistente</td></tr>
             </tbody>

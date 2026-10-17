@@ -10,6 +10,7 @@ import { cop, token } from '../../lib/util.js';
 import { config, integraciones } from '../../config.js';
 import { cookieBorrar, cookieSesion, memberships, SESSION_COOKIE, sessionToken } from '../context.js';
 import * as onboarding from '../../onboarding/service.js';
+import { configPagoDirecto, estadoPagoDirecto, iniciarPagoDirecto } from '../../onboarding/pagoDirecto.js';
 import { catalogTemplate } from '../../onboarding/importer.js';
 import { cuentaPlataforma, mediosPagoWompi, signWebhook, verificarEventoWompi } from '../../adapters/payments.js';
 import * as documentos from '../../documentos/servicio.js';
@@ -138,6 +139,10 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   app.post('/api/onboarding/borradores/:tk/catalogo/confirmar', async (req: any) => onboarding.confirmCatalog(db, req.params.tk, req.body));
   // Aceptación expresa de los términos y la política de datos, con prueba (versión, fecha y huella del origen).
   app.post('/api/onboarding/borradores/:tk/aceptacion-legal', async (req: any) => registrarAceptacion(db, req.params.tk, { ip: req.ip, agente: String(req.headers['user-agent'] ?? '') }, req.body));
+  // Pago con formulario propio (Nequi, PSE, Bancolombia, QR y tarjeta): crea la transacción por API y consulta su estado.
+  app.get('/api/onboarding/borradores/:tk/pago/directo', async (req: any) => configPagoDirecto(db, req.params.tk));
+  app.post('/api/onboarding/borradores/:tk/pago/directo', async (req: any) => iniciarPagoDirecto(db, req.params.tk, req.body, { ip: req.ip, correlacion: req.correlacion }));
+  app.get('/api/onboarding/borradores/:tk/pago/directo/estado', async (req: any) => estadoPagoDirecto(db, req.params.tk, req.query?.tx, req.correlacion));
   app.post('/api/onboarding/borradores/:tk/pago', async (req: any) => onboarding.startCheckout(db, req.params.tk, req.correlacion, req.body?.retorno));
   app.get('/api/onboarding/borradores/:tk/estado', async (req: any) => onboarding.draftStatus(db, req.params.tk, req.correlacion));
   app.post('/api/onboarding/borradores/:tk/reintentar', async (req: any) => onboarding.retryProvisioning(db, req.params.tk, req.correlacion));

@@ -136,3 +136,4 @@
 @media (prefers-reduced-motion: reduce) { .legal-tarjetas a, .legal-tipos label { transition: none; } .legal-tarjetas a:hover { transform: none; } }
 .legal-estado-reembolso { align-items: flex-start; line-height: 1.55; }
 .legal-estado-reembolso svg { margin-top: 3px; flex: none; }
+.legal-aceptacion .estado { height: auto; white-space: normal; line-height: 1.45; padding-block: 6px; }

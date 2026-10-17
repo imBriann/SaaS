@@ -12,6 +12,7 @@ import { useFaseMinima, useRevelado } from './ritmo';
 import { ReciboImpresion } from '../../components/ReciboImpresion';
 import { Campo, Cargando, ErrorCarga, Estado, CicloFiscal, useAccion, Vacio, CodigoOtp, useCuentaAtras } from '../../components/ui';
 import { Quote } from '../../components/Quote';
+import { PagoDirecto } from '../../components/PagoDirecto';
 import { MarketingExperience } from '../../components/MarketingExperience';
 import { SiteHeader, SiteFooter } from '../../components/SiteChrome';
 import { WorkspaceAssembly } from '../../components/SystemScene';
@@ -260,14 +261,20 @@ export function Pago() {
   const { d, setD, cargando, error, recargar } = useBorrador();
   const { run, ocupado } = useAccion();
   const [acepto, setAcepto] = useState(false);
+  const [directoActivo, setDirectoActivo] = useState(false);
+  const [directoDisponible, setDirectoDisponible] = useState(false);
   // Aceptación expresa de los textos legales: tres casillas; la prueba se guarda en el servidor al pagar.
   const [legal, setLegal] = useState({ terminos: false, privacidad: false, inicio_servicio: false });
   const nav = useNavigate();
+  /** Registra la aceptación legal si falta. Devuelve true cuando ya está vigente. */
+  const asegurarAceptacion = async () => {
+    if (d.aceptacion_legal?.vigente) return true;
+    const a = await run(() => api.post(`/api/onboarding/borradores/${d.token}/aceptacion-legal`, legal));
+    if (a) setD({ ...d, aceptacion_legal: { version: a.version, aceptado_en: a.aceptado_en, vigente: true } });
+    return !!a;
+  };
   const activate = async () => {
-    if (!d.aceptacion_legal?.vigente) {
-      const a = await run(() => api.post(`/api/onboarding/borradores/${d.token}/aceptacion-legal`, legal));
-      if (!a) return;
-    }
+    if (!(await asegurarAceptacion())) return;
     const r = await run(() => api.post(`/api/onboarding/borradores/${d.token}/pago`, { retorno: window.location.origin }));
     if (!r) return;
     // Ya estaba pagado: no hay un segundo cobro, se va directo al estado del alta.
@@ -281,7 +288,7 @@ export function Pago() {
   const institucional = o?.modalidad === 'INSTITUCIONAL';
   const real = d.pasarela === 'wompi';
   const aceptadoLegal = !!d.aceptacion_legal?.vigente || (legal.terminos && legal.privacidad && legal.inicio_servicio);
-  const textoBoton = ocupado ? 'Preparando…' : d.pasarela === 'simulada' ? 'Ir al pago de prueba' : `Pagar ${cop(o?.monto ?? d.cotizacion.total)} con Wompi`;
+  const textoBoton = ocupado ? 'Preparando…' : d.pasarela === 'simulada' ? (directoDisponible ? 'Ir a la pasarela de prueba' : 'Ir al pago de prueba') : directoDisponible ? 'Pagar en la página de Wompi' : `Pagar ${cop(o?.monto ?? d.cotizacion.total)} con Wompi`;
   return <PublicoLayout paso={4}><section className="proposal-summary">
     <h1 className="onb-titulo">Revisa tu propuesta</h1>
     <p className="sec">Esta es la plataforma de {d.negocio?.nombre ?? 'tu negocio'}. Revisa las funciones y el desglose antes de continuar.</p>
@@ -299,7 +306,7 @@ export function Pago() {
       ? 'Recibirás la factura electrónica de tu pago cuando la DIAN la valide.'
       : 'La facturación electrónica está pendiente de configuración: recibirás un comprobante de pago en PDF, sin validez fiscal. La factura que corresponda se emitirá aparte.'}</span></p>}
     {d.pasarela === 'simulada' && <div className="aviso peq-txt"><Icon n="info" className="" size={16} />Estás en una demostración: la activación usa una pasarela simulada, sin tarjeta ni cobros reales.</div>}
-    {real && d.pago_disponible && <div className="aviso peq-txt" role="note"><Icon n="alerta" className="" size={16} /><span>Este es un <b>cobro real</b> de {cop(o?.monto ?? d.cotizacion.total)} COP, no una simulación. El pago se hace en el sitio seguro de Wompi; Omnegia no ve ni guarda los datos de tu tarjeta.</span></div>}
+    {real && d.pago_disponible && <div className="aviso peq-txt" role="note"><Icon n="alerta" className="" size={16} /><span>Este es un <b>cobro real</b> de {cop(o?.monto ?? d.cotizacion.total)} COP, no una simulación. El pago lo procesa Wompi; Omnegia no ve ni guarda los datos de tu tarjeta.</span></div>}
     {!d.pago_disponible && <div className="aviso peq-txt"><Icon n="info" className="" size={16} />La contratación en línea todavía no está habilitada. Escríbenos y activamos tu espacio contigo.</div>}
     <section className="legal-aceptacion" aria-labelledby="acepta-t">
       <h2 id="acepta-t">Antes de pagar</h2>
@@ -317,8 +324,11 @@ export function Pago() {
       <input type="checkbox" checked={acepto} onChange={(e) => setAcepto(e.target.checked)} />
       <span>Entiendo que se hará un cobro real de {cop(o?.monto ?? d.cotizacion.total)} COP{institucional ? ` por ${o.acceso_dias} días de acceso, sin renovación automática` : ''}.</span>
     </label>}
+    {d.pago_disponible && <PagoDirecto d={d} monto={cop(o?.monto ?? d.cotizacion.total)} asegurar={asegurarAceptacion} onAprobado={() => nav('/empezar/listo')} alIniciar={setDirectoActivo} alCargar={setDirectoDisponible}
+      bloqueado={!aceptadoLegal || (real && !acepto) || (d.facturacion_requerida && !d.facturacion?.completa)} />}
+    {directoDisponible && !directoActivo && <p className="tenue peq-txt" style={{ margin: 0 }}>¿Prefieres pagar en la página de Wompi? Es la otra opción, con los mismos medios de pago.</p>}
     <div className="fila envolver" style={{ gap: 8 }}>
-      {d.pago_disponible && <button className="btn primario grande" disabled={ocupado || !aceptadoLegal || (real && !acepto) || (d.facturacion_requerida && !d.facturacion?.completa)} onClick={activate}>{textoBoton}</button>}
+      {d.pago_disponible && !directoActivo && <button className={`btn ${directoDisponible ? '' : 'primario'} grande`} disabled={ocupado || !aceptadoLegal || (real && !acepto) || (d.facturacion_requerida && !d.facturacion?.completa)} onClick={activate}>{textoBoton}</button>}
       {d.estado === 'BORRADOR' && <Link className="btn grande" to="/empezar">Ajustar funciones</Link>}
     </div>
     {real && <MediosPago />}
