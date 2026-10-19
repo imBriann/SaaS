@@ -12,6 +12,7 @@ import { handleCustomerMessage, summarizeCase } from '../ai/runtime.js';
 import { createInvoiceForOrder, emitDocument } from '../modules/fiscal.js';
 import { addMessage, getOrOpenConversation, ventanaAbierta } from '../modules/conversations.js';
 import { applyDeliveryStatus } from '../modules/channelInbound.js';
+import { aplicarEstadoPlataforma, cerrarInactivasPlataforma, enviarPlataforma, procesarPlataforma, purgarPlataforma } from '../modules/plataformaConversaciones.js';
 import { verificarWhatsapp } from '../modules/channelStatus.js';
 import { aprovisionarConReintento, conciliarPagosPendientes, ofertaRenovacion } from '../modules/billing.js';
 import { config } from '../config.js';
@@ -187,7 +188,15 @@ export const HANDLERS: Record<string, Handler> = {
     if (!ok) return 'reintentar';
   },
 
-  // Respuesta del asistente de Omnegia a quien escribió a su número (sin comercio ni conversación guardada).
+  // Número de WhatsApp de Omnegia: el asistente decide la respuesta (o deriva) y la entrega sale aparte.
+  procesar_plataforma: async (db, _t, p, job) => { await procesarPlataforma(db, p.conversacion_id, p.mensaje_id, job.id); },
+  enviar_plataforma: async (db, _t, p, job) => enviarPlataforma(db, p.mensaje_id, job),
+  aplicar_estado_plataforma: async (db, _t, p) => {
+    const ok = await db.withPlatform((tx) => aplicarEstadoPlataforma(tx, p));
+    if (!ok) return 'reintentar';
+  },
+
+  // Formato anterior (respuesta sin conversación guardada): solo vacía trabajos encolados antes de la migración 012.
   responder_plataforma: async (_db, _tenantId, p, job) => {
     const r = await channel('WHATSAPP').sendText(p.phone_number_id, p.to, String(p.texto ?? ''));
     if (r.ok) return;
@@ -305,12 +314,15 @@ export const HANDLERS: Record<string, Handler> = {
 
   /** Cierre por inactividad: atendida solo por la IA, sin caso ni acción pendiente y quieta 12 h. */
   cerrar_inactivas: async (db) => {
-    await db.withPlatform((tx) => tx.query(
-      `UPDATE conversation v SET estado='CERRADA', resuelta_por='AGENTE'
-       WHERE v.estado='ABIERTA' AND v.control='AI' AND v.ultimo_mensaje_cliente_en < now() - interval '12 hours'
-         AND NOT EXISTS (SELECT 1 FROM support_case k WHERE k.conversation_id=v.id AND k.estado <> 'CERRADO')
-         AND NOT EXISTS (SELECT 1 FROM pending_action p WHERE p.conversation_id=v.id AND p.estado='PENDIENTE' AND p.expira_en > now())`,
-    ));
+    await db.withPlatform(async (tx) => {
+      await tx.query(
+        `UPDATE conversation v SET estado='CERRADA', resuelta_por='AGENTE'
+         WHERE v.estado='ABIERTA' AND v.control='AI' AND v.ultimo_mensaje_cliente_en < now() - interval '12 hours'
+           AND NOT EXISTS (SELECT 1 FROM support_case k WHERE k.conversation_id=v.id AND k.estado <> 'CERRADO')
+           AND NOT EXISTS (SELECT 1 FROM pending_action p WHERE p.conversation_id=v.id AND p.estado='PENDIENTE' AND p.expira_en > now())`,
+      );
+      await cerrarInactivasPlataforma(tx);
+    });
   },
 
   mantenimiento: async (db) => {
@@ -329,6 +341,8 @@ export const HANDLERS: Record<string, Handler> = {
       await tx.query(`UPDATE email_outbox SET estado=CASE WHEN estado='PENDIENTE' THEN 'FALLIDO' ELSE estado END, error=CASE WHEN estado='PENDIENTE' THEN 'CADUCADO' ELSE error END,
                         contenido_cifrado=NULL WHERE sensible AND contenido_cifrado IS NOT NULL AND caduca_en < now()`);
       await tx.query(`DELETE FROM metrica_http WHERE minuto < now() - interval '30 days'`);
+      // Conversaciones del WhatsApp de Omnegia: se borran al cumplir el plazo publicado en la política de datos.
+      await purgarPlataforma(tx);
       // Los reembolsos tienen plazo legal: se avisa antes de que venza.
       const porVencer = (await tx.query(`SELECT count(*)::int AS n FROM reembolso WHERE estado IN ('EN_REVISION','APROBADO') AND vence_en < now() + interval '3 days'`)).rows[0].n;
       if (porVencer > 0) await registrarIncidente(tx, { codigo: 'REEMBOLSO_POR_VENCER', servicio: 'reembolsos', detalle: { intentos: porVencer } });

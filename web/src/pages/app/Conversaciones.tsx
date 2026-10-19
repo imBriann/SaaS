@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, cop, descargar, fecha, hace, hora } from '../../api';
+import { api, cop, descargar, fecha, fechaHora, hace, hora } from '../../api';
 import { Escritura, Cabecera, useSesion } from '../../components/Layout';
 import { Campo, Cargando, Confirmar, ErrorCarga, Estado, Mensaje, Modal, Recibo, Tarjeta, useAccion, useApi, useRetardo, Vacio, type TipoMensaje } from '../../components/ui';
 import { Icon } from '../../components/icons';
+import { TextoWhatsApp } from '../../components/Markdown';
 
 const FILTROS: [string, string][] = [['todas', 'Todas'], ['escaladas', 'Con una persona'], ['cola', 'En cola'], ['mias', 'Asignadas a mí'], ['ia', 'Atendiendo la IA'], ['cerradas', 'Cerradas']];
 const PRIORIDADES = ['BAJA', 'MEDIA', 'ALTA', 'URGENTE'];
@@ -105,6 +106,7 @@ function Detalle({ id, onCambio, volver }: { id: string; onCambio: () => void; v
   const [reabrir, setReabrir] = useState(false);
   const [reasignar, setReasignar] = useState(false);
   const [plantilla, setPlantilla] = useState<any>(null);
+  const [compartir, setCompartir] = useState(false);
   const { run, ocupado } = useAccion();
   const fin = useRef<HTMLDivElement>(null);
   useEffect(() => { fin.current?.scrollIntoView({ block: 'end' }); }, [data?.mensajes?.length]);
@@ -173,7 +175,7 @@ function Detalle({ id, onCambio, volver }: { id: string; onCambio: () => void; v
               ) : tipo === 'nota' ? 'Solo la ve el equipo' : undefined;
               return (
                 <Mensaje key={m.id} tipo={tipo} quien={quien} rol={rol} hora={`${fecha(m.creado_en)} ${hora(m.creado_en)}`} meta={entrega}>
-                  {m.tipo === 'MEDIA' ? <Archivo m={m} conv={id} /> : m.contenido}
+                  {m.tipo === 'MEDIA' ? <Archivo m={m} conv={id} /> : <TextoWhatsApp texto={m.contenido ?? ''} />}
                 </Mensaje>
               );
             })}
@@ -246,6 +248,7 @@ function Detalle({ id, onCambio, volver }: { id: string; onCambio: () => void; v
             <span>{data.consentimiento_en ? <Estado v="EXITO" texto="Autorizó el tratamiento de datos" /> : <Estado v="PENDIENTE" texto="Sin autorización de datos" />}</span>
           </div>
         </Tarjeta>
+        {data.soporte && <SoporteOmnegia soporte={data.soporte} onCompartir={() => setCompartir(true)} onRetirar={() => accion(() => api.post(`/api/t/conversaciones/${id}/acceso-soporte/revocar`), 'Acceso retirado: soporte ya no puede leerla')} ocupado={ocupado} />}
         {data.ventas.length > 0 && (
           <Tarjeta titulo="Compras recientes">
             <div className="lista">{data.ventas.map((v: any) => <Link key={v.id} to={`/ventas/${v.id}`} className="lista-fila"><span className="mono">#{v.numero}</span><span className="num">{cop(v.total)}</span><Estado v={v.estado_fiscal} /></Link>)}</div>
@@ -264,7 +267,56 @@ function Detalle({ id, onCambio, volver }: { id: string; onCambio: () => void; v
         textoBoton="Reabrir" onCerrar={() => setReabrir(false)} onConfirmar={async (motivo) => { setReabrir(false); await accion(() => api.post(`/api/t/casos/${caso.id}/reabrir`, { motivo }), 'Radicado reabierto'); }} />}
       {reasignar && caso && <Reasignar caso={caso} onCerrar={() => setReasignar(false)} onHecho={() => { setReasignar(false); recargar(); onCambio(); }} />}
       {plantilla && <EnviarPlantilla conv={id} p={plantilla} cliente={nombre} onCerrar={() => setPlantilla(null)} onHecho={() => { setPlantilla(null); recargar(); }} />}
+      {compartir && <CompartirConSoporte conv={id} cliente={data.cliente} onCerrar={() => setCompartir(false)} onHecho={() => { setCompartir(false); recargar(); }} />}
     </div>
+  );
+}
+
+/**
+ * El soporte de Omnegia no puede leer las conversaciones de la empresa (la base de datos se lo impide).
+ * Quien administra puede compartir UNA conversación por un tiempo limitado; cada lectura queda registrada.
+ */
+function SoporteOmnegia({ soporte, onCompartir, onRetirar, ocupado }: { soporte: any; onCompartir: () => void; onRetirar: () => void; ocupado: boolean }) {
+  const a = soporte.acceso;
+  const lecturas: string[] = soporte.lecturas ?? [];
+  return (
+    <Tarjeta titulo="Soporte de Omnegia" acciones={a ? <Estado v="PENDIENTE" texto="Compartida" /> : <Estado v="CERRADA" texto="Privada" />}>
+      <div className="col" style={{ gap: 10 }}>
+        {a ? <>
+          <span className="peq-txt">El soporte puede leer esta conversación hasta el <b>{fechaHora(a.expira_en)}</b>. No puede responder al cliente ni cambiar nada.</span>
+          <dl className="datos-def">
+            <dt>Motivo</dt><dd>{a.motivo}</dd>
+            {a.ticket_numero && <><dt>Solicitud</dt><dd className="mono">{a.ticket_numero}</dd></>}
+            <dt>Autorizó</dt><dd>{a.otorgado_por_nombre} · {fechaHora(a.creado_en)}</dd>
+          </dl>
+          <Escritura permiso="tenant:configure"><button className="btn peq peligro" style={{ alignSelf: 'flex-start' }} disabled={ocupado} onClick={onRetirar}>Retirar acceso ahora</button></Escritura>
+        </> : <>
+          <span className="peq-txt sec">El equipo de Omnegia no puede leer tus conversaciones. Si pediste ayuda sobre esta, compártela con soporte por un tiempo limitado.</span>
+          <Escritura permiso="tenant:configure"><button className="btn peq" style={{ alignSelf: 'flex-start' }} onClick={onCompartir}><Icon n="compartir" className="" size={14} />Compartir con soporte</button></Escritura>
+        </>}
+        {lecturas.length > 0 && <span className="tenue peq-txt">Soporte la abrió {lecturas.length === 1 ? 'una vez' : `${lecturas.length} veces`}; la última {hace(lecturas[0])}.</span>}
+      </div>
+    </Tarjeta>
+  );
+}
+
+function CompartirConSoporte({ conv, cliente, onCerrar, onHecho }: { conv: string; cliente: string; onCerrar: () => void; onHecho: () => void }) {
+  const [f, setF] = useState({ motivo: '', horas: 24, ticket: '' });
+  const { run, ocupado, error } = useAccion();
+  const ticketValido = !f.ticket.trim() || /^SOP-\d{6}$/i.test(f.ticket.trim());
+  const listo = f.motivo.trim().length >= 10 && ticketValido;
+  return (
+    <Modal titulo="Compartir con soporte de Omnegia" onCerrar={onCerrar} pie={<><button className="btn" onClick={onCerrar}>Cancelar</button>
+      <button className="btn primario" disabled={ocupado || !listo} onClick={async () => { const r = await run(() => api.post(`/api/t/conversaciones/${conv}/acceso-soporte`, { motivo: f.motivo.trim(), horas: f.horas, ticket: f.ticket.trim() || null }), 'Conversación compartida con soporte', { silencioso: true }); if (r) onHecho(); }}>Compartir</button></>}>
+      {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
+      <p className="sec" style={{ margin: 0 }}>Soporte podrá <b>leer</b> la conversación con {cliente} (mensajes, nombre y teléfono del cliente) hasta que venza el plazo o retires el acceso. No podrá responder ni ver otras conversaciones.</p>
+      <Campo etiqueta="¿Para qué lo necesita soporte?"><textarea className="input" value={f.motivo} maxLength={300} onChange={(e) => setF({ ...f, motivo: e.target.value })} placeholder="Ej.: el agente le respondió mal el precio al cliente y quiero que revisen qué pasó" /></Campo>
+      <div className="grid g2">
+        <Campo etiqueta="Por cuánto tiempo"><select className="input" value={f.horas} onChange={(e) => setF({ ...f, horas: Number(e.target.value) })}><option value={24}>24 horas</option><option value={72}>3 días</option><option value={168}>7 días</option></select></Campo>
+        <Campo etiqueta="Número de solicitud" ayuda="opcional" error={ticketValido ? undefined : 'Tiene la forma SOP-000123.'}><input className="input mono" value={f.ticket} maxLength={10} onChange={(e) => setF({ ...f, ticket: e.target.value.toUpperCase() })} placeholder="SOP-000123" /></Campo>
+      </div>
+      <span className="tenue peq-txt">Cada vez que soporte la abra quedará en la auditoría de tu empresa.</span>
+    </Modal>
   );
 }
 

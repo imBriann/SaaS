@@ -2,7 +2,7 @@ import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import { setup, verificarAlta, type Env } from './helpers.js';
 import { config } from '../src/config.js';
 import { LEGAL, sumarDiasHabiles } from '../src/legal/index.js';
-import { reconocerTelefono, redactarRespuesta } from '../src/modules/plataformaBot.js';
+import { decidir, reconocerTelefono } from '../src/modules/plataformaBot.js';
 import { receiveChannelMessages } from '../src/modules/channelInbound.js';
 
 let E: Env;
@@ -161,33 +161,34 @@ describe('Asistente de Omnegia: reconoce los teléfonos de los comercios', () =>
     await E.db.withPlatform((tx) => tx.query(`UPDATE tenant SET telefono='+573105550101' WHERE id=$1`, [E.A]));
   });
 
-  it('personaliza la respuesta con el comercio, según lo que se pregunta, y avisa del tratamiento de datos', () => {
-    const comercio = { id: 'x', nombre: 'Café Spa Aurora', slug: 'aurora', plan: 'negocio', suscripcion: 'ACTIVA' };
-    const saludo = redactarRespuesta([comercio], 'Laura Gómez', 'hola');
-    expect(saludo).toContain('Hola Laura.');
-    expect(saludo).toContain('«Café Spa Aurora» (suscripción activa)');
-    expect(saludo).toContain('/privacidad');
-    expect(redactarRespuesta([comercio], 'Laura', 'cuánto cuesta el plan')).toContain('/planes');
-    expect(redactarRespuesta([{ ...comercio, suscripcion: 'SUSPENDIDA' }], 'Laura', 'quiero pagar')).toContain('al pagar se reactiva');
-    const varios = redactarRespuesta([comercio, { ...comercio, nombre: 'Spa Norte', slug: 'norte' }], '', 'hola');
-    expect(varios).toContain('2 comercios');
-    const desconocido = redactarRespuesta([], 'Pedro', 'hola');
-    expect(desconocido).toContain('no figura como contacto');
-    expect(desconocido).toContain('/empezar');
+  it('responde sin revelar a qué comercios está vinculado el número ni su suscripción, y avisa del tratamiento de datos', () => {
+    // Conocer el teléfono no es autenticar: el asistente nunca nombra comercios ni estados de cuenta.
+    const primera = decidir({ texto: 'hola', tipo: 'TEXTO', nombre: 'Laura Gómez', estado: {}, conocido: true });
+    expect(primera.texto).toContain('Hola, Laura.');
+    expect(primera.texto).toContain('/privacidad');
+    expect(primera.texto).not.toMatch(/comercio|suscripción activa|Café Spa/i);
+    const pago = decidir({ texto: 'quiero pagar mi suscripción', tipo: 'TEXTO', nombre: 'Laura', estado: primera.estado, conocido: true });
+    expect(pago.texto).toContain('Suscripción');
+    expect(pago.texto).not.toMatch(/tu (suscripción|plan) (está|es) |suscripción activa/i);
+    expect(pago.texto).toContain('no consulto datos de tu cuenta');
+    expect(decidir({ texto: 'cuánto cuesta el plan', tipo: 'TEXTO', nombre: 'Laura', estado: primera.estado, conocido: true }).texto).toContain('/planes');
+    const desconocido = decidir({ texto: 'quiero crear una cuenta', tipo: 'TEXTO', nombre: 'Pedro', estado: {}, conocido: false });
+    expect(desconocido.texto).toContain('/empezar');
   });
 
-  it('un mensaje al número de Omnegia encola la respuesta personalizada y no crea clientes ni conversaciones', async () => {
+  it('un mensaje al número de Omnegia queda en su propia conversación y no crea clientes ni conversaciones de un comercio', async () => {
     config.whatsapp.plataformaPhoneNumberId = 'plat-omnegia';
     try {
       const antes = await E.db.withTenant(E.A, async (tx) => (await tx.query(`SELECT (SELECT count(*) FROM customer)::int AS c, (SELECT count(*) FROM conversation)::int AS v`)).rows[0]);
       const r = await receiveChannelMessages(E.db, [{ phoneNumberId: 'plat-omnegia', from: '573105550101', nombre: 'Laura Gómez', id: 'wamid.plat.1', texto: 'hola' }], 'WHATSAPP', 'corr-1');
       expect(r).toEqual([{ id: 'wamid.plat.1', estado: 'plataforma_aceptado' }]);
-      // Repetir el mismo mensaje no duplica la respuesta.
-      await receiveChannelMessages(E.db, [{ phoneNumberId: 'plat-omnegia', from: '573105550101', nombre: 'Laura Gómez', id: 'wamid.plat.1', texto: 'hola' }], 'WHATSAPP', 'corr-2');
-      const jobs = await E.db.withPlatform(async (tx) => (await tx.query(`SELECT payload FROM job WHERE tipo='responder_plataforma'`)).rows);
+      // Repetir el mismo mensaje no lo duplica ni encola otra respuesta.
+      const otra = await receiveChannelMessages(E.db, [{ phoneNumberId: 'plat-omnegia', from: '573105550101', nombre: 'Laura Gómez', id: 'wamid.plat.1', texto: 'hola' }], 'WHATSAPP', 'corr-2');
+      expect(otra[0].estado).toBe('duplicado');
+      const jobs = await E.db.withPlatform(async (tx) => (await tx.query(`SELECT payload FROM job WHERE tipo='procesar_plataforma'`)).rows);
       expect(jobs).toHaveLength(1);
-      expect(jobs[0].payload.to).toBe('+573105550101');
-      expect(jobs[0].payload.texto).toContain('Barbería El Parche');
+      const conv = await E.db.withPlatform(async (tx) => (await tx.query(`SELECT telefono FROM plataforma_conversacion`)).rows);
+      expect(conv.map((c: any) => c.telefono)).toEqual(['+573105550101']);
       const despues = await E.db.withTenant(E.A, async (tx) => (await tx.query(`SELECT (SELECT count(*) FROM customer)::int AS c, (SELECT count(*) FROM conversation)::int AS v`)).rows[0]);
       expect(despues).toEqual(antes);
     } finally { config.whatsapp.plataformaPhoneNumberId = undefined; }

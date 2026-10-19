@@ -11,7 +11,7 @@ import { solicitudDatosInterna, solicitudDatosRecibida } from '../email/plantill
  * Zona legal. Cada cambio de fondo en los textos sube `version`: la aceptación guardada en un alta
  * solo vale para la versión que la persona vio, y el pago exige la vigente.
  */
-export const LEGAL = { version: '2026-10-17', vigenteDesde: '2026-10-17' } as const;
+export const LEGAL = { version: '2026-10-18', vigenteDesde: '2026-10-18' } as const;
 
 /**
  * Identificación del responsable del tratamiento y del proveedor del servicio (Decreto 1377 de 2013 art. 13;

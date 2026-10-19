@@ -8,6 +8,10 @@ import './japanese.css';
 import './landing.css';
 import './support.css';
 import './registration.css';
+import './markdown.css';
+import './cobros.css';
+import './atencion.css';
+import './movimiento.css';
 import './asistente.css';
 import './workspace-birth.css';
 import './creation.css';
@@ -65,6 +69,10 @@ const OpSoporte = lazy(() => op().then((m) => ({ default: m.OpSoporte })));
 const OpTicket = lazy(() => op().then((m) => ({ default: m.OpTicket })));
 const OpAuditoria = lazy(() => op().then((m) => ({ default: m.OpAuditoria })));
 const OpReembolsos = lazy(() => op().then((m) => ({ default: m.OpReembolsos })));
+const atencionOp = () => import('./pages/operador/Atencion');
+const OpConversaciones = lazy(() => atencionOp().then((m) => ({ default: m.OpConversaciones })));
+const OpAtencionEmpresas = lazy(() => atencionOp().then((m) => ({ default: m.OpAtencionEmpresas })));
+const OpConversacionCompartida = lazy(() => atencionOp().then((m) => ({ default: m.OpConversacionCompartida })));
 
 /** En el dominio raíz sin empresa elegida se muestra la landing; con subdominio o empresa, el panel. */
 function Raiz() {
@@ -124,6 +132,10 @@ function App() {
             <Route path="salud" element={<OpSalud />} />
             <Route path="incidentes" element={<OpIncidentes />} />
             <Route path="integraciones" element={<OpIntegraciones />} />
+            <Route path="conversaciones" element={<OpConversaciones />} />
+            <Route path="conversaciones/:id" element={<OpConversaciones />} />
+            <Route path="atencion" element={<OpAtencionEmpresas />} />
+            <Route path="atencion/conversaciones/:id" element={<OpConversacionCompartida />} />
             <Route path="soporte" element={<OpSoporte />} />
             <Route path="soporte/:id" element={<OpTicket />} />
             <Route path="reembolsos" element={<OpReembolsos />} />

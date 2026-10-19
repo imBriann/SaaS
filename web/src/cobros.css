@@ -1,0 +1,82 @@
+/* Cobro en el mostrador, pagos de una venta y caja del día. Mismo lenguaje sobrio del panel. */
+.modal-venta { width: min(640px, calc(100% - 32px)); }
+.modal-ancho { width: min(860px, calc(100% - 32px)); }
+
+.cobro { margin: 0; padding: 14px 16px 16px; border: 1px solid var(--borde); border-radius: var(--r); display: grid; gap: 12px; min-width: 0; }
+.cobro > legend { padding: 0 6px; margin-left: -6px; }
+.cobro-metodos { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.cobro-metodo {
+  position: relative; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px;
+  border: 1px solid var(--borde-2); border-radius: var(--r); background: var(--superficie); color: var(--tinta-2);
+  font-size: 14px; font-weight: 500; cursor: pointer; transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 120ms var(--ease-out);
+}
+.cobro-metodo input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.cobro-metodo svg { flex: none; color: var(--tinta-3); }
+@media (hover: hover) { .cobro-metodo:hover { background: var(--superficie-2); border-color: var(--borde-3); color: var(--tinta); } }
+.cobro-metodo:has(input:focus-visible) { outline: 2px solid var(--acento); outline-offset: 2px; }
+.cobro-metodo.on { background: var(--acento-tinte); border-color: color-mix(in srgb, var(--acento) 45%, #fff); color: var(--acento-texto); }
+.cobro-metodo.on svg { color: var(--acento); }
+
+.cobro-efectivo { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; align-items: end; }
+.cobro-efectivo > .campo { grid-column: 1; grid-row: 1; }
+.cobro-recibido { height: 44px; font-size: 18px; font-variant-numeric: tabular-nums; }
+.cobro-rapidos { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.cobro-rapidos .chip { min-height: 32px; font-variant-numeric: tabular-nums; }
+.cobro-cambio {
+  grid-column: 2; grid-row: 1; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 150px;
+  padding: 8px 14px; border-radius: var(--r); background: var(--superficie-2); color: var(--tinta-2); transition: background-color 150ms ease, color 150ms ease;
+}
+.cobro-cambio > span { font-size: 12px; font-weight: 500; color: inherit; opacity: .85; }
+.cobro-cambio b { font-size: 22px; line-height: 1.2; color: var(--tinta); }
+.cobro-cambio.con-cambio { background: var(--ok-tinte); color: var(--ok); }
+.cobro-cambio.con-cambio b { color: var(--ok); }
+.cobro-nota { margin: 0; }
+
+.nuevo-cliente { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px dashed var(--borde-2); border-radius: var(--r); }
+.filtro-metodo { width: auto; min-width: 210px; height: 34px; margin-left: auto; }
+
+.aviso.error { background: var(--error-tinte); color: var(--error); border-color: var(--error-borde); }
+.aviso.error span span { font-weight: 400; }
+
+/* Pagos de una venta: el vigente arriba de la vista, los anulados quedan en el historial. */
+.lista-pagos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.lista-pagos .pago { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--borde); border-radius: var(--r); min-width: 0; }
+.lista-pagos .pago.inactivo { background: var(--superficie-2); color: var(--tinta-3); }
+.lista-pagos .pago.inactivo .num b { text-decoration: line-through; text-decoration-thickness: 1px; }
+
+/* Caja del día */
+.caja-cifras { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.caja-total, .caja-metodo { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--borde); border-radius: var(--r); background: var(--superficie); min-width: 0; }
+.caja-total { background: var(--superficie-2); border-color: transparent; }
+.caja-total b { font-size: 26px; line-height: 1.15; }
+.caja-metodo b { font-size: 18px; line-height: 1.25; }
+.caja-total b.num, .caja-metodo b.num { text-align: left; }
+/* Arqueo con forma de recibo: lo que entró, lo que salió de cambio y lo que debe haber en la caja. */
+.caja-arqueo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 24px; align-items: start; }
+.caja-recibo { margin: 0; padding: 12px 16px; border: 1px solid var(--borde); border-radius: var(--r); background: var(--superficie); font-size: 14px; }
+.caja-recibo > div { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; }
+.caja-recibo > div > b, .caja-recibo > div > span:last-child { font-variant-numeric: tabular-nums; }
+.caja-recibo > .total { margin-top: 6px; padding-top: 10px; border-top: 1px dashed var(--borde-2); font-weight: 600; font-size: 15px; }
+.caja-recibo > .total b { font-size: 18px; }
+
+/* Cobrado hoy (Inicio) */
+.cobrado-hoy { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.cobrado-hoy b { font-size: 28px; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.reparto { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.reparto li { display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; }
+.reparto-barra { display: block; height: 6px; border-radius: var(--r-pildora); background: var(--superficie-2); overflow: hidden; }
+.reparto-barra i { display: block; height: 100%; border-radius: inherit; background: var(--acento); }
+.reparto li[data-metodo='efectivo'] .reparto-barra i { background: var(--ok); }
+
+@media (max-width: 560px) {
+  .cobro { padding: 12px; }
+  .cobro-metodos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cobro-efectivo { grid-template-columns: minmax(0, 1fr); }
+  .cobro-cambio { grid-column: 1; grid-row: auto; flex-direction: row; align-items: baseline; justify-content: space-between; min-width: 0; }
+  .filtro-metodo { margin-left: 0; width: 100%; }
+  .caja-total { grid-column: 1 / -1; }
+  .caja-arqueo { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cobro-metodo, .cobro-cambio { transition: none; }
+}

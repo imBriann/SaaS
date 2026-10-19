@@ -15,7 +15,13 @@ export const VENTANA = 30;
 /** Cuántos mensajes pueden acumularse fuera del resumen antes de condensarlos (evita resumir en cada turno). */
 export const LOTE_RESUMEN = 10;
 
-export interface Recibo { id: string; herramienta: string; decision: string; motivo?: string | null; riesgo?: string | null }
+export interface Recibo {
+  id: string; herramienta: string; decision: string; motivo?: string | null; riesgo?: string | null;
+  /** Acción propuesta que espera la confirmación de la persona (botones Confirmar / Cancelar). */
+  pendiente_id?: string; resumen?: string | null;
+  /** Estado actual de esa acción al leer el hilo: PENDIENTE, CONFIRMADA, RECHAZADA o EXPIRADA. */
+  pendiente?: { estado: string; expira_en: string } | null;
+}
 export interface MensajeHilo { id: string; orden: number; rol: 'user' | 'assistant'; contenido: string; ejecuciones: Recibo[]; creado_en: string }
 
 export const tituloDe = (pregunta: string) => {
@@ -44,6 +50,14 @@ export async function verHilo(tx: Tx, ctx: Ctx, id: unknown) {
   const h = await hiloPropio(tx, ctx, id);
   const mensajes = (await tx.query(
     `SELECT id, orden::int AS orden, rol, contenido, ejecuciones, creado_en FROM asistente_mensaje WHERE hilo_id=$1 ORDER BY orden`, [h.id])).rows as MensajeHilo[];
+  // Las acciones propuestas muestran su estado de ahora (pudo confirmarse, cancelarse o vencer).
+  const ids = mensajes.flatMap((m) => (m.ejecuciones ?? []).map((e) => e.pendiente_id).filter(Boolean)) as string[];
+  if (ids.length) {
+    const estados = new Map((await tx.query(
+      `SELECT id, CASE WHEN estado='PENDIENTE' AND expira_en <= now() THEN 'EXPIRADA' ELSE estado END AS estado, expira_en FROM pending_action WHERE id = ANY($1::uuid[]) AND solicitado_por=$2`,
+      [ids, ctx.actor.id])).rows.map((r: any) => [r.id, { estado: r.estado, expira_en: r.expira_en }]));
+    for (const m of mensajes) for (const e of m.ejecuciones ?? []) if (e.pendiente_id) e.pendiente = estados.get(e.pendiente_id) ?? null;
+  }
   return { id: h.id, titulo: h.titulo, creado_en: h.creado_en, actualizado_en: h.actualizado_en, mensajes };
 }
 
@@ -78,6 +92,14 @@ export async function guardarIntercambio(tx: Tx, ctx: Ctx, hiloId: string | null
   );
   await tx.query(`UPDATE asistente_hilo SET actualizado_en=now() WHERE id=$1`, [id]);
   return id;
+}
+
+/** Mensaje del asistente fuera de una pregunta (p. ej. el resultado de una acción que la persona confirmó). */
+export async function guardarMensajeAsistente(tx: Tx, ctx: Ctx, hiloId: string, contenido: string, ejecuciones: Recibo[]) {
+  await hiloPropio(tx, ctx, hiloId);
+  await tx.query(`INSERT INTO asistente_mensaje (id, tenant_id, hilo_id, rol, contenido, ejecuciones) VALUES ($1,$2,$3,'assistant',$4,$5)`,
+    [uuidv7(), ctx.tenantId, hiloId, contenido, JSON.stringify(ejecuciones)]);
+  await tx.query(`UPDATE asistente_hilo SET actualizado_en=now() WHERE id=$1`, [hiloId]);
 }
 
 /** Mensajes que pasaron de la ventana y todavía no están en el resumen, si ya son suficientes para condensarlos. */

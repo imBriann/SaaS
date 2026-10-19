@@ -207,11 +207,34 @@ export class MockLlm implements LlmClient {
 
   private async asistente(texto: string, tools: Set<string>, tc: (n: string, a: unknown) => Promise<ToolCallOutcome>): Promise<string> {
     const t = normalizeText(texto);
-    if (/venta|vend|ingreso|factur(a|e) (hoy|esta)|ticket/.test(t) && tools.has('resumen_ventas')) {
+    const pesos = (s: string) => Number(/^\d{1,3}(\.\d{3})+$/.test(s) ? s.replace(/\./g, '') : s.replace(/\./g, '').replace(',', '.'));
+    const propuesta = (o: ToolCallOutcome, accion: string) => o.content.estado === 'requiere_confirmacion'
+      ? `Dejé listo el cambio para que lo confirmes: ${o.content.resumen}. Usa «Confirmar» debajo de este mensaje (vence en 15 minutos); si no, nada cambia.`
+      : o.isError ? `No puedo ${accion}: ${o.content.error === 'accion_no_disponible' ? 'tu rol o la configuración del asistente no lo permiten' : 'faltan datos o no son válidos'}.` : 'Listo.';
+    // --- Crear un ítem: «crea el servicio Corte premium a 35.000 de 45 minutos»
+    const alta = texto.match(/(?:crea|crear|agrega|agregar|añade|añadir|registra|registrar)\s+(?:el|un|una|la)?\s*(servicio|producto)\s+(?:llamado\s+)?[«"]?(.+?)[»"]?\s+(?:a|por|en|con precio de)\s+\$?\s*([\d.,]+)(?:\s*(?:pesos|cop))?(?:.*?(\d{1,3})\s*min)?/i);
+    if (alta && tools.has('crear_item_catalogo')) {
+      const tipo = normalizeText(alta[1]) === 'servicio' ? 'SERVICIO' : 'PRODUCTO';
+      if (tipo === 'SERVICIO' && !alta[4]) return `¿Cuánto dura «${alta[2].trim()}»? Necesito la duración en minutos para poder agendarlo.`;
+      const r = await tc('crear_item_catalogo', { tipo, nombre: alta[2].trim(), precio: pesos(alta[3]), ...(alta[4] ? { duracion_min: Number(alta[4]) } : {}) });
+      return propuesta(r, 'crear ese ítem');
+    }
+    // --- Cambiar un precio: «cambia el precio del corte clásico a 30.000»
+    const precio = texto.match(/(?:cambia|cambiar|sube|subir|baja|bajar|actualiza|actualizar|pon|poner)\s+(?:el\s+)?precio\s+(?:de|del|de la)\s+(.+?)\s+(?:a|en)\s+\$?\s*([\d.,]+)/i);
+    const quitar = texto.match(/(?:desactiva|desactivar|oculta|ocultar|deja de ofrecer)\s+(?:el|la)?\s*(?:servicio|producto)?\s*[«"]?(.+?)[»"]?\s*$/i);
+    if ((precio || quitar) && tools.has('editar_item_catalogo') && tools.has('consultar_catalogo')) {
+      const items = ((await tc('consultar_catalogo', {})).content.items as Item[]) ?? [];
+      const it = matchItem(items, (precio ?? quitar)![1]);
+      if (!it) return 'No encontré ese ítem en tu catálogo. ¿Me dices el nombre exacto?';
+      const r = await tc('editar_item_catalogo', precio ? { producto_id: it.id, precio: pesos(precio[2]) } : { producto_id: it.id, activo: false });
+      return propuesta(r, 'editar ese ítem');
+    }
+    if (/venta|vend|ingreso|\bentr(o|aron)\b|cobrad[oa]s?|\bcobre\b|cobramos|recaud|factur(a|e) (hoy|esta)|ticket/.test(t) && tools.has('resumen_ventas')) {
       const dias = /hoy/.test(t) ? 1 : /mes/.test(t) ? 30 : 7;
       const r = (await tc('resumen_ventas', { dias })).content as any;
       const top = (r.mas_vendidos ?? []).slice(0, 3).map((x: any) => `${x.descripcion} (${x.unidades})`).join(', ');
-      return `En los últimos ${r.dias} día(s): ${r.ventas} ventas por ${r.total_texto}, ticket promedio ${r.ticket_promedio}.${top ? ` Lo más vendido: ${top}.` : ''}\nFuente: ventas confirmadas del registro.`;
+      const cobrado = (r.cobrado_por_metodo ?? []).map((x: any) => `${x.metodo} ${x.total_texto} (${x.pagos})`).join(', ');
+      return `${r.dias === 1 ? 'Hoy' : `En los últimos ${r.dias} días`}: ${r.ventas} ${r.ventas === 1 ? 'venta' : 'ventas'} por ${r.total_texto}, ticket promedio ${r.ticket_promedio}.${top ? ` Lo más vendido: ${top}.` : ''}${cobrado ? `\nCobrado por método: ${cobrado}.` : '\nNo hay pagos registrados en ese periodo.'}\nFuente: ventas confirmadas y pagos registrados.`;
     }
     if (/cita|agenda|turno/.test(t) && tools.has('citas_del_dia')) {
       const fecha = parseFecha(texto, this.hoy()) ?? undefined;
@@ -235,7 +258,7 @@ export class MockLlm implements LlmClient {
       if (!r.clientes?.length) return 'No encontré clientes con ese nombre.';
       return r.clientes.map((c: any) => `• ${c.nombre} ${c.telefono ?? ''}`).join('\n');
     }
-    const temas: [RegExp, string][] = [[/factur|dian|nota credito/, 'facturacion'], [/agenda|cita/, 'agenda'], [/catalogo|producto|precio/, 'catalogo'], [/usuario|persona|rol|equipo/, 'usuarios'], [/ia|agente|herramienta/, 'ia'], [/suscrip|pago|plan/, 'suscripcion'], [/whatsapp/, 'whatsapp']];
+    const temas: [RegExp, string][] = [[/factur|dian|nota credito/, 'facturacion'], [/agenda|cita/, 'agenda'], [/efectivo|caja|cobr|registrar (un |el )?pago|metodo de pago|datafono|transferencia/, 'cobros'], [/catalogo|producto|precio|import/, 'catalogo'], [/conversacion|chat|radicado/, 'conversaciones'], [/usuario|persona|rol|equipo/, 'usuarios'], [/\bia\b|agente|herramienta/, 'ia'], [/suscrip|pago|plan/, 'suscripcion'], [/whatsapp/, 'whatsapp']];
     for (const [re, tema] of temas) {
       if (re.test(t) && tools.has('ayuda_plataforma')) {
         const r = (await tc('ayuda_plataforma', { tema })).content as any;

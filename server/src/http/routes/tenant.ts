@@ -18,6 +18,7 @@ import * as orders from '../../modules/orders.js';
 import * as fiscal from '../../modules/fiscal.js';
 import * as conv from '../../modules/conversations.js';
 import * as payments from '../../modules/payments.js';
+import * as pagos from '../../modules/pagosVentas.js';
 import * as admin from '../../modules/admin.js';
 import * as team from '../../modules/team.js';
 import * as soporte from '../../modules/soporte.js';
@@ -26,7 +27,8 @@ import * as exportsMod from '../../modules/exports.js';
 import { iniciarPagoSuscripcion } from '../../modules/billing.js';
 import { documentosTenant, enlaceDocumentosTenant } from '../../documentos/servicio.js';
 import { verificarWhatsapp } from '../../modules/channelStatus.js';
-import { askAssistant, suggestReply } from '../../ai/runtime.js';
+import { askAssistant, confirmarAccionAsistente, suggestReply } from '../../ai/runtime.js';
+import { depurar } from '../../lib/depurar.js';
 import { signMeta, whatsapp } from '../../adapters/channel.js';
 import { applyMapping, inferMapping, readSheet } from '../../onboarding/importer.js';
 
@@ -71,6 +73,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
 
   // --- Catálogo e inventario
   r('get', '/productos', (tx, ctx) => catalog.listProducts(tx, ctx));
+  r('get', '/productos/revision', (tx, ctx) => catalog.revisarCatalogo(tx, ctx));
   r('post', '/productos', (tx, ctx, req) => catalog.createProduct(tx, ctx, req.body));
   r('patch', '/productos/:id', (tx, ctx, req) => catalog.updateProduct(tx, ctx, req.params.id, req.body));
   rx('post', '/productos/importar/archivo', async (ctx, req) => {
@@ -119,12 +122,16 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('patch','/equipo/comisiones',(tx,ctx,req)=>commissions.save(tx,ctx,req.body));
   r('get','/equipo/comisiones/informe',(tx,ctx,req)=>commissions.report(tx,ctx,req.query.fecha));
   // --- Ventas
-  r('get', '/ventas', (tx, ctx, req) => orders.listOrders(tx, ctx, { estado_fiscal: req.query?.estado_fiscal, q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina, pago: req.query?.pago }));
+  r('get', '/ventas', (tx, ctx, req) => orders.listOrders(tx, ctx, { estado_fiscal: req.query?.estado_fiscal, q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina, pago: req.query?.pago, metodo: req.query?.metodo }));
+  r('get', '/ventas/caja', (tx, ctx, req) => pagos.cajaDelDia(tx, ctx, req.query?.fecha));
   r('get', '/ventas.csv', async (tx, ctx, req, reply) => { descarga(reply, 'ventas.csv'); return exportsMod.exportOrders(tx, ctx, req.query?.desde, req.query?.hasta); });
   r('post', '/ventas', (tx, ctx, req) => orders.createOrder(tx, ctx, req.body));
   r('get', '/ventas/:id', (tx, ctx, req) => orders.getOrderDetail(tx, ctx, req.params.id));
   r('post', '/ventas/:id/anular', (tx, ctx, req) => orders.voidOrder(tx, ctx, req.params.id, String(req.body?.motivo ?? '')));
   r('post', '/ventas/:id/enlace-pago', (tx, ctx, req) => payments.createPaymentLink(tx, ctx, req.params.id));
+  r('post', '/ventas/:id/pagos', (tx, ctx, req) => pagos.registrarPago(tx, ctx, req.params.id, req.body));
+  r('post', '/ventas/:id/pagos/:pago/anular', (tx, ctx, req) => pagos.anularPago(tx, ctx, req.params.id, req.params.pago, req.body));
+  r('get', '/cobros/metodos', async (tx, ctx) => { requirePerm(ctx, 'order:read'); return pagos.metodosDePago(tx); });
   r('post', '/ventas/:id/facturar', (tx, ctx, req) => fiscal.createInvoiceForOrder(tx, ctx, req.params.id));
 
   // --- Facturación
@@ -145,6 +152,8 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   });
   r('post', '/conversaciones/:id/cerrar', (tx, ctx, req) => conv.closeCase(tx, ctx, req.params.id, String(req.body?.motivo ?? '')));
   r('post', '/conversaciones/:id/devolver-ia', (tx, ctx, req) => conv.returnToAi(tx, ctx, req.params.id));
+  r('post', '/conversaciones/:id/acceso-soporte', (tx, ctx, req) => conv.otorgarAccesoSoporte(tx, ctx, req.params.id, req.body));
+  r('post', '/conversaciones/:id/acceso-soporte/revocar', (tx, ctx, req) => conv.revocarAccesoSoporte(tx, ctx, req.params.id));
   rx('get', '/conversaciones/:id/archivos/:mensaje', async (ctx, req, reply) => {
     // El archivo solo se entrega si el mensaje pertenece a una conversación visible para quien lo pide.
     const m = await db.withTenant(ctx.tenantId, async (tx) => {
@@ -189,6 +198,33 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
     if (!pregunta) throw invalid('Escribe una pregunta.');
     // Sin hilo_id se abre una conversación nueva; con él se continúa y el servidor recuerda el contexto.
     return askAssistant(db, ctx, pregunta, req.body?.hilo_id || null);
+  });
+  // Misma pregunta con el avance real (herramientas que consulta) como eventos SSE; la respuesta final llega en el evento «respuesta».
+  app.route({
+    method: 'POST', url: '/api/t/asistente/stream', preHandler: guard,
+    handler: async (req: FastifyRequest, reply) => {
+      const ctx = req.ctx!;
+      const body = (req.body ?? {}) as { pregunta?: unknown; hilo_id?: unknown };
+      requirePerm(ctx, 'ai:assist');
+      const pregunta = String(body.pregunta ?? '').trim().slice(0, 1000);
+      if (!pregunta) throw invalid('Escribe una pregunta.');
+      reply.hijack();
+      reply.raw.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no', 'x-content-type-options': 'nosniff', 'x-correlation-id': req.correlacion });
+      const enviar = (evento: string, data: unknown) => { if (!reply.raw.writableEnded) reply.raw.write(`event: ${evento}\ndata: ${JSON.stringify(data)}\n\n`); };
+      try {
+        const r = await askAssistant(db, ctx, pregunta, typeof body.hilo_id === 'string' && body.hilo_id ? body.hilo_id : null, { onEvento: (e) => enviar('progreso', e) });
+        enviar('respuesta', r);
+      } catch (e) {
+        if (!(e instanceof AppError)) req.log.error({ err: { message: depurar((e as Error)?.message) }, correlacion: req.correlacion }, 'asistente: error en la respuesta');
+        enviar('error', e instanceof AppError ? { code: e.code, message: e.message } : { code: 'INTERNAL', message: 'Algo falló de nuestro lado. Intenta de nuevo; si persiste, comparte este código con soporte.', correlacion: req.correlacion });
+      } finally {
+        reply.raw.end();
+      }
+    },
+  });
+  rx('post', '/asistente/acciones/:id', async (ctx, req) => {
+    requirePerm(ctx, 'ai:assist');
+    return confirmarAccionAsistente(db, ctx, req.params.id, req.body?.decision);
   });
   r('get', '/asistente/hilos', (tx, ctx) => asistente.listarHilos(tx, ctx));
   r('get', '/asistente/hilos/:id', (tx, ctx, req) => asistente.verHilo(tx, ctx, req.params.id));
@@ -238,6 +274,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
     return tema;
   });
   r('post', '/configuracion/pasarela', (tx, ctx, req) => payments.linkGatewayAccount(tx, ctx, req.body ?? {}));
+  r('patch', '/configuracion/cobros/metodos', (tx, ctx, req) => pagos.guardarMetodos(tx, ctx, req.body));
 
   // --- Suscripción
   r('get', '/suscripcion', (tx, ctx) => admin.subscriptionInfo(tx, ctx));

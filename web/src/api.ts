@@ -117,6 +117,54 @@ export async function descargar(url: string, nombre: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
 
+/**
+ * Pregunta al asistente con avance en vivo (SSE sobre POST). `onEvento` recibe lo que de verdad pasa en
+ * el servidor (herramientas que consulta); la promesa se resuelve con la respuesta final. Si la conexión
+ * no admite streaming, se usa la petición normal.
+ */
+export async function preguntarEnVivo<T = any>(cuerpo: Record<string, unknown>, onEvento: (e: any) => void): Promise<T> {
+  const headers: Record<string, string> = { accept: 'text/event-stream', 'content-type': 'application/json' };
+  const slug = tenantSlug();
+  if (slug) headers['x-tenant-slug'] = slug;
+  let res: Response;
+  try {
+    res = await fetch('/api/t/asistente/stream', { method: 'POST', headers, body: JSON.stringify(cuerpo), credentials: 'include' });
+  } catch {
+    throw new ApiError(0, 'RED', 'No hay conexión con el servidor. Revisa tu internet e intenta de nuevo.');
+  }
+  if (!res.ok || !res.body || !(res.headers.get('content-type') ?? '').includes('text/event-stream')) {
+    if (res.status === 404 || res.status === 405) return api.post<T>('/api/t/asistente', cuerpo);
+    const d = await res.json().catch(() => ({}));
+    if (res.status === 401 && !window.location.pathname.startsWith('/entrar')) window.location.assign(`/entrar?vencida=1&volver=${encodeURIComponent(window.location.pathname)}`);
+    throw new ApiError(res.status, d?.error?.code ?? 'ERROR', d?.error?.message ?? `Error ${res.status}`, d?.error?.details);
+  }
+  const lector = res.body.getReader();
+  const dec = new TextDecoder();
+  let resto = '';
+  let final: T | null = null;
+  let fallo: ApiError | null = null;
+  for (;;) {
+    const { value, done } = await lector.read();
+    if (done) break;
+    resto += dec.decode(value, { stream: true });
+    let corte: number;
+    while ((corte = resto.indexOf('\n\n')) >= 0) {
+      const bloque = resto.slice(0, corte);
+      resto = resto.slice(corte + 2);
+      const evento = bloque.match(/^event: (.+)$/m)?.[1];
+      const dato = bloque.match(/^data: (.*)$/m)?.[1];
+      if (!evento || dato === undefined) continue;
+      const data = JSON.parse(dato);
+      if (evento === 'progreso') onEvento(data);
+      else if (evento === 'respuesta') final = data;
+      else if (evento === 'error') fallo = new ApiError(500, data.code ?? 'ERROR', data.message ?? 'Algo falló de nuestro lado.', data.correlacion ? { correlacion: data.correlacion } : undefined);
+    }
+  }
+  if (fallo) throw fallo;
+  if (!final) throw new ApiError(0, 'RED', 'La respuesta se interrumpió. Intenta de nuevo.');
+  return final;
+}
+
 export const api = {
   get: <T = any>(u: string) => request<T>('GET', u),
   post: <T = any>(u: string, b?: unknown) => request<T>('POST', u, b ?? {}),

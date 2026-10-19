@@ -168,6 +168,17 @@ export class Database {
     });
   }
 
+  /**
+   * Lectura de soporte autorizada por una empresa (rol app_soporte): sin BYPASSRLS y con políticas que
+   * exigen un acceso vigente (acceso_soporte) para cada fila. Sin autorización, la consulta no devuelve nada.
+   */
+  withSoporte<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+    return this.engine.transaction(async (tx) => {
+      await tx.query('SET LOCAL ROLE app_soporte');
+      return fn(tx);
+    });
+  }
+
   /** Script de varias sentencias sin parámetros (mantenimiento y pruebas). */
   execScript(sql: string): Promise<void> {
     return this.engine.exec(sql);

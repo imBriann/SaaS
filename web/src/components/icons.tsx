@@ -43,6 +43,11 @@ const P: Record<string, string> = {
   integraciones: 'M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5',
   correo: 'M3 5h18v14H3zM3 6l9 7 9-7',
   descargar: 'M12 4v12M6 10l6 6 6-6M4 20h16',
+  copiar: 'M9 9h11v11H9zM5 15H4V4h11v1',
+  efectivo: 'M2 7h20v10H2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 12h.01M18 12h.01',
+  caja: 'M3 8h18v12H3zM3 8l2.5-4h13L21 8M9 12h6',
+  compartir: 'M4 12v8h16v-8M12 3v13M7 8l5-5 5 5',
+  telefono: 'M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z',
 };
 
 export function Icon({ n, className = 'ico', size }: { n: keyof typeof P | string; className?: string; size?: number }) {

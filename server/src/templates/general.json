@@ -1,6 +1,6 @@
 {
   "sector": "general",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "nombre": "Negocio general",
   "descripcion": "Plantilla neutral para negocios de cualquier sector: atención, agenda y ventas sin supuestos de una actividad concreta.",
   "modulos": [
@@ -48,7 +48,9 @@
         "audit:read",
         "subscription:manage",
         "usage:read",
-        "payment:link"
+        "payment:link",
+        "payment:register",
+        "payment:void"
       ]
     },
     {
@@ -72,7 +74,8 @@
         "invoice:read",
         "ai:read",
         "ai:assist",
-        "usage:read"
+        "usage:read",
+        "payment:register"
       ],
       "es_asesor": true
     },
@@ -96,7 +99,8 @@
         "invoice:read",
         "invoice:issue",
         "ai:assist",
-        "payment:link"
+        "payment:link",
+        "payment:register"
       ],
       "es_asesor": true
     },
@@ -109,7 +113,8 @@
         "order:read",
         "order:create",
         "appointment:read",
-        "appointment:create"
+        "appointment:create",
+        "payment:register"
       ]
     },
     {
@@ -140,7 +145,8 @@
         "appointment:read",
         "invoice:read",
         "usage:read",
-        "ai:assist"
+        "ai:assist",
+        "catalog:write"
       ]
     },
     {
@@ -246,7 +252,9 @@
         "buscar_cliente",
         "consultar_catalogo",
         "consumo_del_plan",
-        "ayuda_plataforma"
+        "ayuda_plataforma",
+        "crear_item_catalogo",
+        "editar_item_catalogo"
       ],
       "prompt_base": "Eres el asistente del dueño del negocio dentro del panel. Responde con cifras concretas obtenidas de tus herramientas y explica de dónde salen. Si una pregunta no se puede responder con tus herramientas, dilo."
     },

@@ -7,6 +7,7 @@ import { Icon } from '../../components/icons';
 import { AiOrb } from '../../components/AiOrb';
 import { ThinkingOrb } from 'thinking-orbs';
 import { useWorkspaceBirthReady } from '../../components/WorkspaceBirth';
+import { Contador, escalon } from '../../components/Movimiento';
 
 const TIPO: Record<string, TipoMensaje> = { CUSTOMER: 'cliente', AI: 'ia', HUMAN: 'humano' };
 
@@ -62,10 +63,10 @@ export function Inicio() {
             )}
 
             <div className="kpis" aria-label="Resumen de hoy">
-              <Cifra etiqueta="Ventas de hoy" valor={cop(data.cifras.ventas_hoy)} detalle={`${data.cifras.n_ventas_hoy} ${data.cifras.n_ventas_hoy === 1 ? 'venta' : 'ventas'} · semana ${cop(data.cifras.ventas_semana)}`} />
+              <Cifra etiqueta="Ventas de hoy" valor={<Contador valor={data.cifras.ventas_hoy} formato={cop} />} detalle={`${data.cifras.n_ventas_hoy} ${data.cifras.n_ventas_hoy === 1 ? 'venta' : 'ventas'} · semana ${cop(data.cifras.ventas_semana)}`} />
               <Cifra etiqueta="Citas de hoy" valor={data.cifras.citas_hoy} detalle={`${data.cifras.citas_hoy_ia} agendadas por el agente`} />
               <Cifra etiqueta="Conversaciones abiertas" valor={data.cifras.conversaciones_abiertas} detalle={`${data.cifras.escaladas} con una persona`} />
-              {puede('order:read') ? <Cifra etiqueta="Por cobrar" valor={cop(data.cifras.por_cobrar)} detalle={<Link to="/ventas?pago=PENDIENTE">Ver ventas sin pagar</Link>} />
+              {puede('order:read') ? <Cifra etiqueta="Por cobrar" valor={<Contador valor={data.cifras.por_cobrar} formato={cop} />} detalle={<Link to="/ventas?pago=PENDIENTE">Ver ventas sin pagar</Link>} />
                 : <Cifra etiqueta="Clientes nuevos (7 días)" valor={data.cifras.clientes_nuevos} detalle={`${data.cifras.resueltas_ia_semana} conversaciones resueltas por la IA`} />}
             </div>
 
@@ -103,6 +104,7 @@ export function Inicio() {
                 <AccesoAsistente />
               </div>
               <div className="col" style={{ gap: 16 }}>
+                {data.cobros_hoy && <CobradoHoy c={data.cobros_hoy} />}
                 {data.fiscal && <Tarjeta titulo="Ciclo fiscal de hoy" acciones={<Link to="/facturacion" className="btn sutil peq">Facturación</Link>}><CicloFiscal conteos={data.fiscal} /></Tarjeta>}
                 {data.ingresos.length > 0 && <Tarjeta titulo="Ingresos de los últimos 7 días">{data.ingresos.some((d: any) => d.total > 0) ? <Barras datos={data.ingresos} /> : <Vacio titulo="Sin ventas esta semana">Cuando registres ventas, aquí verás cuánto entra cada día.</Vacio>}</Tarjeta>}
                 {data.consumo && (
@@ -187,6 +189,30 @@ function AccesoAsistente() {
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ej.: ¿qué citas tengo mañana?" aria-label="Pregunta al asistente" />
         <button className="btn primario" disabled={!q.trim()}>Preguntar</button>
       </form>
+    </Tarjeta>
+  );
+}
+
+const METODOS_HOY: [string, string][] = [['efectivo', 'Efectivo'], ['transferencia', 'Transferencia'], ['datafono', 'Datáfono'], ['pasarela', 'Pasarela']];
+
+/** Lo cobrado hoy por método: el total cuenta y cada método crece según su parte. */
+function CobradoHoy({ c }: { c: any }) {
+  const metodos = METODOS_HOY.filter(([k]) => c[k] > 0);
+  return (
+    <Tarjeta titulo="Cobrado hoy" acciones={<Link to="/ventas?caja=1" className="btn sutil peq">Caja del día</Link>}>
+      {c.total <= 0 ? <Vacio titulo="Todavía no hay pagos hoy">Lo que cobres en efectivo, transferencia, datáfono o por enlace aparecerá aquí.</Vacio> : (
+        <div className="col" style={{ gap: 12 }}>
+          <span className="cobrado-hoy"><b className="num"><Contador valor={c.total} formato={cop} ms={900} /></b><span className="tenue peq-txt">{c.pagos} {c.pagos === 1 ? 'pago' : 'pagos'}</span></span>
+          <ul className="reparto entra-escalonado">
+            {metodos.map(([k, t], i) => (
+              <li key={k} style={escalon(i)} data-metodo={k}>
+                <span className="fila entre"><span>{t}</span><span className="num"><b>{cop(c[k])}</b> <span className="tenue peq-txt">{Math.round((c[k] / c.total) * 100)} %</span></span></span>
+                <span className="reparto-barra" aria-hidden="true"><i style={{ width: `${(c[k] / c.total) * 100}%` }} /></span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Tarjeta>
   );
 }

@@ -4,6 +4,7 @@ import { audit } from '../core/audit.js';
 import { zonaDe } from '../core/tenant.js';
 import { invalid } from '../lib/errors.js';
 import { rangoDia, utcToLocal } from '../lib/time.js';
+import { ETIQUETA_METODO, type MetodoPago } from './pagosVentas.js';
 
 /** CSV con separador «;» y BOM: se abre bien en Excel configurado en español. */
 export function csv(columnas: [string, string][], filas: Record<string, unknown>[]): string {
@@ -37,11 +38,17 @@ export async function exportOrders(tx: Tx, ctx: Ctx, desde?: string, hasta?: str
   if (hasta) { params.push(rangoDia(hasta, zona).hasta.toISOString()); where.push(`o.creado_en < $${params.length}`); }
   const filas = (await tx.query(
     `SELECT o.numero, o.creado_en, c.nombre AS cliente, o.estado, o.origen, o.subtotal, o.impuestos, o.descuento, o.total, o.estado_pago,
-            f.numero AS factura, f.estado AS estado_fiscal
+            f.numero AS factura, f.estado AS estado_fiscal, p.metodo AS metodo_pago, p.creado_en AS pagado_en, p.recibido, p.cambio, p.referencia AS referencia_pago
      FROM "order" o JOIN customer c ON c.id=o.customer_id
      LEFT JOIN LATERAL (SELECT numero, estado FROM fiscal_document fd WHERE fd.order_id=o.id AND fd.tipo='FACTURA' ORDER BY creado_en DESC LIMIT 1) f ON true
+     LEFT JOIN LATERAL (SELECT metodo, creado_en, recibido, cambio, referencia FROM order_payment op WHERE op.order_id=o.id AND op.estado='REGISTRADO' LIMIT 1) p ON true
      WHERE ${where.join(' AND ')} ORDER BY o.creado_en`, params)).rows
-    .map((r) => { const l = utcToLocal(new Date(r.creado_en), zona); return { ...r, creado_en: `${l.fecha} ${l.hora}` }; });
+    .map((r) => {
+      const l = utcToLocal(new Date(r.creado_en), zona);
+      const pl = r.pagado_en ? utcToLocal(new Date(r.pagado_en), zona) : null;
+      return { ...r, creado_en: `${l.fecha} ${l.hora}`, pagado_en: pl ? `${pl.fecha} ${pl.hora}` : '', metodo_pago: r.metodo_pago ? ETIQUETA_METODO[r.metodo_pago as MetodoPago] : '' };
+    });
   await audit(tx, ctx, { accion: 'ventas.exportar', resultado: 'EXITO', detalle: { filas: filas.length, desde, hasta } });
-  return csv([['numero', 'Venta'], ['creado_en', 'Fecha'], ['cliente', 'Cliente'], ['estado', 'Estado'], ['origen', 'Origen'], ['subtotal', 'Base'], ['impuestos', 'IVA'], ['descuento', 'Descuento'], ['total', 'Total'], ['estado_pago', 'Pago'], ['factura', 'Factura'], ['estado_fiscal', 'Estado fiscal']], filas);
+  return csv([['numero', 'Venta'], ['creado_en', 'Fecha'], ['cliente', 'Cliente'], ['estado', 'Estado'], ['origen', 'Origen'], ['subtotal', 'Base'], ['impuestos', 'IVA'], ['descuento', 'Descuento'], ['total', 'Total'], ['estado_pago', 'Pago'],
+    ['metodo_pago', 'Método de pago'], ['pagado_en', 'Pagado el'], ['recibido', 'Efectivo recibido'], ['cambio', 'Cambio'], ['referencia_pago', 'Referencia del pago'], ['factura', 'Factura'], ['estado_fiscal', 'Estado fiscal']], filas);
 }

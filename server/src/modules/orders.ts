@@ -9,6 +9,7 @@ import { isUuid, uuidv7 } from '../lib/util.js';
 import { aPesos, calcularLinea, sumarLineas } from '../lib/money.js';
 import { registerMovement } from './catalog.js';
 import { createCreditNote } from './fiscal.js';
+import { anularPagosDeVenta, metodosDePago, PagoInput, pagosDeVenta, registrarPago } from './pagosVentas.js';
 
 export const OrderInput = z.object({
   responsable_id: z.uuid().optional().nullable(),
@@ -19,6 +20,8 @@ export const OrderInput = z.object({
     descuento_pct: z.number().min(0).max(100, 'El descuento no puede superar el 100 %.').optional(),
   })).min(1, 'Agrega al menos un producto o servicio.').max(50),
   appointment_id: z.uuid().optional().nullable(),
+  /** Pago recibido en el mismo momento (mostrador). Sin él, la venta queda por cobrar. */
+  pago: PagoInput.optional().nullable(),
 });
 
 /**
@@ -74,14 +77,18 @@ export async function insertOrder(
 export async function createOrder(tx: Tx, ctx: Ctx, input: unknown) {
   requirePerm(ctx, 'order:create');
   requireWritable(ctx);
-  const r = await insertOrder(tx, ctx, OrderInput.parse(input), { origen: 'PANEL' });
-  await audit(tx, ctx, { accion: 'venta.registrar', recurso: 'order', recursoId: r.id, resultado: 'EXITO', detalle: { numero: r.numero, total: r.total } });
-  return r;
+  const d = OrderInput.parse(input);
+  // El permiso de registrar el pago se comprueba antes de crear nada: la venta y su pago son una sola operación.
+  if (d.pago) requirePerm(ctx, 'payment:register');
+  const r = await insertOrder(tx, ctx, d, { origen: 'PANEL' });
+  await audit(tx, ctx, { accion: 'venta.registrar', recurso: 'order', recursoId: r.id, resultado: 'EXITO', detalle: { numero: r.numero, total: r.total, pagada: !!d.pago } });
+  const pago = d.pago ? await registrarPago(tx, ctx, r.id, d.pago) : null;
+  return { ...r, pago };
 }
 
 const ESTADOS_FISCALES = ['PENDIENTE', 'ENVIADO', 'VALIDADO', 'RECHAZADO', 'ENTREGADO', 'SIN_FACTURA'];
 
-export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: string; q?: string; pagina?: number; por_pagina?: number; pago?: string } = {}) {
+export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: string; q?: string; pagina?: number; por_pagina?: number; pago?: string; metodo?: string } = {}) {
   requirePerm(ctx, 'order:read');
   const where = ['o.eliminado_en IS NULL'];
   const params: unknown[] = [];
@@ -93,6 +100,10 @@ export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: st
   }
   if (filtros.pago === 'PENDIENTE') where.push(`o.estado='CONFIRMADA' AND o.estado_pago <> 'PAGADA'`);
   if (filtros.pago === 'PAGADA') where.push(`o.estado_pago='PAGADA'`);
+  if (filtros.metodo && ['EFECTIVO', 'TRANSFERENCIA', 'DATAFONO', 'PASARELA'].includes(filtros.metodo)) {
+    params.push(filtros.metodo);
+    where.push(`EXISTS (SELECT 1 FROM order_payment p WHERE p.order_id=o.id AND p.estado='REGISTRADO' AND p.metodo=$${params.length})`);
+  }
   const q = (filtros.q ?? '').trim().slice(0, 80);
   if (q) {
     params.push(`%${q.replace(/^#/, '')}%`);
@@ -107,7 +118,8 @@ export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: st
   const rows = (await tx.query(
     `SELECT o.id, o.numero, o.estado, o.origen, o.total, o.descuento, o.estado_pago, o.creado_en, c.nombre AS cliente,
             f.estado AS estado_fiscal, f.numero AS documento, f.proveedor_fiscal,
-            (SELECT string_agg(descripcion, ', ') FROM order_item i WHERE i.order_id=o.id) AS detalle
+            (SELECT string_agg(descripcion, ', ') FROM order_item i WHERE i.order_id=o.id) AS detalle,
+            (SELECT p.metodo FROM order_payment p WHERE p.order_id=o.id AND p.estado='REGISTRADO' LIMIT 1) AS metodo_pago
      ${base} ORDER BY o.creado_en DESC LIMIT ${porPagina} OFFSET ${(pagina - 1) * porPagina}`,
     params,
   )).rows;
@@ -138,7 +150,7 @@ export async function getOrderDetail(tx: Tx, ctx: Ctx, id: string) {
     .map((l) => ({ ...l, estado: l.estado === 'ABIERTO' && l.expira_en && new Date(l.expira_en) < new Date() ? 'EXPIRADO' : l.estado }));
   return {
     ...o, subtotal: Number(o.subtotal), impuestos: Number(o.impuestos), total: Number(o.total), descuento: Number(o.descuento),
-    items, documentos, recibos, traza, enlaces,
+    items, documentos, recibos, traza, enlaces, pagos: await pagosDeVenta(tx, id), metodos_pago: await metodosDePago(tx),
   };
 }
 
@@ -161,11 +173,13 @@ export async function voidOrder(tx: Tx, ctx: Ctx, id: string, motivo: string) {
   }
   await tx.query(`UPDATE "order" SET estado='ANULADA', motivo_anulacion=$2 WHERE id=$1`, [id, motivo.trim().slice(0, 300)]);
   await tx.query(`UPDATE payment_link SET estado='EXPIRADO' WHERE order_id=$1 AND estado='ABIERTO'`, [id]);
+  // Los pagos registrados quedan anulados con el motivo de la venta: el historial se conserva.
+  const pagosAnulados = await anularPagosDeVenta(tx, ctx, id, motivo.trim());
   const items = (await tx.query(`SELECT i.product_id, i.cantidad, p.controla_stock FROM order_item i JOIN product p ON p.id=i.product_id WHERE i.order_id=$1`, [id])).rows;
   for (const i of items) {
     if (i.controla_stock) await registerMovement(tx, ctx, { product_id: i.product_id, tipo: 'ENTRADA', cantidad: Number(i.cantidad), motivo: `Anulación venta #${o.numero}`, order_id: id }, { skipPerm: true });
   }
   await publish(tx, ctx, 'venta_anulada', { order_id: id });
-  await audit(tx, ctx, { accion: 'venta.anular', recurso: 'order', recursoId: id, resultado: 'EXITO', detalle: { motivo, nota_credito: notaCredito } });
-  return { id, estado: 'ANULADA', nota_credito: notaCredito };
+  await audit(tx, ctx, { accion: 'venta.anular', recurso: 'order', recursoId: id, resultado: 'EXITO', detalle: { motivo, nota_credito: notaCredito, pagos_anulados: pagosAnulados.length } });
+  return { id, estado: 'ANULADA', nota_credito: notaCredito, pagos_anulados: pagosAnulados.length };
 }

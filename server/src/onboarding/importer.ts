@@ -183,6 +183,7 @@ export function applyMapping(h: Hoja, mapeo: Mapeo, sectorPorDefecto: 'PRODUCTO'
     const precioRaw = r[ci.precio] ?? '';
     const precio = parsePrecio(precioRaw);
     if (!nombre) problemas.push('Sin nombre');
+    else if (!/\p{L}/u.test(nombre)) problemas.push('El nombre no tiene letras: revisa que sea un producto o servicio real');
     if (precio === null) problemas.push(`Precio ilegible: «${precioRaw}»`);
     const tipoRaw = ci.tipo >= 0 ? normalizeText(r[ci.tipo] ?? '') : '';
     const tipo: 'PRODUCTO' | 'SERVICIO' = /prod|articulo|bien/.test(tipoRaw) ? 'PRODUCTO' : /serv/.test(tipoRaw) ? 'SERVICIO' : ci.stock >= 0 && r[ci.stock] ? 'PRODUCTO' : sectorPorDefecto;

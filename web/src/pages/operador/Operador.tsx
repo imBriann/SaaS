@@ -13,7 +13,7 @@ import { MARCA } from '../../brand';
  * de campos; la pantalla no oculta nada que haya recibido.
  */
 interface Yo { id: string; nombre: string; email: string; rol: 'ADMIN' | 'SOPORTE'; permisos: string[] }
-const useYo = () => useOutletContext<{ yo: Yo; puede: (p: string) => boolean }>();
+export const useYo = () => useOutletContext<{ yo: Yo; puede: (p: string) => boolean }>();
 
 const SECCIONES: { to: string; n: string; t: string }[] = [
   { to: '/operador', n: 'inicio', t: 'Resumen' },
@@ -22,6 +22,8 @@ const SECCIONES: { to: string; n: string; t: string }[] = [
   { to: '/operador/salud', n: 'salud', t: 'Salud del sistema' },
   { to: '/operador/incidentes', n: 'alerta', t: 'Incidentes' },
   { to: '/operador/integraciones', n: 'integraciones', t: 'Integraciones' },
+  { to: '/operador/conversaciones', n: 'conversaciones', t: 'Conversaciones' },
+  { to: '/operador/atencion', n: 'persona', t: 'Atención de las empresas' },
   { to: '/operador/soporte', n: 'soporte', t: 'Soporte' },
   { to: '/operador/reembolsos', n: 'suscripcion', t: 'Reembolsos' },
   { to: '/operador/auditoria', n: 'auditoria', t: 'Auditoría' },
@@ -66,7 +68,7 @@ export function OperadorLayout() {
           ))}
         </nav>
         <div className="cuenta">
-          <p className="op-privacidad"><Icon n="candado" className="" size={14} />Sin acceso a clientes, conversaciones, ventas ni facturas de las empresas.</p>
+          <p className="op-privacidad"><Icon n="candado" className="" size={14} />Sin acceso a clientes, ventas ni facturas de las empresas. Sus conversaciones, solo si la empresa las comparte con soporte.</p>
           <div className="bloque" style={{ padding: '8px 4px' }}>
             <div style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{yo.nombre}</div>
             <div className="tenue peq-txt">{yo.rol === 'ADMIN' ? 'Administración' : 'Soporte'} · {yo.email}</div>
@@ -247,6 +249,8 @@ function AccionConfirmada({ titulo, slug, efecto, peligro, children, listo = tru
 export function OpEmpresa() {
   const { id } = useParams();
   const { puede } = useYo();
+  const verificacion = useAccion();
+  const [resultadoWa, setResultadoWa] = useState<{ estado: string; mensaje: string } | null>(null);
   const { data, error, cargando, recargar } = useApi<any>(() => api.get(`/api/operador/empresas/${id}`), [id]);
   const planes = useApi<any>(() => api.get('/api/operador/suscripciones'), []);
   const [accion, setAccion] = useState<null | 'SUSPENDIDA' | 'ACTIVA' | 'CANCELADA' | 'plan'>(null);
@@ -299,7 +303,8 @@ export function OpEmpresa() {
             </li>))}
           </ul>
         </Tarjeta>
-        <Tarjeta titulo="Estado técnico">
+        <Tarjeta titulo="Estado técnico" acciones={puede('integraciones:verificar') && <button className="btn peq" disabled={verificacion.ocupado} onClick={async () => { const r = await verificacion.run(() => api.post(`/api/operador/empresas/${e.id}/whatsapp/verificar`)); if (r) { setResultadoWa(r as any); recargar(); } }}>{verificacion.ocupado ? 'Consultando a Meta…' : 'Verificar WhatsApp'}</button>}>
+          {resultadoWa && <p className={`aviso peq-txt ${resultadoWa.estado === 'CONECTADO' ? 'exito' : ''}`} role="status" style={{ marginBottom: 12 }}><Icon n={resultadoWa.estado === 'CONECTADO' ? 'ok' : 'info'} className="" size={14} /><span>{resultadoWa.mensaje}</span></p>}
           <dl className="datos-def">
             <dt>WhatsApp</dt><dd><Estado v={data.tecnico.whatsapp_estado} /></dd>
             <dt>Correos (30 días)</dt><dd>{Object.entries(data.tecnico.correos_30_dias).map(([k, v]) => `${ESTADO_CORREO[k] ?? k}: ${v}`).join(' · ') || 'Sin envíos'}</dd>
@@ -579,22 +584,27 @@ export function OpIntegraciones() {
 }
 
 // ------------------------------------------------------------------ soporte
-const ESTADO_TICKET: Record<string, string> = { ABIERTO: 'Abierto', EN_PROCESO: 'En proceso', ESPERANDO_CLIENTE: 'Esperando a la empresa', RESUELTO: 'Resuelto', CERRADO: 'Cerrado' };
+export const ESTADO_TICKET: Record<string, string> = { ABIERTO: 'Abierto', EN_PROCESO: 'En proceso', ESPERANDO_CLIENTE: 'Esperando a la empresa', RESUELTO: 'Resuelto', CERRADO: 'Cerrado' };
 
 export function OpSoporte() {
   const [estado, setEstado] = useState('');
-  const { data, error, cargando, recargar } = useApi<any>(() => api.get(`/api/operador/soporte?estado=${estado}`), [estado]);
+  const [canal, setCanal] = useState('');
+  const { data, error, cargando, recargar } = useApi<any>(() => api.get(`/api/operador/soporte?estado=${estado}&canal=${canal}`), [estado, canal]);
   const nav = useNavigate();
   return (
     <>
-      <Cabecera titulo="Soporte" sub="Solicitudes que las empresas enviaron. Es la única información de un negocio que se ve aquí, y la aportó la propia empresa." />
+      <Cabecera titulo="Soporte" sub="Solicitudes que llegan desde el panel de las empresas o por el WhatsApp de Omnegia. Solo se ve lo que la persona escribió en su solicitud." />
       <Tarjeta sinCuerpo>
-        <div className="filtros"><select className="input" value={estado} onChange={(e) => setEstado(e.target.value)} aria-label="Estado"><option value="">Todos</option>{Object.entries(ESTADO_TICKET).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+        <div className="filtros">
+          <select className="input" value={estado} onChange={(e) => setEstado(e.target.value)} aria-label="Estado"><option value="">Todos los estados</option>{Object.entries(ESTADO_TICKET).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+          <select className="input" value={canal} onChange={(e) => setCanal(e.target.value)} aria-label="Canal"><option value="">Todos los canales</option><option value="PANEL">Desde el panel</option><option value="WHATSAPP">Por WhatsApp</option></select>
+        </div>
         {error ? <div className="cuerpo"><ErrorCarga error={error} reintentar={recargar} /></div> : cargando && !data ? <div className="cuerpo"><Cargando /></div> : !data.tickets.length ? <div className="cuerpo"><Vacio titulo="Sin solicitudes" /></div> : (
           <div className="tabla-wrap"><table className="tabla tabla-movil"><thead><tr><th>Radicado</th><th>Empresa</th><th>Asunto</th><th>Categoría</th><th>Prioridad</th><th>Estado</th><th>Actividad</th></tr></thead>
             <tbody>{data.tickets.map((t: any) => (
               <tr key={t.id} className="enlace-fila" onClick={() => nav(`/operador/soporte/${t.id}`)}>
-                <td data-etiqueta="Radicado"><Link className="mono" to={`/operador/soporte/${t.id}`}>{t.numero}</Link></td><td data-etiqueta="Empresa">{t.empresa}</td><td data-etiqueta="Asunto">{t.asunto}</td>
+                <td data-etiqueta="Radicado"><span className="fila" style={{ gap: 6 }}><Link className="mono" to={`/operador/soporte/${t.id}`}>{t.numero}</Link>{t.canal === 'WHATSAPP' && <Estado v="WHATSAPP" />}</span></td>
+                <td data-etiqueta="Empresa">{t.empresa ? <>{t.empresa}{t.empresa_sin_verificar && <span className="tenue peq-txt"> · sin verificar</span>}</> : <span className="tenue">Sin empresa</span>}</td><td data-etiqueta="Asunto">{t.asunto}</td>
                 <td data-etiqueta="Categoría">{t.categoria_nombre}</td><td data-etiqueta="Prioridad"><Estado v={t.prioridad} /></td><td data-etiqueta="Estado"><Estado v={t.estado} texto={ESTADO_TICKET[t.estado]} /></td><td data-etiqueta="Actividad">{hace(t.actualizado_en)}</td>
               </tr>))}
             </tbody></table></div>
@@ -617,8 +627,9 @@ export function OpTicket() {
   const gestionar = puede('soporte:gestionar');
   return (
     <>
-      <Cabecera titulo={t.asunto} sub={<span className="fila" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mono">{t.numero}</span><span>·</span><Link to={`/operador/empresas/${t.empresa_id}`}>{t.empresa}</Link><span>·</span><span>{t.categoria_nombre}</span><Estado v={t.prioridad} /><Estado v={t.estado} texto={ESTADO_TICKET[t.estado]} /></span>}>
+      <Cabecera titulo={t.asunto} sub={<span className="fila" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mono">{t.numero}</span><span>·</span>{t.empresa_id ? <Link to={`/operador/empresas/${t.empresa_id}`}>{t.empresa}</Link> : <span className="tenue">Sin empresa</span>}{t.empresa_sin_verificar && <span className="tenue peq-txt">(relacionada por el teléfono, sin verificar)</span>}<span>·</span><span>{t.categoria_nombre}</span>{t.canal === 'WHATSAPP' && <Estado v="WHATSAPP" />}<Estado v={t.prioridad} /><Estado v={t.estado} texto={ESTADO_TICKET[t.estado]} /></span>}>
         <Link className="btn" to="/operador/soporte"><Icon n="atras" className="" size={16} />Todas</Link>
+        {t.canal === 'WHATSAPP' && t.conversacion_id && <Link className="btn primario" to={`/operador/conversaciones/${t.conversacion_id}`}><Icon n="conversaciones" className="" size={16} />Abrir la conversación</Link>}
         {gestionar && t.estado !== 'CERRADO' && <button className="btn" disabled={ocupado} onClick={async () => { await run(() => api.patch(`/api/operador/soporte/${t.id}`, { estado: 'CERRADO' }), 'Solicitud cerrada.'); recargar(); }}>Cerrar</button>}
       </Cabecera>
       <div className="grid g-main">
@@ -629,7 +640,8 @@ export function OpTicket() {
               <p className="msg-texto">{m.cuerpo}</p>
             </li>))}
           </ol>
-          {gestionar && t.estado !== 'CERRADO' && (
+          {t.canal === 'WHATSAPP' && t.estado !== 'CERRADO' && <p className="aviso peq-txt" style={{ marginTop: 16 }}><Icon n="conversaciones" className="" size={14} /><span>Llegó por WhatsApp: respóndela desde su conversación para que la persona la reciba en el mismo chat.</span></p>}
+          {gestionar && t.estado !== 'CERRADO' && t.canal !== 'WHATSAPP' && (
             <div className="col" style={{ gap: 10, marginTop: 16 }}>
               <textarea className="input" rows={4} maxLength={4000} value={texto} onChange={(e) => setTexto(e.target.value)} aria-label="Respuesta" placeholder="Respuesta para la empresa. Nunca pidas contraseñas, claves ni datos de sus clientes." />
               <div className="fila" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -642,7 +654,7 @@ export function OpTicket() {
           )}
         </Tarjeta>
         <Tarjeta titulo="Solicitante">
-          <dl className="datos-def"><dt>Nombre</dt><dd>{t.solicitante}</dd><dt>Correo</dt><dd>{t.solicitante_email}</dd><dt>Creada</dt><dd>{fechaHora(t.creado_en)}</dd></dl>
+          <dl className="datos-def"><dt>Nombre</dt><dd>{t.solicitante}</dd>{t.solicitante_email && <><dt>Correo</dt><dd>{t.solicitante_email}</dd></>}{t.solicitante_telefono && <><dt>WhatsApp</dt><dd className="mono">{t.solicitante_telefono}</dd></>}<dt>Creada</dt><dd>{fechaHora(t.creado_en)}</dd></dl>
           {gestionar && <Campo etiqueta="Prioridad"><select className="input" value={t.prioridad} onChange={async (e) => { await run(() => api.patch(`/api/operador/soporte/${t.id}`, { prioridad: e.target.value }), 'Prioridad actualizada.'); recargar(); }}>
             <option value="BAJA">Baja</option><option value="NORMAL">Normal</option><option value="ALTA">Alta</option><option value="URGENTE">Urgente</option></select></Campo>}
         </Tarjeta>

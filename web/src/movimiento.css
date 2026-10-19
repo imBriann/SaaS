@@ -1,0 +1,86 @@
+/*
+ * Movimiento del panel (pedido por el usuario el 2026-10-18): animaciones vistosas con propósito.
+ * Solo transform y opacity; todo se apaga con prefers-reduced-motion al final del archivo.
+ */
+:root { --ease-salto: cubic-bezier(.34, 1.56, .64, 1); --ease-suave: cubic-bezier(.22, 1, .36, 1); }
+
+/* ---------------------------------------------------------------- marca de éxito */
+.marca-exito { position: relative; display: inline-grid; place-items: center; width: var(--t); height: var(--t); }
+.marca-exito svg { position: relative; z-index: 1; overflow: visible; animation: me-entra 520ms var(--ease-salto) both; }
+.marca-exito .me-anillo { fill: var(--ok-tinte); fill-opacity: 0; stroke: var(--ok); stroke-width: 3.5; stroke-dasharray: 214; stroke-dashoffset: 214; transform: rotate(-90deg); transform-origin: 38px 38px;
+  animation: me-trazo 620ms var(--ease-suave) forwards, me-relleno 420ms 320ms ease-out forwards; }
+.marca-exito .me-visto { fill: none; stroke: var(--ok); stroke-width: 5.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 44; stroke-dashoffset: 44;
+  animation: me-trazo 360ms 460ms var(--ease-suave) forwards; }
+.marca-exito.neutro .me-anillo { fill: var(--acento-tinte); stroke: var(--acento); }
+.marca-exito.neutro .me-visto { stroke: var(--acento); }
+.marca-exito i { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--ok); opacity: 0;
+  transform: rotate(var(--a)) translateY(0) scale(.4); animation: me-chispa 760ms calc(520ms + var(--d)) var(--ease-suave) forwards; }
+.marca-exito i:nth-child(even) { background: var(--acento); width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; }
+.marca-exito.neutro i:nth-child(odd) { background: var(--acento); }
+@keyframes me-entra { from { transform: scale(.55); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes me-trazo { to { stroke-dashoffset: 0; } }
+@keyframes me-relleno { to { fill-opacity: 1; } }
+@keyframes me-chispa {
+  0% { opacity: 0; transform: rotate(var(--a)) translateY(-18px) scale(.4); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a)) translateY(calc(var(--t) * -.82)) scale(1); }
+}
+
+/* ---------------------------------------------------------------- cobro confirmado */
+.cobro-exito { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 12px 8px 4px; animation: sube-entra 420ms var(--ease-suave) both; }
+.cobro-exito h3 { margin: 6px 0 0; font-size: 19px; font-weight: 600; letter-spacing: -.01em; animation: sube-entra 420ms 180ms var(--ease-suave) both; }
+.cobro-exito .cobro-exito-dato { display: flex; flex-direction: column; align-items: center; gap: 2px; animation: sube-entra 420ms 300ms var(--ease-suave) both; }
+.cobro-exito-cambio { font-size: 44px; line-height: 1.05; font-weight: 650; letter-spacing: -.02em; color: var(--ok); font-variant-numeric: tabular-nums; }
+.cobro-exito-cambio-caja { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 4px; padding: 14px 26px 12px; border-radius: var(--r-lg); background: var(--ok-tinte); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 30%, transparent); animation: anillo-latido 1600ms 900ms ease-out 2; }
+.cobro-exito .acciones { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 12px; animation: sube-entra 420ms 420ms var(--ease-suave) both; }
+@keyframes anillo-latido { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 35%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
+
+/* ---------------------------------------------------------------- cobro en vivo */
+.cobro-metodo.on svg { animation: salto-icono 340ms var(--ease-salto); }
+.cobro-metodo:active { transform: scale(.97); }
+.cobro-cambio.con-cambio { animation: cambio-aparece 420ms var(--ease-salto); }
+.cobro-efectivo, .cobro > .campo, .cobro-nota { animation: sube-entra 260ms var(--ease-suave) both; }
+.campo .error[role='alert'] { animation: aparece 200ms ease-out both; }
+@keyframes salto-icono { 0% { transform: scale(.6) rotate(-12deg); } 60% { transform: scale(1.18) rotate(4deg); } 100% { transform: none; } }
+@keyframes cambio-aparece { 0% { transform: scale(.94); } 55% { transform: scale(1.04); } 100% { transform: none; } }
+
+/* ---------------------------------------------------------------- caja del día */
+.caja-total b, .caja-metodo b { font-variant-numeric: tabular-nums; }
+.caja-metodo { position: relative; overflow: hidden; }
+.caja-barra { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--acento); border-radius: 0 3px 3px 0; transform-origin: left center; animation: crece-x 900ms 200ms var(--ease-suave) both; }
+.caja-metodo[data-metodo='EFECTIVO'] .caja-barra { background: var(--ok); }
+.caja-cifras > * { animation: sube-entra 380ms calc(var(--i, 0) * 60ms) var(--ease-suave) both; }
+.reparto-barra i { transform-origin: left center; animation: crece-x 1000ms calc(250ms + var(--i, 0) * 90ms) var(--ease-suave) both; }
+@keyframes crece-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* ---------------------------------------------------------------- entradas */
+.entra-escalonado > * { animation: sube-entra 320ms calc(var(--i, 0) * 28ms) var(--ease-suave) both; }
+.hilo > .msg:nth-last-child(-n+5), .hilo > .evento-sistema:nth-last-child(-n+5), .hilo > .recibo:nth-last-child(-n+5) { animation: mensaje-entra 360ms var(--ease-suave) both; }
+.hilo > .msg.cliente:nth-last-child(-n+5) { animation-name: mensaje-entra-izq; }
+@keyframes sube-entra { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes aparece { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mensaje-entra { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes mensaje-entra-izq { from { opacity: 0; transform: translate(-10px, 6px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* Bloques plegables: se abren deslizando sin saltos de diseño. */
+.plegable { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 320ms var(--ease-suave); }
+.plegable.abierto { grid-template-rows: 1fr; }
+.plegable > div { overflow: hidden; min-height: 0; }
+
+/* ---------------------------------------------------------------- pendientes que esperan */
+.pulso { position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--atencion); flex: none; }
+.pulso::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: var(--atencion); animation: pulso 1800ms ease-out infinite; }
+.pulso.ia { background: var(--acento); }
+.pulso.ia::after { background: var(--acento); }
+@keyframes pulso { 0% { transform: scale(1); opacity: .55; } 80%, 100% { transform: scale(3); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .marca-exito svg, .marca-exito .me-anillo, .marca-exito .me-visto, .marca-exito i,
+  .cobro-exito, .cobro-exito h3, .cobro-exito .cobro-exito-dato, .cobro-exito .acciones, .cobro-exito-cambio-caja,
+  .cobro-metodo.on svg, .cobro-cambio.con-cambio, .cobro-efectivo, .cobro > .campo, .cobro-nota, .campo .error[role='alert'],
+  .caja-barra, .caja-cifras > *, .reparto-barra i, .entra-escalonado > *, .hilo > *, .pulso::after { animation: none !important; }
+  .marca-exito .me-anillo, .marca-exito .me-visto { stroke-dashoffset: 0; fill-opacity: 1; }
+  .marca-exito i { display: none; }
+  .plegable { transition: none; }
+  .cobro-metodo:active { transform: none; }
+}

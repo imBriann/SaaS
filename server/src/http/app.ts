@@ -32,6 +32,8 @@ const RESTRICCIONES: Record<string, string> = {
   tenant_whatsapp_phone_number_id_key: 'Ese número de WhatsApp ya está vinculado a otra empresa.',
   ux_invitation_pendiente: 'Ya hay una invitación pendiente para ese correo.',
   users_email_key: 'Ya existe una cuenta con ese correo.',
+  ux_order_payment_vigente: 'Esta venta ya tiene un pago registrado. Recarga para ver su estado.',
+  ux_order_payment_clave: 'Ese pago ya se registró.',
 };
 
 /** Rutas que reciben llamadas de terceros (sin cookie de sesión ni Origin del panel). */

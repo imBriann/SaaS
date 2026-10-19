@@ -134,6 +134,10 @@ const ESTADOS: Record<string, [Tono, string, string]> = {
   URGENTE: ['err', 'alerta', 'Urgente'], NORMAL: ['neutro', 'info', 'Normal'], SIN_SUSCRIPCION: ['neutro', 'info', 'Sin suscripción'],
   REBOTADO: ['err', 'x', 'Rebotó'], QUEJA: ['err', 'alerta', 'Marcado como spam'], SIN_CAMBIOS: ['neutro', 'info', 'Sin cambios'],
   ADMIN: ['info', 'candado', 'Administración'], SOPORTE: ['neutro', 'persona', 'Soporte'],
+  // pagos de ventas
+  REGISTRADO: ['ok', 'ok', 'Registrado'], ANULADO: ['neutro', 'x', 'Anulado'], EXCEDENTE: ['err', 'alerta', 'Pagado de más: devolver'],
+  // atención por WhatsApp
+  HUMANO: ['info', 'persona', 'Persona al frente'], AI: ['ia', 'ia', 'IA al frente'], WHATSAPP: ['neutro', 'conversaciones', 'WhatsApp'],
 };
 export function Estado({ v, texto }: { v: string | null | undefined; texto?: string }) {
   if (!v) return <span className="tenue">—</span>;
@@ -292,6 +296,7 @@ export const ACCION_IA: Record<string, string> = {
   registrar_venta: 'Registrar una venta', generar_enlace_pago: 'Generó un enlace de pago', estado_factura: 'Consultó facturas', escalar_a_humano: 'Pasó la conversación a una persona',
   resumen_ventas: 'Resumió las ventas', citas_del_dia: 'Consultó las citas del día', stock_bajo_minimo: 'Revisó productos bajo mínimo', buscar_cliente: 'Buscó un cliente',
   historial_cliente: 'Revisó el historial del cliente', consumo_del_plan: 'Consultó el consumo del plan', ayuda_plataforma: 'Explicó cómo usar el panel', emitir_nota_credito: 'Anular una factura (nota crédito)',
+  crear_item_catalogo: 'Crear un ítem del catálogo', editar_item_catalogo: 'Editar un ítem del catálogo',
 };
 export const accionIA = (h: string) => ACCION_IA[h] ?? 'Acción del asistente';
 const MOTIVOS: Record<string, string> = {

@@ -123,6 +123,22 @@ export async function reconcilePaymentLink(tx: Tx, ctx: Ctx, ev: EventoPago) {
   }
   const tardio = l.estado === 'EXPIRADO' || (l.expira_en && new Date(l.expira_en) < new Date());
   await tx.query(`UPDATE payment_link SET estado='PAGADO' WHERE id=$1`, [l.id]);
+  const o = (await tx.query(`SELECT estado, estado_pago FROM "order" WHERE id=$1 FOR UPDATE`, [l.order_id])).rows[0];
+  const referencia = ev.transaccionId ? `${ev.referencia} · ${ev.transaccionId}` : ev.referencia;
+  // La venta ya estaba pagada (p. ej. en efectivo) o anulada: el dinero llegó de más y hay que devolverlo.
+  // Se registra como excedente, visible en la venta y en el inicio; nunca como un segundo pago de la venta.
+  if (o?.estado_pago === 'PAGADA' || o?.estado === 'ANULADA') {
+    await tx.query(
+      `INSERT INTO order_payment (id, tenant_id, order_id, metodo, monto, referencia, payment_link_id, estado, origen, registrado_por_nombre)
+       VALUES ($1,$2,$3,'PASARELA',$4,$5,$6,'EXCEDENTE','PASARELA','Pasarela de pagos')`,
+      [uuidv7(), ctx.tenantId, l.order_id, Number(l.monto), referencia, l.id]);
+    await audit(tx, ctx, { accion: 'cobro.pago_excedente', recurso: 'order', recursoId: l.order_id, resultado: 'ERROR', detalle: { referencia: ev.referencia, transaccion: ev.transaccionId, motivo: o?.estado === 'ANULADA' ? 'venta_anulada' : 'venta_ya_pagada' } });
+    return { cambios: true, estado: 'EXCEDENTE' };
+  }
+  await tx.query(
+    `INSERT INTO order_payment (id, tenant_id, order_id, metodo, monto, referencia, payment_link_id, estado, origen, registrado_por_nombre)
+     VALUES ($1,$2,$3,'PASARELA',$4,$5,$6,'REGISTRADO','PASARELA','Pasarela de pagos')`,
+    [uuidv7(), ctx.tenantId, l.order_id, Number(l.monto), referencia, l.id]);
   await tx.query(`UPDATE "order" SET estado_pago='PAGADA' WHERE id=$1`, [l.order_id]);
   await audit(tx, ctx, { accion: 'cobro.conciliado', recurso: 'order', recursoId: l.order_id, resultado: 'EXITO', detalle: { referencia: ev.referencia, transaccion: ev.transaccionId, pago_tras_vencimiento: !!tardio } });
   return { cambios: true, estado: 'PAGADO' };

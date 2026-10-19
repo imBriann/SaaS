@@ -6,7 +6,7 @@ import { findOrCreateByPhone } from './customers.js';
 import { addMessage, getOrOpenConversation } from './conversations.js';
 import type { EstadoEntrante, MensajeEntrante } from '../adapters/channel.js';
 import { config } from '../config.js';
-import { atenderPlataforma } from './plataformaBot.js';
+import { recibirEstadoPlataforma, recibirPlataforma } from './plataformaConversaciones.js';
 
 /**
  * Entrada del canal. El tenant se resuelve por el identificador del número que
@@ -24,12 +24,14 @@ async function resolverTenant(db: Database, phoneNumberId: string) {
 
 export type MensajeCanal = Pick<MensajeEntrante, 'phoneNumberId' | 'from' | 'nombre' | 'id' | 'texto'> & Partial<MensajeEntrante>;
 
+const esNumeroPlataforma = (phoneNumberId: string) => !!config.whatsapp.plataformaPhoneNumberId && phoneNumberId === config.whatsapp.plataformaPhoneNumberId;
+
 export async function receiveChannelMessages(db: Database, msgs: MensajeCanal[], canal: 'WHATSAPP' | 'WEB', correlacion: string) {
   const resultados: { id: string; estado: string }[] = [];
   for (const m of msgs) {
     // El número de Omnegia no pertenece a ningún comercio: lo atiende el asistente de la plataforma.
-    if (config.whatsapp.plataformaPhoneNumberId && m.phoneNumberId === config.whatsapp.plataformaPhoneNumberId) {
-      resultados.push({ id: m.id, estado: await atenderPlataforma(db, m, correlacion) });
+    if (esNumeroPlataforma(m.phoneNumberId)) {
+      resultados.push({ id: m.id, estado: await recibirPlataforma(db, m, correlacion) });
       continue;
     }
     const tenant = await resolverTenant(db, m.phoneNumberId);
@@ -80,6 +82,7 @@ export async function applyDeliveryStatus(tx: Tx, s: Pick<EstadoEntrante, 'idExt
 export async function receiveDeliveryStatuses(db: Database, estados: EstadoEntrante[], correlacion: string) {
   const out: { id: string; estado: string }[] = [];
   for (const s of estados) {
+    if (esNumeroPlataforma(s.phoneNumberId)) { out.push({ id: s.idExterno, estado: await recibirEstadoPlataforma(db, s, correlacion) }); continue; }
     const tenant = await resolverTenant(db, s.phoneNumberId);
     if (!tenant) { out.push({ id: s.idExterno, estado: 'numero_desconocido' }); continue; }
     const ok = await db.withTenant(tenant.id, async (tx) => {

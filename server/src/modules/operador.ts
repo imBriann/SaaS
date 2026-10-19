@@ -6,7 +6,7 @@ import { CUBETAS_MS, inicioProceso, percentil } from '../core/metricas.js';
 import { encolarCorreo, mensajeFallo } from '../email/servicio.js';
 import * as plantillas from '../email/plantillas.js';
 import { AppError, invalid, notFound } from '../lib/errors.js';
-import { isUuid, periodo, uuidv7 } from '../lib/util.js';
+import { enmascararTelefono, isUuid, periodo, uuidv7 } from '../lib/util.js';
 import { config, integraciones } from '../config.js';
 import type { SessionUser } from './auth.js';
 import { ETIQUETA_CATEGORIA, revisarContenido } from './soporte.js';
@@ -24,10 +24,16 @@ import { ETIQUETA_CATEGORIA, revisarContenido } from './soporte.js';
  * Estas son restricciones de la aplicación. Quien administra la infraestructura (el
  * usuario propietario de la base de datos) conserva sus privilegios.
  */
-export type PermisoOperador = 'plataforma:ver' | 'empresas:gestionar' | 'planes:gestionar' | 'trabajos:reintentar' | 'incidentes:gestionar' | 'soporte:gestionar' | 'reembolsos:gestionar';
+export type PermisoOperador = 'plataforma:ver' | 'empresas:gestionar' | 'planes:gestionar' | 'trabajos:reintentar' | 'incidentes:gestionar' | 'soporte:gestionar' | 'reembolsos:gestionar'
+  | 'conversaciones:ver' | 'conversaciones:atender' | 'conversaciones:asignar' | 'atencion:ver_empresas' | 'atencion:leer_autorizadas' | 'integraciones:verificar';
+/**
+ * ADMIN administra la relación comercial y el equipo; SOPORTE atiende. Ninguno opera los negocios: no hay
+ * permisos para tocar catálogo, precios, ventas ni inventario de una empresa.
+ */
 export const PERMISOS_OPERADOR: Record<'ADMIN' | 'SOPORTE', PermisoOperador[]> = {
-  ADMIN: ['plataforma:ver', 'empresas:gestionar', 'planes:gestionar', 'trabajos:reintentar', 'incidentes:gestionar', 'soporte:gestionar', 'reembolsos:gestionar'],
-  SOPORTE: ['plataforma:ver', 'incidentes:gestionar', 'soporte:gestionar'],
+  ADMIN: ['plataforma:ver', 'empresas:gestionar', 'planes:gestionar', 'trabajos:reintentar', 'incidentes:gestionar', 'soporte:gestionar', 'reembolsos:gestionar',
+    'conversaciones:ver', 'conversaciones:atender', 'conversaciones:asignar', 'atencion:ver_empresas', 'atencion:leer_autorizadas', 'integraciones:verificar'],
+  SOPORTE: ['plataforma:ver', 'incidentes:gestionar', 'soporte:gestionar', 'conversaciones:ver', 'conversaciones:atender', 'atencion:ver_empresas', 'atencion:leer_autorizadas', 'integraciones:verificar'],
 };
 
 export interface Operador { user: SessionUser; correlacion: string }
@@ -353,6 +359,7 @@ export const REINTENTABLES: Record<string, string> = {
   verificar_whatsapp: 'Solo consulta el estado del número en Meta.',
   reintentar_aprovisionamiento: 'El alta es idempotente: no crea un segundo espacio ni cobra de nuevo.',
   aplicar_estado_entrega: 'Los estados de entrega solo avanzan: aplicarlo dos veces no cambia nada.',
+  aplicar_estado_plataforma: 'Los estados de entrega solo avanzan: aplicarlo dos veces no cambia nada.',
   mantenimiento: 'Limpieza idempotente.',
   cerrar_inactivas: 'Solo cierra conversaciones que ya cumplen la condición.',
   ciclo_suscripcion: 'Solo aplica transiciones vencidas; cada aviso tiene clave única por día.',
@@ -362,6 +369,8 @@ export const NO_REINTENTABLES: Record<string, string> = {
   emitir_documento: 'Podría emitir una factura duplicada ante la autoridad tributaria.',
   entregar_documento: 'Podría reenviar la factura al cliente.',
   procesar_mensaje: 'Podría responder dos veces al cliente.',
+  enviar_plataforma: 'WhatsApp no ofrece idempotencia: reintentar podría duplicar el mensaje.',
+  procesar_plataforma: 'Podría responder dos veces a quien escribió al número de Omnegia.',
   recordatorio: 'Podría enviar dos recordatorios de la misma cita.',
   resumir_caso: 'Consume IA y no es necesario para la operación.',
   revisar_sla: 'Se vuelve a programar solo cuando corresponde.',
@@ -522,12 +531,16 @@ export async function estadoIntegraciones(db: Database, op: Operador) {
 export async function listarTickets(db: Database, op: Operador, q: any) {
   exigir(op, 'plataforma:ver');
   const estado = String(q?.estado ?? '');
+  const canal = ['PANEL', 'WHATSAPP'].includes(String(q?.canal)) ? String(q.canal) : '';
   return db.withOperador(async (tx) => ({
+    // Las solicitudes de WhatsApp no tienen empresa verificada: se muestra la relacionada por el teléfono, si hay una.
     tickets: (await tx.query(
-      `SELECT k.id, k.numero, k.tenant_id, t.nombre AS empresa, k.categoria, k.prioridad, k.estado, k.asunto, k.solicitante_nombre, k.creado_en, k.actualizado_en
-       FROM soporte_ticket k JOIN tenant t ON t.id=k.tenant_id WHERE ($1='' OR k.estado=$1)
-       ORDER BY (k.estado IN ('RESUELTO','CERRADO')), CASE k.prioridad WHEN 'URGENTE' THEN 0 WHEN 'ALTA' THEN 1 WHEN 'NORMAL' THEN 2 ELSE 3 END, k.actualizado_en DESC LIMIT 200`, [estado])).rows
-      .map((k: any) => ({ id: k.id, numero: k.numero, empresa_id: k.tenant_id, empresa: k.empresa, categoria: k.categoria, categoria_nombre: ETIQUETA_CATEGORIA[k.categoria], prioridad: k.prioridad, estado: k.estado, asunto: k.asunto, solicitante: k.solicitante_nombre, creado_en: k.creado_en, actualizado_en: k.actualizado_en })),
+      `SELECT k.id, k.numero, coalesce(k.tenant_id, k.tenant_relacionado) AS empresa_id, t.nombre AS empresa, k.canal, k.conversacion_id, (k.tenant_id IS NULL) AS sin_verificar,
+              k.categoria, k.prioridad, k.estado, k.asunto, k.solicitante_nombre, k.creado_en, k.actualizado_en
+       FROM soporte_ticket k LEFT JOIN tenant t ON t.id=coalesce(k.tenant_id, k.tenant_relacionado) WHERE ($1='' OR k.estado=$1) AND ($2='' OR k.canal=$2)
+       ORDER BY (k.estado IN ('RESUELTO','CERRADO')), CASE k.prioridad WHEN 'URGENTE' THEN 0 WHEN 'ALTA' THEN 1 WHEN 'NORMAL' THEN 2 ELSE 3 END, k.actualizado_en DESC LIMIT 200`, [estado, canal])).rows
+      .map((k: any) => ({ id: k.id, numero: k.numero, empresa_id: k.empresa_id, empresa: k.empresa, empresa_sin_verificar: k.sin_verificar && !!k.empresa, canal: k.canal, conversacion_id: k.conversacion_id,
+        categoria: k.categoria, categoria_nombre: ETIQUETA_CATEGORIA[k.categoria], prioridad: k.prioridad, estado: k.estado, asunto: k.asunto, solicitante: k.solicitante_nombre, creado_en: k.creado_en, actualizado_en: k.actualizado_en })),
   }));
 }
 
@@ -536,12 +549,15 @@ export async function verTicket(db: Database, op: Operador, id: string) {
   if (!isUuid(id)) throw notFound();
   return db.withOperador(async (tx) => {
     const k = (await tx.query(
-      `SELECT k.id, k.numero, k.tenant_id, t.nombre AS empresa, k.categoria, k.prioridad, k.estado, k.asunto, k.solicitante_nombre, k.solicitante_email, k.creado_en, k.actualizado_en
-       FROM soporte_ticket k JOIN tenant t ON t.id=k.tenant_id WHERE k.id=$1`, [id])).rows[0];
+      `SELECT k.id, k.numero, coalesce(k.tenant_id, k.tenant_relacionado) AS empresa_id, (k.tenant_id IS NULL) AS sin_verificar, t.nombre AS empresa, k.canal, k.conversacion_id, k.solicitante_telefono,
+              k.categoria, k.prioridad, k.estado, k.asunto, k.solicitante_nombre, k.solicitante_email, k.creado_en, k.actualizado_en
+       FROM soporte_ticket k LEFT JOIN tenant t ON t.id=coalesce(k.tenant_id, k.tenant_relacionado) WHERE k.id=$1`, [id])).rows[0];
     if (!k) throw notFound();
     const mensajes = (await tx.query(`SELECT id, autor_tipo, autor_nombre, cuerpo, creado_en FROM soporte_mensaje WHERE ticket_id=$1 ORDER BY creado_en`, [id])).rows;
     return {
-      ticket: { id: k.id, numero: k.numero, empresa_id: k.tenant_id, empresa: k.empresa, categoria: k.categoria, categoria_nombre: ETIQUETA_CATEGORIA[k.categoria], prioridad: k.prioridad, estado: k.estado, asunto: k.asunto, solicitante: k.solicitante_nombre, solicitante_email: k.solicitante_email, creado_en: k.creado_en, actualizado_en: k.actualizado_en },
+      ticket: { id: k.id, numero: k.numero, empresa_id: k.empresa_id, empresa: k.empresa, empresa_sin_verificar: k.sin_verificar && !!k.empresa, canal: k.canal, conversacion_id: k.conversacion_id,
+        solicitante_telefono: k.solicitante_telefono ? enmascararTelefono(k.solicitante_telefono) : null,
+        categoria: k.categoria, categoria_nombre: ETIQUETA_CATEGORIA[k.categoria], prioridad: k.prioridad, estado: k.estado, asunto: k.asunto, solicitante: k.solicitante_nombre, solicitante_email: k.solicitante_email, creado_en: k.creado_en, actualizado_en: k.actualizado_en },
       mensajes: mensajes.map((m: any) => ({ id: m.id, autor_tipo: m.autor_tipo, autor: m.autor_nombre, cuerpo: m.cuerpo, fecha: m.creado_en })),
     };
   });
@@ -553,8 +569,9 @@ export async function responderTicket(db: Database, op: Operador, id: string, bo
   const d = z.object({ cuerpo: z.string().trim().min(2, 'Escribe la respuesta.').max(4000), estado: z.enum(['EN_PROCESO', 'ESPERANDO_CLIENTE', 'RESUELTO']).optional() }).parse(body);
   revisarContenido(d.cuerpo);
   const k = await db.withOperador(async (tx) => {
-    const k = (await tx.query(`SELECT id, numero, tenant_id, estado, asunto, solicitante_nombre, solicitante_email FROM soporte_ticket WHERE id=$1 FOR UPDATE`, [id])).rows[0];
+    const k = (await tx.query(`SELECT id, numero, tenant_id, estado, asunto, solicitante_nombre, solicitante_email, canal FROM soporte_ticket WHERE id=$1 FOR UPDATE`, [id])).rows[0];
     if (!k) throw notFound();
+    if (k.canal === 'WHATSAPP') throw new AppError('CONFLICT', 'Esta solicitud llegó por WhatsApp: respóndela desde su conversación, así la persona la recibe en el mismo chat.');
     if (k.estado === 'CERRADO') throw new AppError('CONFLICT', 'El ticket está cerrado.');
     await tx.query(`INSERT INTO soporte_mensaje (id, tenant_id, ticket_id, autor_tipo, autor_nombre, cuerpo) VALUES ($1,$2,$3,'OPERADOR',$4,$5)`, [uuidv7(), k.tenant_id, id, 'Soporte de la plataforma', d.cuerpo]);
     await tx.query(`UPDATE soporte_ticket SET estado=$2, actualizado_en=now() WHERE id=$1`, [id, d.estado ?? 'ESPERANDO_CLIENTE']);

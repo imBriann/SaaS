@@ -1,16 +1,18 @@
 import { SECTOR_CATALOG } from '../onboarding/sectors.js';
 import { z } from 'zod';
 import type { Database, Tx } from '../db/index.js';
-import type { Ctx } from '../core/context.js';
+import { systemCtx, type Ctx } from '../core/context.js';
 import { audit } from '../core/audit.js';
+import { analizar as analizarMensaje } from '../modules/plataformaBot.js';
 import { quotaStatus, registrarIA } from '../core/usage.js';
 import { registrarIncidente } from '../core/incidentes.js';
 import { clasificarError, depurar } from '../lib/depurar.js';
 import { addMessage, escalate } from '../modules/conversations.js';
-import { guardarIntercambio, guardarResumen, LOTE_RESUMEN, VENTANA, hiloPropio, memoriaDelHilo, pendientesDeResumir, tituloDe, type Recibo } from '../modules/asistente.js';
+import { guardarIntercambio, guardarMensajeAsistente, guardarResumen, LOTE_RESUMEN, VENTANA, hiloPropio, memoriaDelHilo, pendientesDeResumir, tituloDe, type Recibo } from '../modules/asistente.js';
+import { AppError, invalid, notFound } from '../lib/errors.js';
 import { fichaDelNegocio } from './contexto.js';
 import { recordConsent } from '../modules/customers.js';
-import { normalizeText, uuidv7 } from '../lib/util.js';
+import { isUuid, normalizeText, uuidv7 } from '../lib/util.js';
 import { todayLocal, formatFechaLarga } from '../lib/time.js';
 import { zonaDe } from '../core/tenant.js';
 import { evaluateAndExecute, visibleTools, type AgentProfile, type GatewayResult } from './gateway.js';
@@ -28,8 +30,22 @@ import type { ChatTurn, ToolCallOutcome } from './llm/types.js';
  * transacción y cada propuesta de herramienta abre la suya a través del Gateway.
  */
 
-export const AFIRMATIVO = /^(si|sí|sii+|claro|dale|de una|confirmo|confirmado|ok|okay|listo|hagale|hágale|correcto|perfecto|va|vale|por favor|si por favor|sí por favor|si señor|si senor|acepto)\b/;
-export const NEGATIVO = /^(no|nop|cancela|cancelar|mejor no|no gracias|negativo|ya no)\b/;
+export const AFIRMATIVO = /^(si|sí|sii+|claro|dale|de una|confirmo|confirmado|ok|okay|listo|hagale|hágale|correcto|perfecto|va|vale|por favor|si por favor|sí por favor|si señor|si senor|acepto|autorizo|si autorizo|sí autorizo)\b/;
+export const NEGATIVO = /^(no|nop|cancela|cancelar|mejor no|no gracias|negativo|ya no|no autorizo|no acepto)\b/;
+const PIDE_PERSONA = /\b(asesor|asesora|humano|una persona|persona real|hablar con alguien|agente humano)\b/;
+/** Sin primera respuesta humana, el cliente que sigue escribiendo recibe como mucho un aviso cada 4 horas. */
+export const AVISO_ESPERA_MS = 4 * 3600_000;
+
+async function avisoDeEspera(tx: Tx, tenantId: string, v: any, correlacion: string) {
+  if (v.estado === 'CERRADA') return;
+  const k = (await tx.query(`SELECT radicado, primera_respuesta_en, creado_en FROM support_case WHERE conversation_id=$1 AND estado <> 'CERRADO' ORDER BY creado_en DESC LIMIT 1`, [v.id])).rows[0];
+  if (!k || k.primera_respuesta_en) return;
+  const ultimo = (await tx.query(`SELECT max(creado_en) AS t FROM message WHERE conversation_id=$1 AND (metadatos->>'aviso_espera')='true'`, [v.id])).rows[0]?.t;
+  const desde = Math.max(new Date(k.creado_en).getTime(), ultimo ? new Date(ultimo).getTime() : 0);
+  if (Date.now() - desde < AVISO_ESPERA_MS) return;
+  const ctx: Ctx = { ...systemCtx(tenantId, correlacion, 'Avisos automáticos'), origen: v.canal === 'WHATSAPP' ? 'WHATSAPP' : 'WEB' };
+  await addMessage(tx, ctx, { conversation_id: v.id, remitente: 'SYSTEM', contenido: `Tu caso *${k.radicado}* sigue con el equipo: ya tienen tu mensaje y te responderán por este mismo chat.`, metadatos: { aviso_espera: true } });
+}
 
 const AVISO_PRIVACIDAD = (negocio: string) =>
   `Hola 👋 Antes de continuar: ${negocio} tratará tus datos (nombre, teléfono y esta conversación) para atender tu solicitud, ` +
@@ -53,13 +69,15 @@ function agentCtx(tenantId: string, agent: AgentProfile, origen: Ctx['origen'], 
   return { tenantId, actor: { tipo: 'AGENTE', id: agent.id, nombre: nombres[agent.configuracion] }, roleKey: agent.roleKey, permisos: agent.permisos, origen, correlacion };
 }
 
-export function outcomeFor(r: GatewayResult): ToolCallOutcome {
+export function outcomeFor(r: GatewayResult, canal: 'whatsapp' | 'panel' = 'whatsapp'): ToolCallOutcome {
   switch (r.decision) {
     case 'PERMITIDA':
     case 'CONFIRMADA':
       return { content: { ok: true, ...(r.resultado ?? {}) }, stop: r.herramienta === 'escalar_a_humano' };
     case 'PENDIENTE_CONFIRMACION':
-      return { content: { estado: 'requiere_confirmacion', resumen: r.resumen, instruccion: 'Muestra el resumen al cliente y pídele que responda SÍ para confirmar. La acción NO se ha realizado todavía.' } };
+      return { content: { estado: 'requiere_confirmacion', resumen: r.resumen, instruccion: canal === 'panel'
+        ? 'La acción NO se ha realizado. Explica en una frase lo que se hará y pide a la persona que la confirme con el botón «Confirmar» que aparece debajo de tu respuesta (o «Cancelar»). No digas que ya quedó hecha.'
+        : 'Muestra el resumen al cliente y pídele que responda SÍ para confirmar. La acción NO se ha realizado todavía.' } };
     case 'DENEGADA':
       return { content: { error: r.motivo === 'recurso_no_encontrado' ? 'no_encontrado' : 'accion_no_disponible' }, isError: true };
     default:
@@ -106,8 +124,14 @@ function systemPrompt(agent: AgentProfile & { prompt_base?: string }, negocio: {
     '- Cuando una herramienta responda "requiere_confirmacion", muestra el resumen y pide que responda SÍ. No digas que la acción está hecha hasta que se confirme.',
     '- Nunca inventes precios, horarios, existencias ni estados de factura: salen de las herramientas.',
     '- Si una herramienta responde "no_encontrado", di que no encontraste eso, sin especular.',
-    `- Hoy es ${formatFechaLarga(hoy)} (${hoy}), zona horaria ${negocio.zona ?? 'America/Bogota'}. Responde en español, breve y cordial, sin tablas.`,
-    '- No puedes ver imágenes, audios ni documentos: si el cliente envía uno, pídele que lo cuente por escrito.',
+    '- No digas que algo quedó hecho, guardado o enviado si una herramienta no lo confirmó.',
+    '- Si en esta conversación ya hay mensajes tuyos, no vuelvas a saludar ni a presentarte: ve directo al punto.',
+    '- Si la persona insiste, repite su pregunta o dice que no la estás ayudando, reconoce lo que ya se intentó y cambia de enfoque; si no lo puedes resolver con tus herramientas, dilo con honestidad' + (agent.configuracion === 'atencion' ? ' y usa escalar_a_humano.' : ' y sugiere escribir a Soporte desde el panel.'),
+    `- Hoy es ${formatFechaLarga(hoy)} (${hoy}), zona horaria ${negocio.zona ?? 'America/Bogota'}. Responde en español, breve y cordial.`,
+    agent.configuracion === 'atencion'
+      ? '- Escribes por WhatsApp: párrafos cortos, *negrita* (un asterisco) solo para datos clave, sin títulos, tablas ni bloques de código.'
+      : '- Puedes usar Markdown: listas, **negrita**, tablas sencillas y bloques de código con su lenguaje (```html). Si te piden código o un ejemplo, entrégalo como bloque de código y aclara que es un ejemplo para copiar: no puedes instalar ni cambiar nada en la plataforma por tu cuenta.',
+    '- No puedes ver imágenes, audios ni documentos: si te envían uno, pide que lo cuenten por escrito.',
     extra,
   ].filter(Boolean).join('\n');
 }
@@ -132,7 +156,11 @@ export async function handleCustomerMessage(db: Database, tenantId: string, conv
     const t = (await tx.query(`SELECT nombre, sector, registro_datos->'actividad' AS actividad FROM tenant WHERE id=$1`, [tenantId])).rows[0];
     const sub = (await tx.query(`SELECT estado FROM subscription WHERE tenant_id=$1`, [tenantId])).rows[0];
     if (!sub || ['SUSPENDIDA', 'CANCELADA'].includes(sub.estado)) return { stop: 'suspendido' as const };
-    if (v.control === 'HUMANO') return { stop: 'humano_al_frente' as const };
+    if (v.control === 'HUMANO') {
+      // Una persona atiende: la IA no contesta. Solo un aviso de espera si nadie ha respondido en horas.
+      await avisoDeEspera(tx, tenantId, v, correlacion);
+      return { stop: 'humano_al_frente' as const };
+    }
     const agent = await loadAgent(tx, 'atencion');
     if (!agent) return { stop: 'sin_agente' as const };
     const ctx = agentCtx(tenantId, agent, v.canal === 'WHATSAPP' ? 'WHATSAPP' : 'WEB', correlacion);
@@ -161,16 +189,37 @@ export async function handleCustomerMessage(db: Database, tenantId: string, conv
     const n = normalizeText(ultimo).replace(/[¡!¿?.,]/g, '').trim();
     const zona = await zonaDe(tx);
 
-    // 1. Consentimiento en el primer contacto (PRO-SW-001 §22.1).
+    // 1. Consentimiento en el primer contacto (PRO-SW-001 §22.1). El aviso completo sale una vez; después,
+    //    un recordatorio breve, y si la persona sigue escribiendo sin autorizar, la atiende una persona del
+    //    equipo: nunca se repite el mismo aviso en cada mensaje.
     if (!v.consentimiento_en) {
-      const pidioAntes = mensajes.some((m: any) => m.remitente === 'SYSTEM' && m.metadatos?.aviso_privacidad);
-      if (pidioAntes && AFIRMATIVO.test(n)) {
+      const avisos = mensajes.filter((m: any) => m.remitente === 'SYSTEM' && m.metadatos?.aviso_privacidad).length;
+      const negado = mensajes.some((m: any) => m.metadatos?.consentimiento_negado);
+      if (avisos && AFIRMATIVO.test(n)) {
         await recordConsent(tx, ctx, v.customer_id, v.canal);
         await addMessage(tx, ctx, { conversation_id: v.id, remitente: 'SYSTEM', contenido: `¡Gracias, ${v.cliente.split(' ')[0]}! Ya puedo ayudarte. ¿Qué necesitas? Puedo darte precios, agendar citas o ayudarte con una compra.` });
         return { stop: 'consentimiento' as const };
       }
-      await addMessage(tx, ctx, { conversation_id: v.id, remitente: 'SYSTEM', contenido: AVISO_PRIVACIDAD(t.nombre), metadatos: { aviso_privacidad: true } });
-      return { stop: 'consentimiento' as const };
+      const aPersona = async (motivo: string, prioridad: 'BAJA' | 'MEDIA') => {
+        const r = await escalate(tx, ctx, v.id, motivo, prioridad);
+        await audit(tx, ctx, { accion: 'conversacion.sin_consentimiento', recurso: 'conversation', recursoId: v.id, resultado: 'EXITO', detalle: { radicado: r.radicado, motivo } });
+        await addMessage(tx, ctx, { conversation_id: v.id, remitente: 'SYSTEM', contenido: `Una persona del equipo de ${t.nombre} te atenderá por este mismo chat. Tu radicado es *${r.radicado}*.`, metadatos: { escalado_sin_consentimiento: true } });
+        return { stop: 'escalado' as const };
+      };
+      if (avisos && PIDE_PERSONA.test(n)) return aPersona('El cliente prefirió hablar con una persona antes de autorizar el tratamiento de datos por el asistente.', 'MEDIA');
+      if (avisos && NEGATIVO.test(n) && !negado) {
+        await addMessage(tx, ctx, { conversation_id: v.id, remitente: 'SYSTEM', contenido: `Entendido: sin tu autorización no puedo atenderte con el asistente automático. Si cambias de opinión, responde *SÍ*; si prefieres que te atienda una persona del equipo, escribe *ASESOR*.`, metadatos: { consentimiento_negado: true } });
+        return { stop: 'consentimiento' as const };
+      }
+      if (!avisos) {
+        await addMessage(tx, ctx, { conversation_id: v.id, remitente: 'SYSTEM', contenido: AVISO_PRIVACIDAD(t.nombre), metadatos: { aviso_privacidad: true } });
+        return { stop: 'consentimiento' as const };
+      }
+      if (avisos === 1 && !negado) {
+        await addMessage(tx, ctx, { conversation_id: v.id, remitente: 'SYSTEM', contenido: 'Para continuar necesito tu autorización para tratar tus datos. Responde *SÍ* para seguir, o escribe *ASESOR* si prefieres hablar con una persona del equipo.', metadatos: { aviso_privacidad: true, recordatorio: true } });
+        return { stop: 'consentimiento' as const };
+      }
+      return aPersona('El cliente sigue escribiendo sin autorizar el tratamiento de datos por el asistente: requiere una persona.', 'BAJA');
     }
 
     // 1b. Archivos y tipos no admitidos: respuesta explícita, sin pasar por el modelo.
@@ -237,15 +286,24 @@ export async function handleCustomerMessage(db: Database, tenantId: string, conv
     )).rows[0]?.esc;
     const palabra = (plantilla?.palabras_clave ?? []).find((p: string) => n.includes(normalizeText(p)));
     const cuota = await quotaStatus(tx, tenantId, 'tokens_ia');
-    if (palabra || cuota.agotada) {
-      const motivo = palabra ? `El cliente mencionó «${palabra}»` : 'Cuota de IA del plan agotada (política: limitar)';
-      const prioridad = palabra && /reclamo|queja|reembolso|demanda|estafa/.test(normalizeText(palabra)) ? 'ALTA' : (plantilla?.prioridad_por_defecto ?? 'MEDIA');
+    // 3b. Insistencia: el cliente dice que no le ayudan después de una respuesta de la IA, o repite lo mismo
+    //     por tercera vez. Se deriva en lugar de seguir contestando lo mismo.
+    const anteriores = mensajes.filter((m: any) => m.remitente === 'CUSTOMER' && m.id !== ultimoMsg?.id && m.tipo === 'TEXTO').slice(-4)
+      .map((m: any) => normalizeText(m.contenido).replace(/[¡!¿?.,]/g, '').trim());
+    const repetido = n.length >= 8 && anteriores.filter((x: string) => x === n).length >= 2;
+    const molestia = analizarMensaje(ultimo).frustracion && mensajes.some((m: any) => m.remitente === 'AI');
+    if (palabra || cuota.agotada || repetido || molestia) {
+      const motivo = palabra ? `El cliente mencionó «${palabra}»` : cuota.agotada ? 'Cuota de IA del plan agotada (política: limitar)'
+        : repetido ? 'El cliente repitió la misma solicitud tres veces sin resolverse' : 'El cliente expresó que la IA no lo está ayudando';
+      const prioridad = (palabra && /reclamo|queja|reembolso|demanda|estafa/.test(normalizeText(palabra))) || repetido || molestia ? 'ALTA' : (plantilla?.prioridad_por_defecto ?? 'MEDIA');
       const r = await evaluateAndExecute({ tx, ctx, conversationId, customerId: v.customer_id }, agent, { nombre: 'escalar_a_humano', argumentos: { motivo, prioridad } });
-      const rad = (r.resultado as any)?.radicado;
+      // La derivación por palabra clave, insistencia o cuota es una regla del negocio, no una decisión del
+      // modelo: si la herramienta está apagada o ya se usó, se deriva igual (y queda en la auditoría).
+      const rad = (r.resultado as any)?.radicado ?? (await escalate(tx, ctx, v.id, motivo, prioridad as any)).radicado;
       await addMessage(tx, ctx, {
         conversation_id: v.id, remitente: 'AI',
-        contenido: rad ? `Te comunico con una persona del equipo para ayudarte mejor. Tu radicado es *${rad}*. Te responderán por este mismo chat.` : 'Te comunico con una persona del equipo.',
-        metadatos: { ejecuciones: [r.executionId] },
+        contenido: `${molestia ? 'Entiendo tu molestia y lamento no haberte resuelto. ' : ''}Te comunico con una persona del equipo para ayudarte mejor. Tu radicado es *${rad}*. Te responderán por este mismo chat y no tendrás que repetir lo que ya contaste.`,
+        metadatos: { ejecuciones: [r.executionId], motivo_derivacion: repetido ? 'repeticion' : molestia ? 'molestia' : palabra ? 'palabra_clave' : 'cuota' },
       });
       return { stop: 'escalado' as const };
     }
@@ -354,7 +412,13 @@ async function resumirHilo(db: Database, ctx: Ctx, hiloId: string) {
  * (resumen + últimos mensajes + ficha del negocio) en lugar de confiar en lo que reenvíe el navegador,
  * así recargar la página o cambiar de pantalla no reinicia la conversación.
  */
-export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string, hiloId: string | null = null) {
+/** Avance real de una respuesta (lo que de verdad está pasando, no una animación por tiempo). */
+export type EventoAsistente =
+  | { tipo: 'estado'; fase: 'pensando' | 'redactando' }
+  | { tipo: 'herramienta'; herramienta: string; fase: 'inicio' | 'fin'; decision?: string };
+
+export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string, hiloId: string | null = null, opts: { onEvento?: (e: EventoAsistente) => void } = {}) {
+  const avisar = (e: EventoAsistente) => { try { opts.onEvento?.(e); } catch { /* un oyente caído no detiene la respuesta */ } };
   const prep = await db.withTenant(userCtx.tenantId, async (tx) => {
     const agent = await loadAgent(tx, 'asistente');
     if (!agent) return null;
@@ -381,6 +445,7 @@ export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string,
   ].filter(Boolean).join('\n');
   // Tope por si el resumen no ha podido hacerse: nunca se envía más que la ventana más un lote.
   const history: ChatTurn[] = [...prep.memoria.mensajes.slice(-(VENTANA + LOTE_RESUMEN)).map((m) => ({ role: m.rol, text: m.contenido.slice(0, 2000) })), { role: 'user', text: pregunta }];
+  avisar({ tipo: 'estado', fase: 'pensando' });
   const out = await llm().runLoop(
     {
       configuracion: 'asistente',
@@ -390,20 +455,92 @@ export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string,
       negocio: { nombre: prep.t.nombre },
     },
     async (name, args) => {
-      const r = await db.withTenant(userCtx.tenantId, (tx) => evaluateAndExecute({ tx, ctx, conversationId: null, customerId: null }, prep.agent, { nombre: name, argumentos: args }));
+      avisar({ tipo: 'herramienta', herramienta: name, fase: 'inicio' });
+      const r = await db.withTenant(userCtx.tenantId, (tx) => evaluateAndExecute(
+        { tx, ctx, conversationId: null, customerId: null, solicitante: userCtx.actor.id, hiloId: prep.hilo?.id ?? null }, prep.agent, { nombre: name, argumentos: args }));
       ejecuciones.push(r);
-      return outcomeFor(r);
+      avisar({ tipo: 'herramienta', herramienta: name, fase: 'fin', decision: r.decision });
+      return outcomeFor(r, 'panel');
     },
   );
-  const recibos: Recibo[] = ejecuciones.map((e) => ({ id: e.executionId, herramienta: e.herramienta, decision: e.decision, motivo: e.motivo, riesgo: e.riesgo }));
+  avisar({ tipo: 'estado', fase: 'redactando' });
+  const recibos: Recibo[] = ejecuciones.map((e) => ({
+    id: e.executionId, herramienta: e.herramienta, decision: e.decision, motivo: e.motivo, riesgo: e.riesgo,
+    ...(e.pendingActionId ? { pendiente_id: e.pendingActionId, resumen: e.resumen ?? null } : {}),
+  }));
   const texto = out.text?.trim() || 'No logré armar una respuesta. ¿Me lo preguntas de otra forma?';
   const id = await db.withTenant(userCtx.tenantId, async (tx) => {
     await registrarIA(tx, userCtx.tenantId, llm().nombre, out);
-    return guardarIntercambio(tx, userCtx, prep.hilo?.id ?? null, pregunta, texto, recibos);
+    const hilo = await guardarIntercambio(tx, userCtx, prep.hilo?.id ?? null, pregunta, texto, recibos);
+    // Una conversación nueva aún no tenía id cuando se propusieron las acciones: se ligan ahora.
+    const pendientes = ejecuciones.map((e) => e.pendingActionId).filter(Boolean);
+    if (pendientes.length) await tx.query(`UPDATE pending_action SET hilo_id=$1 WHERE id = ANY($2::uuid[]) AND hilo_id IS NULL`, [hilo, pendientes]);
+    return hilo;
   });
   // Memoria a largo plazo: solo cuando se acumulan mensajes fuera de la ventana. Si falla, la respuesta ya se entregó.
   await resumirHilo(db, userCtx, id).catch((e) => console.error(`[asistente ${userCtx.correlacion}] resumen del hilo:`, depurar((e as Error).message, 200)));
   return { texto, ejecuciones: recibos, hilo_id: id, titulo: prep.hilo?.titulo ?? tituloDe(pregunta) };
+}
+
+/** Texto con que el asistente informa el resultado de una acción confirmada. */
+function textoResultado(herramienta: string, r: GatewayResult): string {
+  const x = (r.resultado ?? {}) as Record<string, any>;
+  if (r.decision !== 'CONFIRMADA') {
+    if (r.motivo === 'recurso_no_encontrado') return 'No hice el cambio: ese ítem ya no existe en el catálogo.';
+    if (r.decision === 'DENEGADA') return `No hice el cambio: ${motivoLegible(r.motivo)}`;
+    return `No pude completar el cambio${r.motivo && r.motivo !== 'error_interno' ? `: ${r.motivo}` : '.'} Nada se modificó.`;
+  }
+  if (herramienta === 'crear_item_catalogo') return `Listo: creé ${x.tipo === 'SERVICIO' ? 'el servicio' : 'el producto'} «${x.nombre}» por ${x.precio_texto}${x.duracion_min ? ` (${x.duracion_min} min)` : ''}. Ya aparece en Catálogo y el asistente de WhatsApp puede ofrecerlo.`;
+  if (herramienta === 'editar_item_catalogo') return `Listo: actualicé «${x.nombre}» (${x.precio_texto}${x.categoria ? `, ${x.categoria}` : ''}${x.activo === false ? ', inactivo' : ''}). El cambio de precio quedó en Auditoría con el valor anterior.`;
+  return 'Listo, quedó hecho.';
+}
+const motivoLegible = (m?: string) => ({
+  permiso_ausente: 'tu rol no puede editar el catálogo.', herramienta_deshabilitada: 'esa acción está apagada en el Centro de IA.',
+  modulo_inactivo: 'el módulo de catálogo está desactivado.', herramienta_no_registrada_para_el_agente: 'el asistente ya no tiene esa acción.',
+} as Record<string, string>)[m ?? ''] ?? 'no está permitido.';
+
+/**
+ * La persona confirma (o cancela) una acción que el asistente propuso. Solo quien la pidió puede hacerlo,
+ * dentro de los 15 minutos, y sus permisos se comprueban DE NUEVO en este momento: si ya no puede editar
+ * el catálogo, la acción se deniega aunque estuviera propuesta.
+ */
+export async function confirmarAccionAsistente(db: Database, userCtx: Ctx, accionId: string, decision: unknown) {
+  if (!isUuid(accionId)) throw notFound();
+  if (decision !== 'confirmar' && decision !== 'cancelar') throw invalid('Indica si confirmas o cancelas.');
+  return db.withTenant(userCtx.tenantId, async (tx) => {
+    const pend = (await tx.query(`SELECT * FROM pending_action WHERE id=$1 AND solicitado_por=$2 AND conversation_id IS NULL FOR UPDATE`, [accionId, userCtx.actor.id])).rows[0];
+    if (!pend) throw notFound();
+    if (pend.estado !== 'PENDIENTE') throw new AppError('CONFLICT', pend.estado === 'CONFIRMADA' ? 'Esa acción ya se confirmó.' : 'Esa acción ya no está pendiente.');
+    if (new Date(pend.expira_en) <= new Date()) {
+      await tx.query(`UPDATE pending_action SET estado='EXPIRADA' WHERE id=$1`, [pend.id]);
+      throw new AppError('CONFLICT', 'La confirmación venció (15 minutos) y no se hizo ningún cambio. Pídeselo de nuevo al asistente.');
+    }
+    const agent = await loadAgent(tx, 'asistente');
+    if (!agent) throw new AppError('CONFLICT', 'El asistente no está activo para esta empresa.');
+    const permisos = new Set([...agent.permisos].filter((p) => userCtx.permisos.has('*') || userCtx.permisos.has(p)));
+    const efectivo = { ...agent, permisos };
+    const ctx: Ctx = { ...userCtx, actor: { tipo: 'AGENTE', id: agent.id, nombre: `Asistente (para ${userCtx.actor.nombre})` }, permisos, origen: 'PANEL' };
+    let r: GatewayResult;
+    if (decision === 'cancelar') {
+      await tx.query(`UPDATE pending_action SET estado='RECHAZADA' WHERE id=$1`, [pend.id]);
+      const id = uuidv7();
+      await tx.query(
+        `INSERT INTO ai_execution (id, tenant_id, agent_id, configuracion, herramienta, argumentos, decision, pending_action_id, confirmado_por)
+         VALUES ($1,$2,$3,'asistente',$4,$5,'RECHAZADA_POR_CLIENTE',$6,$7)`,
+        [id, userCtx.tenantId, agent.id, pend.herramienta, JSON.stringify(pend.argumentos), pend.id, `USUARIO:${userCtx.actor.nombre}`]);
+      await audit(tx, ctx, { accion: `ia.herramienta.${pend.herramienta}`, recurso: 'ai_execution', recursoId: id, resultado: 'DENEGADO', detalle: { decision: 'RECHAZADA_POR_CLIENTE' } });
+      r = { decision: 'DENEGADA', executionId: id, herramienta: pend.herramienta, motivo: 'cancelada' };
+    } else {
+      await tx.query(`UPDATE pending_action SET estado='CONFIRMADA' WHERE id=$1`, [pend.id]);
+      r = await evaluateAndExecute({ tx, ctx, conversationId: null, customerId: null, solicitante: userCtx.actor.id, hiloId: pend.hilo_id }, efectivo,
+        { nombre: pend.herramienta, argumentos: pend.argumentos }, { confirmacion: { por: `USUARIO:${userCtx.actor.nombre}`, pendingActionId: pend.id } });
+    }
+    const texto = decision === 'cancelar' ? 'Entendido: no hice ningún cambio.' : textoResultado(pend.herramienta, r);
+    const recibo: Recibo = { id: r.executionId, herramienta: pend.herramienta, decision: decision === 'cancelar' ? 'RECHAZADA_POR_CLIENTE' : r.decision, motivo: r.motivo, riesgo: r.riesgo };
+    // El resultado queda en la misma conversación, para que el hilo cuente lo que de verdad pasó.
+    if (pend.hilo_id) await guardarMensajeAsistente(tx, userCtx, pend.hilo_id, texto, [recibo]);
+    return { decision: recibo.decision, texto, recibo, estado: decision === 'cancelar' ? 'RECHAZADA' : r.decision === 'CONFIRMADA' ? 'CONFIRMADA' : 'FALLIDA' };
+  });
 }
 
 // ---------------------------------------------------------------------------

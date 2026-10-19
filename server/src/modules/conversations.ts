@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Tx } from '../db/index.js';
 import { type Ctx, can, requirePerm, requireWritable } from '../core/context.js';
 import { audit } from '../core/audit.js';
@@ -182,7 +183,56 @@ export async function conversationDetail(tx: Tx, ctx: Ctx, id: string) {
      FROM case_event e LEFT JOIN users u ON u.id=e.asignado_a WHERE e.case_id=$1 ORDER BY e.creado_en`, [caso.id])).rows : [];
   const plantillas = (await tx.query(`SELECT clave, cuerpo, estado_aprobacion, variables FROM message_template WHERE categoria='UTILIDAD' ORDER BY clave`)).rows;
   const puedeReabrir = !!caso && caso.estado === 'CERRADO' && caso.cerrado_en && Date.now() - new Date(caso.cerrado_en).getTime() < PLAZO_REAPERTURA_MS;
-  return { ...v, caso, historial, mensajes, ejecuciones, pendientes, ventas, citas, plantillas, puede_reabrir: puedeReabrir, ventana_abierta: v.canal !== 'WHATSAPP' || ventanaAbierta(v.ultimo_mensaje_cliente_en) };
+  // Acceso del soporte de Omnegia a esta conversación: lo concede y lo ve quien administra la empresa.
+  const soporte = can(ctx, 'tenant:configure') ? {
+    acceso: (await tx.query(
+      `SELECT id, motivo, otorgado_por_nombre, ticket_numero, expira_en, creado_en FROM acceso_soporte WHERE conversation_id=$1 AND revocado_en IS NULL AND expira_en > now() ORDER BY expira_en DESC LIMIT 1`, [id])).rows[0] ?? null,
+    lecturas: (await tx.query(
+      `SELECT creado_en FROM audit_event WHERE accion='soporte.conversacion_leida' AND recurso_id=$1 ORDER BY creado_en DESC LIMIT 20`, [id])).rows.map((r) => r.creado_en),
+  } : null;
+  return { ...v, caso, historial, mensajes, ejecuciones, pendientes, ventas, citas, plantillas, soporte, puede_reabrir: puedeReabrir, ventana_abierta: v.canal !== 'WHATSAPP' || ventanaAbierta(v.ultimo_mensaje_cliente_en) };
+}
+
+// ---------------------------------------------------------------------------
+// Acceso del soporte de Omnegia a una conversación (autorizado por la empresa)
+// ---------------------------------------------------------------------------
+const AccesoSoporteInput = z.object({
+  motivo: z.string().trim().min(10, 'Explica para qué lo necesita soporte (mínimo 10 caracteres).').max(300),
+  horas: z.union([z.literal(24), z.literal(72), z.literal(168)], 'Elige por cuánto tiempo.'),
+  ticket: z.string().trim().toUpperCase().regex(/^SOP-\d{6}$/, 'El número de solicitud tiene la forma SOP-000123.').optional().nullable().or(z.literal('').transform(() => null)),
+});
+
+/**
+ * La empresa comparte UNA conversación con el soporte de Omnegia por un tiempo limitado. Sin esto, el
+ * equipo de Omnegia no puede leer el contenido: la base de datos se lo impide. Funciona aunque la
+ * suscripción esté suspendida (es justo cuando más se necesita soporte).
+ */
+export async function otorgarAccesoSoporte(tx: Tx, ctx: Ctx, conversationId: string, body: unknown) {
+  requirePerm(ctx, 'tenant:configure');
+  if (!isUuid(conversationId)) throw notFound();
+  const d = AccesoSoporteInput.parse(body ?? {});
+  const v = (await tx.query(`SELECT id FROM conversation WHERE id=$1`, [conversationId])).rows[0];
+  if (!v) throw notFound();
+  if (d.ticket && !(await tx.query(`SELECT 1 FROM soporte_ticket WHERE numero=$1`, [d.ticket])).rows[0]) throw invalid('No encontramos esa solicitud de soporte en tu empresa.');
+  await tx.query(`UPDATE acceso_soporte SET revocado_en=now(), revocado_por_nombre=$2 WHERE conversation_id=$1 AND revocado_en IS NULL AND expira_en > now()`, [conversationId, `${ctx.actor.nombre} (reemplazado)`]);
+  const id = uuidv7();
+  const r = (await tx.query(
+    `INSERT INTO acceso_soporte (id, tenant_id, conversation_id, otorgado_por, otorgado_por_nombre, motivo, ticket_numero, expira_en)
+     VALUES ($1,$2,$3,$4,$5,$6,$7, now() + ($8 || ' hours')::interval) RETURNING expira_en`,
+    [id, ctx.tenantId, conversationId, ctx.actor.id, ctx.actor.nombre, d.motivo, d.ticket ?? null, String(d.horas)])).rows[0];
+  await audit(tx, ctx, { accion: 'soporte.acceso_otorgado', recurso: 'conversation', recursoId: conversationId, resultado: 'EXITO', detalle: { horas: d.horas, ticket: d.ticket ?? null } });
+  return { ok: true, id, expira_en: r.expira_en };
+}
+
+export async function revocarAccesoSoporte(tx: Tx, ctx: Ctx, conversationId: string) {
+  requirePerm(ctx, 'tenant:configure');
+  if (!isUuid(conversationId)) throw notFound();
+  const r = await tx.query(
+    `UPDATE acceso_soporte SET revocado_en=now(), revocado_por_nombre=$2 WHERE conversation_id=$1 AND revocado_en IS NULL AND expira_en > now() RETURNING id`,
+    [conversationId, ctx.actor.nombre]);
+  if (!r.rows.length) throw new AppError('CONFLICT', 'Esta conversación no tiene un acceso de soporte vigente.');
+  await audit(tx, ctx, { accion: 'soporte.acceso_revocado', recurso: 'conversation', recursoId: conversationId, resultado: 'EXITO' });
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------

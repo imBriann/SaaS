@@ -145,7 +145,7 @@ export function Terminos() {
       </> },
       { id: 'disponibilidad', titulo: 'Disponibilidad y soporte', cuerpo: <>
         <p>Procuramos que el servicio esté disponible de forma continua, pero puede haber mantenimientos, fallas de terceros o interrupciones. No ofrecemos un acuerdo de nivel de servicio (SLA) con porcentajes de disponibilidad, salvo que se pacte por escrito.</p>
-        <p>El soporte se presta desde el panel (Soporte, con número de radicado y seguimiento) y por correo. Las respuestas del equipo quedan en el panel y se notifican por correo.</p>
+        <p>El soporte se presta desde el panel (Soporte, con número de radicado y seguimiento), por correo y por el WhatsApp de Omnegia, donde un asistente automático responde primero y pasa a una persona del equipo lo que no puede resolver, con un número de radicado. Las respuestas a las solicitudes del panel quedan en el panel y se notifican por correo; las de WhatsApp, en la misma conversación.</p>
       </> },
       { id: 'propiedad', titulo: 'Propiedad intelectual y tus contenidos', cuerpo: <>
         <p>El software, la marca y los materiales de Omnegia son de su titular. Te damos una licencia limitada, no exclusiva e intransferible para usar la plataforma mientras tu contrato esté vigente.</p>
@@ -174,7 +174,7 @@ export function Terminos() {
           <li><b>Instrucciones.</b> Tratamos los datos según la política y las finalidades que tú hayas informado a tus clientes y según tus instrucciones desde el panel, y de acuerdo con las leyes aplicables.</li>
           <li><b>Principios.</b> Damos tratamiento a los datos conforme a los principios de la Ley 1581 de 2012 (art. 4).</li>
           <li><b>Seguridad.</b> Salvaguardamos la seguridad de las bases de datos con medidas técnicas, humanas y administrativas: aislamiento de datos por empresa, control de acceso por permisos, cifrado de secretos y de documentos sensibles en reposo, registro de auditoría y segundo factor para el personal de la plataforma.</li>
-          <li><b>Confidencialidad.</b> Guardamos reserva sobre los datos, incluso después de terminada la relación. El personal de la plataforma no accede a los datos privados de tu empresa.</li>
+          <li><b>Confidencialidad.</b> Guardamos reserva sobre los datos, incluso después de terminada la relación. El personal de la plataforma no accede a los datos privados de tu empresa. La única excepción es la que tú instruyas: si compartes una conversación concreta con el soporte de Omnegia desde el panel, el equipo de soporte puede leerla (sin responder ni modificar nada) durante el plazo que elijas, de 24 horas a 7 días, o hasta que retires el acceso; cada lectura queda registrada en tu auditoría.</li>
           <li><b>Derechos de los titulares.</b> Si un cliente tuyo nos escribe para ejercer sus derechos, te damos traslado en un máximo de dos (2) días hábiles e informamos al interesado (Ley 1581 de 2012, art. 15, numeral 1). Tú respondes la solicitud; te damos las herramientas para consultar, corregir o suprimir los datos desde el panel.</li>
           <li><b>Incidentes.</b> Si se presenta una violación de los códigos de seguridad con riesgo para la información de los titulares, la informamos a la Superintendencia de Industria y Comercio y te avisamos (Ley 1581 de 2012, art. 18, literal k).</li>
           <li><b>Fin del contrato.</b> Al terminar la relación puedes exportar tus datos. Después los suprimimos o los conservamos solo mientras una norma o una obligación contractual lo exija (Decreto 1377 de 2013, art. 11).</li>
@@ -224,7 +224,7 @@ export function Privacidad() {
           <li><b>De tu negocio:</b> nombre comercial, dirección web elegida, descripción de tu actividad, logotipo y colores, teléfono de contacto, ubicación (país, departamento, municipio y dirección), NIT cuando lo indicas, y el catálogo que cargas.</li>
           <li><b>De facturación y pago:</b> datos del contratante, con el documento de identificación guardado cifrado; referencia, valor y estado de cada pago. Los datos de tu tarjeta los recibe Wompi: nosotros no los vemos ni los guardamos (en nuestro formulario de pago se cifran en tu navegador y viajan directo a Wompi). El celular de Nequi o el documento de PSE pasan por nuestro servidor solo para enviarlos a Wompi y no se guardan.</li>
           <li><b>De uso y seguridad:</b> sesiones, intentos de ingreso, huellas técnicas del origen de la conexión (no la dirección IP en claro), agente del navegador, registro de acciones relevantes y métricas técnicas del servicio.</li>
-          <li><b>De comunicación:</b> las solicitudes que nos envías (soporte, datos personales, PQR) y los correos que te enviamos con su estado de entrega.</li>
+          <li><b>De comunicación:</b> las solicitudes que nos envías (soporte, datos personales, PQR), los correos que te enviamos con su estado de entrega y, si escribes al WhatsApp de Omnegia, tu número, tu nombre de perfil y los mensajes de la conversación.</li>
           <li><b>De los clientes de tu comercio</b> (como encargado): los que tu negocio carga o recibe por los canales que conectas, como nombre, teléfono, historial de conversaciones, citas, compras y documentos. Qué datos recolectas y por qué lo decide tu comercio.</li>
         </ul>
         <p>No pedimos ni necesitamos datos sensibles (salud, biométricos, origen racial, orientación política, etc.) para prestar el servicio (Ley 1581 de 2012, art. 5). Si tu negocio los trata, debe cumplir los requisitos reforzados que la ley exige (art. 6).</p>
@@ -235,7 +235,7 @@ export function Privacidad() {
           <li>Verificar tu identidad y tu correo, y proteger la cuenta y la plataforma de accesos no autorizados y fraudes.</li>
           <li>Procesar y conciliar pagos, emitir comprobantes y, cuando corresponda, facturas.</li>
           <li>Enviarte comunicaciones del servicio: códigos, confirmaciones, avisos de vencimiento, respuestas de soporte y cambios en estos textos.</li>
-          <li>Atender tus consultas, solicitudes de soporte, peticiones, quejas, reclamos y solicitudes sobre tus datos.</li>
+          <li>Atender tus consultas, solicitudes de soporte (por el panel, por correo o por el WhatsApp de Omnegia), peticiones, quejas, reclamos y solicitudes sobre tus datos. En WhatsApp responde primero un asistente automático con reglas fijas; no le revela a quien escribe qué empresas tiene registradas un número ni datos de ninguna cuenta.</li>
           <li>Configurar tu espacio y operar el asistente de IA por cuenta de tu comercio (ver <a href="#ia">Tratamiento con inteligencia artificial</a>).</li>
           <li>Medir el funcionamiento técnico, detectar fallas y mejorar el servicio con datos agregados.</li>
           <li>Cumplir obligaciones legales, contables y fiscales, y defender nuestros derechos ante autoridades.</li>
@@ -261,7 +261,7 @@ export function Privacidad() {
               <tr><th scope="row">Resend</th><td>Enviar correos automáticos</td><td>Correo, nombre y contenido del mensaje</td></tr>
               <tr><th scope="row">Zoho Mail</th><td>Recibir el correo de soporte</td><td>Lo que nos escribes</td></tr>
               <tr><th scope="row">Wompi</th><td>Procesar pagos</td><td>Datos de pago que ingresas en su sitio o en el formulario de pago de Omnegia</td></tr>
-              <tr><th scope="row">Meta (WhatsApp)</th><td>Mensajería con los clientes de cada comercio</td><td>Número, nombre de perfil y mensajes</td></tr>
+              <tr><th scope="row">Meta (WhatsApp)</th><td>Mensajería con los clientes de cada comercio y atención por el WhatsApp de Omnegia</td><td>Número, nombre de perfil y mensajes</td></tr>
               <tr><th scope="row">Anthropic</th><td>Modelo de IA (Claude)</td><td>Descripción del negocio y mensajes que atiende el asistente</td></tr>
             </tbody>
           </table>
@@ -291,12 +291,13 @@ export function Privacidad() {
         </ul>
       </> },
       { id: 'seguridad', titulo: 'Seguridad', cuerpo: <>
-        <p>Manejamos la información con medidas técnicas, humanas y administrativas para evitar su adulteración, pérdida, consulta, uso o acceso no autorizado o fraudulento (Ley 1581 de 2012, art. 4, literal g). Entre ellas: contraseñas guardadas solo como huella irreversible; cifrado de secretos de terceros y de documentos de identificación en reposo; conexión cifrada; aislamiento de los datos de cada empresa en la base de datos; permisos por rol; registro de auditoría que la aplicación no puede modificar; y segundo factor por correo para el personal de la plataforma, que además no tiene acceso a los datos privados de las empresas.</p>
+        <p>Manejamos la información con medidas técnicas, humanas y administrativas para evitar su adulteración, pérdida, consulta, uso o acceso no autorizado o fraudulento (Ley 1581 de 2012, art. 4, literal g). Entre ellas: contraseñas guardadas solo como huella irreversible; cifrado de secretos de terceros y de documentos de identificación en reposo; conexión cifrada; aislamiento de los datos de cada empresa en la base de datos; permisos por rol; registro de auditoría que la aplicación no puede modificar; y segundo factor por correo para el personal de la plataforma, que además no tiene acceso a los datos privados de las empresas, salvo una conversación que una empresa comparta con soporte por tiempo limitado, con registro de cada lectura.</p>
         <p>Si se presenta una violación de los códigos de seguridad con riesgo para la información de los titulares, la informamos a la Superintendencia de Industria y Comercio (Ley 1581 de 2012, arts. 17 literal n y 18 literal k).</p>
       </> },
       { id: 'conservacion', titulo: 'Cuánto tiempo los conservamos', cuerpo: <>
         <p>Solo conservamos los datos durante el tiempo razonable y necesario para las finalidades que justificaron el tratamiento, atendiendo a las normas administrativas, contables, fiscales, jurídicas e históricas aplicables. Cumplidas las finalidades, los suprimimos, salvo que una obligación legal o contractual exija conservarlos (Decreto 1377 de 2013, art. 11). La prueba de la relación comercial —identidad del cliente, su voluntad de contratar, el pago y la entrega del servicio— se conserva por el mismo tiempo que los documentos de comercio (Ley 1480 de 2011, art. 50, literal e).</p>
         <p>Algunos datos técnicos se eliminan automáticamente muy pronto: los códigos de verificación, a más tardar un día después de crearse; los intentos de ingreso, a los dos días; los enlaces de recuperación de contraseña vencidos, a los siete días. Los correos con códigos o enlaces de acceso se guardan cifrados y su contenido se borra cuando el proveedor los acepta.</p>
+        <p>Las conversaciones con el WhatsApp de Omnegia se eliminan automáticamente <b>90 días después del último mensaje</b>. Si en la conversación se abrió una solicitud de soporte, esa solicitud (con su radicado, un resumen y el número de contacto) se conserva como las demás solicitudes que nos presentas.</p>
         <p><b>Vigencia de esta política y de las bases de datos.</b> Esta política rige desde la fecha indicada arriba. Las bases de datos de cuentas y empresas se mantienen mientras dure la relación contigo y el tiempo adicional que exijan las normas.</p>
       </> },
       { id: 'menores', titulo: 'Niños, niñas y adolescentes', cuerpo: <>
@@ -353,7 +354,7 @@ export function EliminacionDatos() {
         <dl className="legal-definiciones">
           <div><dt>Administro o trabajo en una empresa de Omnegia</dt><dd>Podemos suprimir tus datos de cuenta (nombre, correo, acceso). Si eres el único administrador, eliminar tu acceso implica cerrar la empresa o transferir su administración antes: te lo indicaremos. Antes de cerrar puedes exportar los datos de tu empresa desde el panel.</dd></div>
           <div><dt>Soy cliente de un comercio que usa Omnegia</dt><dd>El comercio es el responsable de tus datos y Omnegia los trata por su cuenta. Por eso damos traslado de tu solicitud al comercio en máximo 2 días hábiles y te informamos (Ley 1581 de 2012, art. 15, numeral 1). Puedes también dirigirte directamente al comercio.</dd></div>
-          <div><dt>Le escribí al WhatsApp de Omnegia</dt><dd>Los mensajes que recibe el número de Omnegia no se guardan como conversación; solo queda una constancia técnica sin su contenido. Si quieres que verifiquemos algo, pídelo con el formulario.</dd></div>
+          <div><dt>Le escribí al WhatsApp de Omnegia</dt><dd>Guardamos la conversación (tu número, tu nombre de perfil y los mensajes) para atenderte y darle seguimiento, y la eliminamos automáticamente 90 días después del último mensaje. Si pediste ayuda de una persona, la solicitud de soporte que se abrió se conserva como las demás solicitudes. Puedes pedir que la eliminemos antes con el formulario, indicando el número desde el que escribiste.</dd></div>
           <div><dt>Empecé un registro y no lo terminé</dt><dd>Podemos eliminar el borrador de tu registro (descripción del negocio, datos que escribiste y código de verificación) a tu solicitud.</dd></div>
         </dl>
       </> },

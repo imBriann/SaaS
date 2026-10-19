@@ -177,6 +177,13 @@ export async function evaluateAndExecute(
          VALUES ($1,$2,$3,$4,$5,$6,$7,'PENDIENTE', now() + interval '15 minutes')`,
         [pendingId, ctx.tenantId, conversationId, agent.id, t.nombre, JSON.stringify(parsed.data), resumen],
       );
+    } else if (rt.solicitante) {
+      // Asistente del panel: queda a nombre de quien preguntó; solo esa persona la confirma (con un botón).
+      await tx.query(
+        `INSERT INTO pending_action (id, tenant_id, conversation_id, hilo_id, solicitado_por, agent_id, herramienta, argumentos, resumen, estado, expira_en)
+         VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,'PENDIENTE', now() + interval '15 minutes')`,
+        [pendingId, ctx.tenantId, rt.hiloId ?? null, rt.solicitante, agent.id, t.nombre, JSON.stringify(parsed.data), resumen],
+      );
     }
     const executionId = await record(tx, ctx, agent, conversationId, t.nombre, parsed.data, {
       decision: 'PENDIENTE_CONFIRMACION', riesgo, permiso: t.permiso, version: t.version, pendingId, resultado: { resumen },

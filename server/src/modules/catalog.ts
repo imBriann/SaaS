@@ -3,12 +3,16 @@ import type { Tx } from '../db/index.js';
 import { type Ctx, requirePerm, requireWritable } from '../core/context.js';
 import { audit } from '../core/audit.js';
 import { publish } from '../core/events.js';
-import { notFound, invalid } from '../lib/errors.js';
+import { AppError, notFound, invalid } from '../lib/errors.js';
 import { isUuid, normalizeText, uuidv7 } from '../lib/util.js';
+
+/** Un nombre sin letras («12», «---») no describe un producto: suele ser un dato de prueba. */
+export const conLetras = (n: string) => /\p{L}/u.test(n);
+const MSG_SIN_LETRAS = 'El nombre debe describir el producto o servicio (incluye al menos una letra).';
 
 export const ProductInput = z.object({
   tipo: z.enum(['PRODUCTO', 'SERVICIO']),
-  nombre: z.string().trim().min(1).max(120),
+  nombre: z.string().trim().min(2, 'Escribe el nombre (mínimo 2 caracteres).').max(120).refine(conLetras, MSG_SIN_LETRAS),
   categoria: z.string().trim().max(60).optional().nullable(),
   precio: z.number().nonnegative().max(999_999_999),
   iva_pct: z.number().min(0).max(19).default(0),
@@ -72,6 +76,9 @@ export async function createProduct(tx: Tx, ctx: Ctx, input: unknown) {
   requireWritable(ctx);
   const d = ProductInput.parse(input);
   if (d.tipo === 'SERVICIO' && d.controla_stock) throw invalid('Un servicio no controla existencias.');
+  // Dos ítems con el mismo nombre confunden al agente y a quien vende: se edita el existente.
+  const mismo = (await tx.query(`SELECT nombre FROM product WHERE eliminado_en IS NULL AND tipo=$1`, [d.tipo])).rows.find((p: any) => normalizeText(p.nombre) === normalizeText(d.nombre));
+  if (mismo) throw new AppError('CONFLICT', `Ya existe «${mismo.nombre}» en tu catálogo. Edítalo en lugar de crear otro.`);
   const id = await insertProduct(tx, ctx, d);
   await audit(tx, ctx, { accion: 'catalogo.crear', recurso: 'product', recursoId: id, resultado: 'EXITO', detalle: { nombre: d.nombre, precio: d.precio } });
   return { id };
@@ -152,7 +159,7 @@ export async function listMovements(tx: Tx, ctx: Ctx) {
 // ---------------------------------------------------------------------------
 export const FilaImportacion = z.object({
   tipo: z.enum(['PRODUCTO', 'SERVICIO']),
-  nombre: z.string().trim().min(1).max(120),
+  nombre: z.string().trim().min(1).max(120).refine(conLetras, MSG_SIN_LETRAS),
   categoria: z.string().trim().max(60).nullable().optional(),
   precio: z.number().nonnegative().max(999_999_999),
   iva_pct: z.number().refine((v) => [0, 5, 19].includes(v), 'IVA admitido: 0, 5 o 19 %.').default(0),
@@ -194,4 +201,40 @@ export async function confirmImport(tx: Tx, ctx: Ctx, body: unknown) {
  }
  await audit(tx,ctx,{accion:'catalogo.importar',recurso:'product',resultado:'EXITO',detalle:{archivo:d.archivo,creados,actualizados,omitidos,rechazados,modo:d.duplicados}});
  return {creados,actualizados,omitidos,rechazados,reporte};
+}
+
+// ---------------------------------------------------------------------------
+// Revisión de calidad: señala datos incompletos o de prueba; no cambia ni borra nada
+// ---------------------------------------------------------------------------
+export const PROBLEMAS_CATALOGO: Record<string, string> = {
+  nombre_sin_letras: 'El nombre no tiene letras: parece un dato de prueba.',
+  nombre_corto: 'El nombre es muy corto para que un cliente lo reconozca.',
+  precio_cero: 'Precio en $0: confírmalo si es gratuito.',
+  precio_bajo: 'Precio menor a $100: revisa que no le falten ceros.',
+  sin_duracion: 'Servicio sin duración: no se puede agendar.',
+  sin_categoria: 'Sin categoría: agruparlo ayuda a encontrarlo.',
+  duplicado: 'Hay otro ítem con el mismo nombre.',
+};
+
+export async function revisarCatalogo(tx: Tx, ctx: Ctx) {
+  requirePerm(ctx, 'catalog:read');
+  const items = (await tx.query(`SELECT id, tipo, nombre, categoria, precio, moneda, duracion_min, activo FROM product WHERE eliminado_en IS NULL ORDER BY activo DESC, nombre`)).rows.map(mapP);
+  const nombres = new Map<string, number>();
+  for (const i of items) nombres.set(normalizeText(i.nombre), (nombres.get(normalizeText(i.nombre)) ?? 0) + 1);
+  const revisar = items.map((i: any) => {
+    const p: string[] = [];
+    if (!conLetras(i.nombre)) p.push('nombre_sin_letras');
+    else if (i.nombre.trim().length < 3) p.push('nombre_corto');
+    if (i.precio === 0) p.push('precio_cero');
+    // En pesos colombianos nada se vende por menos de $100 (la moneda más pequeña es de $50).
+    else if (i.moneda === 'COP' && i.precio < 100) p.push('precio_bajo');
+    if (i.tipo === 'SERVICIO' && !i.duracion_min) p.push('sin_duracion');
+    if (!i.categoria) p.push('sin_categoria');
+    if ((nombres.get(normalizeText(i.nombre)) ?? 0) > 1) p.push('duplicado');
+    return { id: i.id, tipo: i.tipo, nombre: i.nombre, precio: i.precio, activo: i.activo, problemas: p.map((codigo) => ({ codigo, texto: PROBLEMAS_CATALOGO[codigo] })) };
+  }).filter((i: any) => i.problemas.length);
+  // Lo que impide vender o agendar va primero; la falta de categoría es una mejora.
+  const peso = (i: any) => i.problemas.some((x: any) => x.codigo !== 'sin_categoria') ? 0 : 1;
+  revisar.sort((a: any, b: any) => peso(a) - peso(b) || Number(b.activo) - Number(a.activo));
+  return { total: items.length, por_revisar: revisar.length, criticos: revisar.filter((i: any) => peso(i) === 0).length, items: revisar };
 }

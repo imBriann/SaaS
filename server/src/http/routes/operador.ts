@@ -4,6 +4,7 @@ import { AppError, notFound } from '../../lib/errors.js';
 import { uuidv7 } from '../../lib/util.js';
 import { loadUser } from '../context.js';
 import * as op from '../../modules/operador.js';
+import * as atencion from '../../modules/operadorAtencion.js';
 import * as reembolsos from '../../modules/reembolsos.js';
 
 /**
@@ -55,6 +56,20 @@ export async function registerOperatorRoutes(app: FastifyInstance, db: Database)
   r('POST', '/incidentes/:id/reintentar', (o, req) => op.reintentarIncidente(db, o, req.params.id, req.body?.motivo));
 
   r('GET', '/integraciones', (o) => op.estadoIntegraciones(db, o));
+  r('POST', '/empresas/:id/whatsapp/verificar', (o, req) => atencion.verificarWhatsappEmpresa(db, o, req.params.id));
+
+  // WhatsApp de Omnegia: bandeja, detalle y acciones (cada una auditada).
+  r('GET', '/conversaciones', (o, req) => atencion.listarConversaciones(db, o, req.query));
+  r('GET', '/conversaciones/:id', (o, req) => atencion.verConversacion(db, o, req.params.id, req.query?.abrir === '1'));
+  r('POST', '/conversaciones/:id/tomar', (o, req) => atencion.tomarConversacion(db, o, req.params.id));
+  r('POST', '/conversaciones/:id/asignar', (o, req) => atencion.asignarConversacion(db, o, req.params.id, req.body));
+  r('POST', '/conversaciones/:id/responder', (o, req) => atencion.responderConversacion(db, o, req.params.id, req.body));
+  r('POST', '/conversaciones/:id/devolver-ia', (o, req) => atencion.devolverAlAsistente(db, o, req.params.id));
+  r('POST', '/conversaciones/:id/cerrar', (o, req) => atencion.cerrarConversacion(db, o, req.params.id, req.body));
+
+  // Atención de las empresas: indicadores sin contenido y lectura solo con autorización de la empresa.
+  r('GET', '/atencion-empresas', (o, req) => atencion.atencionEmpresas(db, o, req.query));
+  r('GET', '/atencion-empresas/conversaciones/:id', (o, req) => atencion.leerConversacionAutorizada(db, o, req.params.id));
 
   r('GET', '/soporte', (o, req) => op.listarTickets(db, o, req.query));
   r('GET', '/soporte/:id', (o, req) => op.verTicket(db, o, req.params.id));

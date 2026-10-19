@@ -89,6 +89,13 @@ export async function dashboard(tx: Tx, ctx: Ctx) {
   }
   const fallidos = can(ctx, 'conversation:read') ? (await tx.query(`SELECT count(*)::int AS n FROM message WHERE estado_entrega='FALLIDO' AND creado_en > now() - interval '2 days'`)).rows[0].n : 0;
   if (fallidos) atencion.push({ tipo: 'entrega', nivel: 'warn', titulo: `${fallidos} mensaje(s) no se pudieron entregar por WhatsApp`, detalle: 'Revisa la conversación: puede que haya pasado la ventana de 24 h o el número no tenga WhatsApp.', accion: { etiqueta: 'Revisar', ruta: '/conversaciones' } });
+  if (can(ctx, 'order:read')) {
+    // Dinero que entró de más por la pasarela (venta ya pagada o anulada): hay que devolverlo.
+    for (const x of (await tx.query(
+      `SELECT p.monto, o.id, o.numero FROM order_payment p JOIN "order" o ON o.id=p.order_id WHERE p.estado='EXCEDENTE' ORDER BY p.creado_en DESC LIMIT 5`)).rows) {
+      atencion.push({ tipo: 'pago_excedente', nivel: 'error', titulo: `Pago recibido de más en la venta #${x.numero}`, detalle: `La pasarela confirmó ${Math.round(Number(x.monto)).toLocaleString('es-CO')} COP de una venta que ya estaba pagada o anulada. Devuélvelo al cliente desde Wompi.`, accion: { etiqueta: 'Ver venta', ruta: `/ventas/${x.id}` } });
+    }
+  }
   const pend = (await tx.query(`SELECT count(*)::int AS n FROM pending_action WHERE estado='PENDIENTE' AND expira_en > now()`)).rows[0].n;
   if (pend && can(ctx, 'ai:read')) atencion.push({ tipo: 'confirmacion', nivel: 'info', titulo: `${pend} acción(es) de la IA esperan que el cliente confirme`, detalle: 'Solo se ejecutan si el cliente responde SÍ en los próximos minutos.', accion: { etiqueta: 'Ver', ruta: '/ia' } });
 
@@ -120,9 +127,14 @@ export async function dashboard(tx: Tx, ctx: Ctx) {
   const ocupacion = can(ctx, 'appointment:read') ? (await tx.query(
     `SELECT r.nombre, count(a.id)::int AS citas FROM resource r LEFT JOIN appointment a ON a.resource_id=r.id AND a.inicio >= $1 AND a.inicio < $2 AND a.estado <> 'CANCELADA'
      WHERE r.activo GROUP BY r.nombre ORDER BY r.nombre`, [desde, hasta])).rows : [];
+  // Lo cobrado hoy por método (por fecha del pago): lo que debería haber en caja y lo que entró por otros medios.
+  const cobros = can(ctx, 'order:read') ? (await tx.query(
+    `SELECT metodo, count(*)::int AS n, coalesce(sum(monto),0)::float AS total FROM order_payment WHERE estado='REGISTRADO' AND creado_en >= $1 AND creado_en < $2 GROUP BY metodo`, [desde, hasta])).rows : [];
+  const cobro = (m: string) => cobros.find((c: any) => c.metodo === m)?.total ?? 0;
   return {
     fecha: hoy, zona,
     cifras: { ...cifras, ventas_hoy: Number(cifras.ventas_hoy), ventas_semana: Number(cifras.ventas_semana), por_cobrar: Number(cifras.por_cobrar) },
+    cobros_hoy: can(ctx, 'order:read') ? { efectivo: cobro('EFECTIVO'), transferencia: cobro('TRANSFERENCIA'), datafono: cobro('DATAFONO'), pasarela: cobro('PASARELA'), total: cobros.reduce((a: number, c: any) => a + c.total, 0), pagos: cobros.reduce((a: number, c: any) => a + c.n, 0) } : null,
     atencion, hilo, agenda, fiscal, ingresos, ocupacion,
     pasos: can(ctx, 'tenant:configure') ? await primerosPasos(tx, ctx) : null,
     consumo: can(ctx, 'usage:read') ? await allQuotas(tx, ctx.tenantId) : null,

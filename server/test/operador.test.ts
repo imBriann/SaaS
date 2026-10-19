@@ -56,6 +56,8 @@ trabajos_fallidos intentos reintentable razon incidentes servicio gravedad descr
 primera_vez ultima_vez resuelto_en nota servicios plataforma clave variables whatsapp con_problemas verificado_en correo por_estado_7_dias fallos_7_dias
 modelos_7_dias modelo tickets numero categoria categoria_nombre prioridad asunto solicitante actualizado_en ticket solicitante_email autor_tipo autor cuerpo
 eventos actor accion recurso recurso_id motivo resultado tipo_trabajo http_estado codigo_proveedor tipo_correo clase_error anterior nuevo filas ok
+empresa_sin_verificar canal conversacion_id totales abiertas con_ia con_persona sin_respuesta vencidos en_cola fallidos_48h ultima_actividad radicados tenant_id
+radicado conversation_id asignado sla_vence_en vencido acceso_hasta accesos otorgado_por_nombre ticket_numero expira_en solicitante_telefono
 `.split(/\s+/).filter(Boolean));
 const PROHIBIDAS = ['password_hash', 'payload', 'ultimo_error', 'contenido', 'telefono', 'cuerpo_html', 'contenido_cifrado', 'para', 'whatsapp_diagnostico', 'nit', 'token', 'secreto', 'llave', 'argumentos', 'prompt', 'texto'];
 
@@ -130,7 +132,7 @@ describe('3. Los endpoints del operador devuelven únicamente campos permitidos'
     await drain(E.db);
     await volcarMetricas(E.db);
     const inc = (await admin.get('/incidentes')).body;
-    const rutas = ['/yo', '/resumen', '/empresas', `/empresas/${E.A}`, `/empresas/${E.B}`, '/suscripciones', '/salud', '/incidentes', '/integraciones', '/soporte', `/soporte/${t.id}`, '/auditoria'];
+    const rutas = ['/yo', '/resumen', '/empresas', `/empresas/${E.A}`, `/empresas/${E.B}`, '/suscripciones', '/salud', '/incidentes', '/integraciones', '/soporte', `/soporte/${t.id}`, '/auditoria', '/atencion-empresas'];
     if (inc.incidentes?.[0]) rutas.push(`/incidentes?estado=${inc.incidentes[0].estado}`);
     for (const ruta of rutas) {
       const r = await admin.get(ruta);

@@ -5,6 +5,8 @@ import { api, cop, descargar, fecha, fechaHora, fechaLarga, hora, hoyLocal, zona
 import { Cabecera, Escritura, useSesion } from '../../components/Layout';
 import { Campo, Cargando, CicloFiscal, Cifra, Confirmar, ErrorCarga, Estado, Modal, Paginador, Recibo, Tarjeta, useAccion, useApi, useRetardo, useToast, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
+import { CamposCobro, CobroExitoso, cuerpoPago, type Metodos, NOMBRE_METODO, nuevaClave, type PagoElegido, validarPago } from '../../components/Cobro';
+import { Contador, escalon } from '../../components/Movimiento';
 
 // =================================================================== Clientes
 export function Clientes() {
@@ -137,18 +139,21 @@ export function Ventas() {
   const nav = useNavigate();
   const [params] = useSearchParams();
   const [filtro, setFiltro] = useState(params.get('pago') ? `pago:${params.get('pago')}` : '');
+  const [metodo, setMetodo] = useState('');
   const [q, setQ] = useState('');
   const qr = useRetardo(q);
   const [pagina, setPagina] = useState(1);
   const [nueva, setNueva] = useState(false);
+  const [caja, setCaja] = useState(params.get('caja') === '1');
   const { run } = useAccion();
-  useEffect(() => setPagina(1), [qr, filtro]);
-  const consulta = filtro.startsWith('pago:') ? `pago=${filtro.slice(5)}` : filtro ? `estado_fiscal=${filtro}` : '';
+  useEffect(() => setPagina(1), [qr, filtro, metodo]);
+  const consulta = (filtro.startsWith('pago:') ? `pago=${filtro.slice(5)}` : filtro ? `estado_fiscal=${filtro}` : '') + (metodo ? `&metodo=${metodo}` : '');
   const { data, error, recargar } = useApi<any>(() => api.get(`/api/t/ventas?pagina=${pagina}&por_pagina=50&${consulta}${qr ? `&q=${encodeURIComponent(qr)}` : ''}`), [consulta, qr, pagina]);
   return (
     <>
       <Cabecera titulo="Ventas" sub="Registra lo que vendes y revisa qué está pagado y qué falta por cobrar.">
         <label className="buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Número, cliente o factura" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar ventas" /></label>
+        <button className="btn" onClick={() => setCaja(true)}><Icon n="caja" className="" size={16} />Caja del día</button>
         <button className="btn" onClick={() => run(() => descargar(`/api/t/ventas.csv`, `ventas-${hoyLocal()}.csv`), 'Exportación lista')}>Exportar</button>
         <Escritura permiso="order:create" modulo="ventas"><button className="btn primario" onClick={() => setNueva(true)}><Icon n="mas" className="" size={16} />Registrar venta</button></Escritura>
       </Cabecera>
@@ -157,19 +162,23 @@ export function Ventas() {
         <section className="tarjeta" hidden={!!error}>
           <div className="filtros">
             <div className="tabs" role="group" aria-label="Filtrar ventas">{FILTROS_VENTA.map(([k, v]) => <button key={k} className={filtro === k ? 'on' : ''} aria-pressed={filtro === k} onClick={() => setFiltro(k)}>{v}</button>)}</div>
+            <select className="input filtro-metodo" value={metodo} onChange={(e) => setMetodo(e.target.value)} aria-label="Filtrar por método de pago">
+              <option value="">Cualquier método</option>
+              {Object.entries(NOMBRE_METODO).map(([k, v]) => <option key={k} value={k}>Pagadas con {v.toLowerCase()}</option>)}
+            </select>
           </div>
-          {!data ? <Cargando /> : data.ventas.length === 0 ? <Vacio titulo="No hay ventas en esta vista">{filtro || qr ? 'Prueba con otro filtro o búsqueda.' : 'Registra la primera venta o deja que el agente la cree desde WhatsApp.'}</Vacio> : (
+          {!data ? <Cargando /> : data.ventas.length === 0 ? <Vacio titulo="No hay ventas en esta vista">{filtro || qr || metodo ? 'Prueba con otro filtro o búsqueda.' : 'Registra la primera venta o deja que el agente la cree desde WhatsApp.'}</Vacio> : (
             <>
               <div className="tabla-wrap"><table className="tabla tabla-movil">
                 <thead><tr><th>#</th><th>Fecha</th><th>Cliente</th><th>Detalle</th><th className="num">Total</th><th>Pago</th><th>Factura</th></tr></thead>
-                <tbody>{data.ventas.map((o: any) => (
-                  <tr key={o.id} className="clic" onClick={() => nav(`/ventas/${o.id}`)}>
+                <tbody className="entra-escalonado">{data.ventas.map((o: any, i: number) => (
+                  <tr key={o.id} className="clic" style={escalon(i)} onClick={() => nav(`/ventas/${o.id}`)}>
                     <td data-etiqueta="Venta" className="principal"><Link to={`/ventas/${o.id}`} className="mono" onClick={(e) => e.stopPropagation()}>#{o.numero}</Link> {o.origen === 'AGENTE' && <Estado v="AGENTE" texto="IA" />}</td>
                     <td data-etiqueta="Fecha">{fechaHora(o.creado_en)}</td>
                     <td data-etiqueta="Cliente">{o.cliente}</td>
                     <td data-etiqueta="Detalle" className="sec cortar detalle-celda">{o.detalle}</td>
                     <td data-etiqueta="Total" className="num"><b>{cop(o.total)}</b></td>
-                    <td data-etiqueta="Pago">{o.estado === 'ANULADA' ? <Estado v="ANULADA" /> : <Estado v={o.estado_pago === 'PAGADA' ? 'PAGADA' : 'PENDIENTE'} texto={o.estado_pago === 'PAGADA' ? 'Pagada' : 'Por cobrar'} />}</td>
+                    <td data-etiqueta="Pago">{o.estado === 'ANULADA' ? <Estado v="ANULADA" /> : <span className="col" style={{ gap: 2 }}><Estado v={o.estado_pago === 'PAGADA' ? 'PAGADA' : 'PENDIENTE'} texto={o.estado_pago === 'PAGADA' ? 'Pagada' : 'Por cobrar'} />{o.estado_pago === 'PAGADA' && o.metodo_pago && <span className="tenue peq-txt">{NOMBRE_METODO[o.metodo_pago] ?? o.metodo_pago}</span>}</span>}</td>
                     <td data-etiqueta="Factura">{o.estado_fiscal ? <span className="fila" style={{ gap: 6 }}><Estado v={o.estado_fiscal} texto={o.proveedor_fiscal === 'sandbox' && ['VALIDADO', 'ENTREGADO'].includes(o.estado_fiscal) ? 'Prueba' : undefined} /><span className="mono tenue">{o.documento}</span></span> : <span className="tenue">Sin factura</span>}</td>
                   </tr>
                 ))}</tbody>
@@ -179,36 +188,140 @@ export function Ventas() {
           )}
         </section>
       </div>
-      {nueva && <NuevaVenta onCerrar={() => setNueva(false)} onGuardada={(id) => nav(`/ventas/${id}`)} />}
+      {nueva && <NuevaVenta onCerrar={() => { setNueva(false); recargar(); }} onGuardada={(id) => nav(`/ventas/${id}`)} />}
+      {caja && <CajaDelDia onCerrar={() => setCaja(false)} />}
     </>
   );
 }
 
+/**
+ * Cierre de caja: lo cobrado en el día por método (según la fecha del pago), el efectivo recibido y el
+ * cambio entregado, y lo que quedó por cobrar. Son los registros del sistema; el conteo físico del
+ * dinero lo hace el negocio.
+ */
+function CajaDelDia({ onCerrar }: { onCerrar: () => void }) {
+  const [dia, setDia] = useState(hoyLocal());
+  const { data, error, recargar } = useApi<any>(() => api.get(`/api/t/ventas/caja?fecha=${dia}`), [dia]);
+  return (
+    <Modal titulo="Caja del día" className="modal-ancho" onCerrar={onCerrar} pie={<button className="btn" onClick={onCerrar}>Cerrar</button>}>
+      <Campo etiqueta="Día" ayuda={`hora de ${zona()}`}><input className="input" type="date" value={dia} max={hoyLocal()} onChange={(e) => e.target.value && setDia(e.target.value)} /></Campo>
+      {error ? <ErrorCarga error={error} reintentar={recargar} /> : !data ? <Cargando filas={4} /> : (
+        <>
+          <div className="caja-cifras" key={data.fecha}>
+            <div className="caja-total" style={escalon(0)}><span className="etiqueta">Cobrado</span><b className="num"><Contador valor={data.total_cobrado} formato={cop} ms={900} /></b><span className="tenue peq-txt">{fechaLarga(data.fecha)}</span></div>
+            {data.metodos.filter((m: any) => m.pagos > 0 || m.metodo !== 'PASARELA').map((m: any, i: number) => (
+              <div key={m.metodo} className="caja-metodo" data-metodo={m.metodo} style={escalon(i + 1)}>
+                <span className="tenue peq-txt">{m.nombre}</span><b className="num"><Contador valor={m.total} formato={cop} ms={800} /></b>
+                <span className="tenue peq-txt">{m.pagos} {m.pagos === 1 ? 'pago' : 'pagos'}{data.total_cobrado > 0 && m.total > 0 ? ` · ${Math.round((m.total / data.total_cobrado) * 100)} %` : ''}</span>
+                {data.total_cobrado > 0 && m.total > 0 && <i className="caja-barra" style={{ width: `${(m.total / data.total_cobrado) * 100}%` }} aria-hidden="true" />}
+              </div>
+            ))}
+          </div>
+          <div className="caja-arqueo">
+            <div className="caja-recibo" role="group" aria-label="Arqueo del efectivo">
+              <div><span>Efectivo recibido</span><span>{cop(data.efectivo.recibido)}</span></div>
+              <div><span>Cambio entregado</span><span>{data.efectivo.cambio > 0 ? '−' : ''}{cop(data.efectivo.cambio)}</span></div>
+              <div className="total"><span>Efectivo que debe haber</span><b><Contador valor={data.efectivo.neto} formato={cop} ms={900} /></b></div>
+            </div>
+          <dl className="datos-def">
+            <dt>Ventas del día</dt><dd>{data.ventas.n} por {cop(data.ventas.total)}</dd>
+            <dt>Quedaron por cobrar</dt><dd>{data.ventas.por_cobrar ? <Link to="/ventas?pago=PENDIENTE" onClick={onCerrar}>{data.ventas.por_cobrar} por {cop(data.ventas.total_por_cobrar)}</Link> : 'Ninguna'}</dd>
+            {data.anulados.pagos > 0 && <><dt>Pagos anulados</dt><dd>{data.anulados.pagos} por {cop(data.anulados.total)} <span className="tenue peq-txt">(no suman)</span></dd></>}
+            {data.excedentes.pagos > 0 && <><dt>Pagados de más</dt><dd className="error">{data.excedentes.pagos} por {cop(data.excedentes.total)}: devuélvelos desde la pasarela</dd></>}
+          </dl>
+          </div>
+          {data.detalle.length > 0 ? (
+            <div className="tabla-wrap"><table className="tabla tabla-movil">
+              <thead><tr><th>Hora</th><th>Venta</th><th>Método</th><th className="num">Valor</th><th>Estado</th><th>Registró</th></tr></thead>
+              <tbody className="entra-escalonado">{data.detalle.map((p: any, i: number) => (
+                <tr key={p.id} style={escalon(i)}>
+                  <td data-etiqueta="Hora" className="mono">{hora(p.creado_en)}</td>
+                  <td data-etiqueta="Venta" className="principal"><Link to={`/ventas/${p.venta_id}`} onClick={onCerrar} className="mono">#{p.venta}</Link> <span className="tenue">{p.cliente}</span></td>
+                  <td data-etiqueta="Método">{p.metodo_nombre}{p.metodo === 'EFECTIVO' && p.cambio > 0 && <span className="tenue peq-txt"> · cambio {cop(p.cambio)}</span>}</td>
+                  <td data-etiqueta="Valor" className="num">{cop(p.monto)}</td>
+                  <td data-etiqueta="Estado"><Estado v={p.estado} /></td>
+                  <td data-etiqueta="Registró" className="tenue">{p.registrado_por ?? '—'}</td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          ) : <Vacio titulo="No hay pagos registrados ese día" />}
+          <p className="tenue peq-txt">Son los pagos registrados en Omnegia. Cuenta el dinero de la caja y compáralo con «Efectivo que debe haber».</p>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 function NuevaVenta({ onCerrar, onGuardada }: { onCerrar: () => void; onGuardada: (id: string) => void }) {
+  const { puede } = useSesion();
   const responsables=useApi<any[]>(()=>api.get('/api/t/equipo/responsables'),[]);
   const [responsable,setResponsable]=useState('');
   const [qCliente, setQCliente] = useState('');
   const qc = useRetardo(qCliente);
   const clientes = useApi<any>(() => api.get(`/api/t/clientes?por_pagina=30${qc ? `&q=${encodeURIComponent(qc)}` : ''}`), [qc]);
   const productos = useApi<any[]>(() => api.get('/api/t/productos'), []);
+  const cobra = puede('payment:register');
+  const metodos = useApi<Metodos | null>(() => (cobra ? api.get('/api/t/cobros/metodos') : Promise.resolve(null)), [cobra]);
   const [cliente, setCliente] = useState<any>(null);
+  const [nuevoCliente, setNuevoCliente] = useState<{ nombre: string; telefono: string } | null>(null);
   const [items, setItems] = useState<{ product_id: string; cantidad: number; descuento_pct: number }[]>([]);
-  const { run, ocupado, error } = useAccion();
+  const [pago, setPago] = useState<PagoElegido>({ metodo: 'DESPUES', recibido: '', referencia: '' });
+  // Una clave por venta: un doble clic o un reintento no registra dos ventas pagadas.
+  const [clave, setClave] = useState(nuevaClave);
+  const [hecha, setHecha] = useState<any>(null);
+  const { run, ocupado, error, limpiarError } = useAccion();
+  const pagoInicial = (): PagoElegido => ({ metodo: metodos.data?.EFECTIVO ? 'EFECTIVO' : 'DESPUES', recibido: '', referencia: '' });
+  // Si el negocio acepta efectivo, es lo que se propone primero en el mostrador.
+  useEffect(() => { if (metodos.data?.EFECTIVO) setPago((p) => (p.metodo === 'DESPUES' ? { ...p, metodo: 'EFECTIVO' } : p)); }, [metodos.data]);
+  const otraVenta = () => { setHecha(null); setCliente(null); setItems([]); setResponsable(''); setQCliente(''); setPago(pagoInicial()); setClave(nuevaClave()); limpiarError(); productos.recargar(); };
   const activos = (productos.data ?? []).filter((p) => p.activo);
   const prod = (id: string) => activos.find((p) => p.id === id);
   // Estimación en pantalla; el total real lo calcula el servidor con el catálogo vigente.
   const total = items.reduce((a, i) => a + Math.round((prod(i.product_id)?.precio ?? 0) * i.cantidad * (1 - (i.descuento_pct || 0) / 100) * 100) / 100, 0);
   const faltaStock = items.find((i) => { const p = prod(i.product_id); return p?.controla_stock && i.cantidad > p.stock; });
+  const errorPago = items.length ? validarPago(pago, total) : null;
+  const crearCliente = async () => {
+    const nombre = nuevoCliente?.nombre.trim();
+    if (!nombre) return;
+    const r = await run(() => api.post('/api/t/clientes', { nombre, telefono: nuevoCliente!.telefono.trim() || null }), undefined, { silencioso: true });
+    if (r) { setCliente({ id: r.id, nombre }); setNuevoCliente(null); setQCliente(''); }
+  };
+  const registrar = async () => {
+    const cuerpo = cobra ? cuerpoPago(pago, clave) : null;
+    const r = await run(() => api.post('/api/t/ventas', { customer_id: cliente.id, items, responsable_id: responsable || null, ...(cuerpo ? { pago: cuerpo } : {}) }), undefined, { silencioso: true });
+    if (r) setHecha(r);
+  };
+  if (hecha) {
+    return (
+      <Modal titulo={`Venta #${hecha.numero}`} className="modal-venta" onCerrar={onCerrar}>
+        <CobroExitoso titulo={hecha.pago ? `Venta #${hecha.numero} pagada` : `Venta #${hecha.numero} registrada`} pago={hecha.pago} total={hecha.total}>
+          <button className="btn primario" onClick={otraVenta} autoFocus><Icon n="mas" className="" size={16} />Registrar otra venta</button>
+          <button className="btn" onClick={() => onGuardada(hecha.id)}>Ver la venta</button>
+        </CobroExitoso>
+        <p className="tenue peq-txt" style={{ textAlign: 'center', margin: 0 }}>La factura electrónica, si aplica, se emite en segundo plano.</p>
+      </Modal>
+    );
+  }
   return (
-    <Modal titulo="Registrar venta" onCerrar={onCerrar} pie={<><span className="tenue" style={{ marginRight: 'auto' }}>Total <b>{cop(total)}</b> (IVA incluido)</span><button className="btn" onClick={onCerrar}>Cancelar</button>
-      <button className="btn primario" disabled={ocupado || !cliente || !items.length || !!faltaStock} onClick={async () => { const r = await run(() => api.post('/api/t/ventas', { customer_id: cliente.id, items, responsable_id:responsable||null }), 'Venta registrada. La factura se emite en segundo plano.', { silencioso: true }); if (r) onGuardada(r.id); }}>Registrar</button></>}>
+    <Modal titulo="Registrar venta" className="modal-venta" onCerrar={onCerrar} pie={<><span className="tenue" style={{ marginRight: 'auto' }}>Total <b>{cop(total)}</b> (IVA incluido)</span><button className="btn" onClick={onCerrar}>Cancelar</button>
+      <button className="btn primario" disabled={ocupado || !cliente || !items.length || !!faltaStock || !!errorPago} onClick={registrar}>{ocupado ? 'Registrando…' : cobra && pago.metodo !== 'DESPUES' ? 'Registrar y cobrar' : 'Registrar por cobrar'}</button></>}>
       {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
       <Campo etiqueta="Persona responsable de la venta" ayuda="Opcional. Permite atribuir la actividad y calcular la comisión configurada."><select className="input" value={responsable} onChange={e=>setResponsable(e.target.value)}><option value="">Sin atribuir</option>{responsables.data?.map(p=><option value={p.id} key={p.id}>{p.nombre}</option>)}</select></Campo>
         <Campo etiqueta="Cliente">
-        {cliente ? <span className="fila entre"><b>{cliente.nombre}</b><button type="button" className="btn peq sutil" onClick={() => setCliente(null)}>Cambiar</button></span> : <>
+        {cliente ? <span className="fila entre"><b>{cliente.nombre}</b><button type="button" className="btn peq sutil" onClick={() => setCliente(null)}>Cambiar</button></span> : nuevoCliente ? (
+          <span className="col nuevo-cliente">
+            <input className="input" value={nuevoCliente.nombre} maxLength={120} onChange={(e) => setNuevoCliente({ ...nuevoCliente, nombre: e.target.value })} placeholder="Nombre del cliente" aria-label="Nombre del cliente nuevo" />
+            <input className="input" inputMode="tel" value={nuevoCliente.telefono} maxLength={20} onChange={(e) => setNuevoCliente({ ...nuevoCliente, telefono: e.target.value })} placeholder="Teléfono (opcional), ej. 300 123 4567" aria-label="Teléfono del cliente nuevo" />
+            <span className="fila envolver" style={{ gap: 6 }}>
+              <button type="button" className="btn peq primario" disabled={ocupado || !nuevoCliente.nombre.trim()} onClick={crearCliente}>Crear y usar</button>
+              <button type="button" className="btn peq sutil" onClick={() => setNuevoCliente(null)}>Volver a buscar</button>
+            </span>
+          </span>
+        ) : <>
           <input className="input" type="search" placeholder="Busca por nombre, teléfono o documento" value={qCliente} onChange={(e) => setQCliente(e.target.value)} />
           <div className="opciones-busqueda" role="listbox" aria-label="Clientes encontrados">{clientes.data?.clientes?.slice(0, 6).map((c: any) => <button type="button" role="option" aria-selected="false" key={c.id} onClick={() => setCliente(c)}>{c.nombre}<span className="tenue peq-txt">{c.telefono ?? c.numero_documento ?? ''}</span></button>)}
-            {clientes.data && !clientes.data.clientes.length && <span className="tenue peq-txt">Nadie coincide. Regístralo primero en Clientes.</span>}</div>
+            {clientes.data && !clientes.data.clientes.length && <span className="tenue peq-txt">Nadie coincide{puede('customer:write') ? '.' : '. Pide a quien administra que lo registre en Clientes.'}</span>}</div>
+          {puede('customer:write') && <button type="button" className="btn peq sutil" style={{ alignSelf: 'flex-start' }} onClick={() => setNuevoCliente({ nombre: /\d{5,}/.test(qCliente) ? '' : qCliente.trim(), telefono: /\d{5,}/.test(qCliente) ? qCliente.trim() : '' })}><Icon n="mas" className="" size={14} />{qCliente.trim() && !/\d{5,}/.test(qCliente) ? `Crear cliente «${qCliente.trim().slice(0, 40)}»` : 'Crear cliente nuevo'}</button>}
         </>}
       </Campo>
       <div className="col">
@@ -228,6 +341,41 @@ function NuevaVenta({ onCerrar, onGuardada }: { onCerrar: () => void; onGuardada
         })}
         <button className="btn peq" style={{ alignSelf: 'flex-start' }} disabled={!activos.length} onClick={() => setItems([...items, { product_id: activos[0].id, cantidad: 1, descuento_pct: 0 }])}><Icon n="mas" className="" size={14} />Agregar ítem</button>
       </div>
+      {cobra ? (items.length > 0 && <CamposCobro metodos={metodos.data} total={total} valor={pago} onCambio={setPago} />)
+        : <p className="tenue peq-txt">La venta queda por cobrar. Tu rol no registra pagos: quien cobra lo hace desde el detalle de la venta.</p>}
+    </Modal>
+  );
+}
+
+/** Pago de una venta que quedó por cobrar (el cliente pagó después, por ejemplo al recoger). */
+function RegistrarPago({ venta, metodos, onCerrar, onHecho }: { venta: any; metodos: Metodos; onCerrar: () => void; onHecho: () => void }) {
+  const [hecho, setHecho] = useState<any>(null);
+  const inicial: PagoElegido['metodo'] = metodos.EFECTIVO ? 'EFECTIVO' : metodos.TRANSFERENCIA ? 'TRANSFERENCIA' : metodos.DATAFONO ? 'DATAFONO' : 'DESPUES';
+  const [pago, setPago] = useState<PagoElegido>({ metodo: inicial, recibido: '', referencia: '' });
+  const clave = useMemo(nuevaClave, []);
+  const { run, ocupado, error } = useAccion();
+  const errorPago = validarPago(pago, venta.total);
+  const guardar = async () => {
+    const cuerpo = cuerpoPago(pago, clave);
+    if (!cuerpo) return;
+    const r = await run(() => api.post(`/api/t/ventas/${venta.id}/pagos`, cuerpo), undefined, { silencioso: true });
+    if (r) setHecho(r);
+  };
+  if (hecho) {
+    return (
+      <Modal titulo={`Venta #${venta.numero}`} className="modal-venta" onCerrar={onHecho}>
+        <CobroExitoso titulo="Pago registrado" pago={hecho} total={venta.total}>
+          <button className="btn primario" onClick={onHecho} autoFocus>Listo</button>
+        </CobroExitoso>
+      </Modal>
+    );
+  }
+  return (
+    <Modal titulo={`Registrar pago · venta #${venta.numero}`} className="modal-venta" onCerrar={onCerrar} pie={<><span className="tenue" style={{ marginRight: 'auto' }}>Total <b>{cop(venta.total)}</b></span><button className="btn" onClick={onCerrar}>Cancelar</button>
+      <button className="btn primario" disabled={ocupado || pago.metodo === 'DESPUES' || !!errorPago} onClick={guardar}>{ocupado ? 'Registrando…' : 'Registrar pago'}</button></>}>
+      {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
+      <CamposCobro metodos={metodos} total={venta.total} valor={pago} onCambio={setPago} permitirDespues={false} enfocar />
+      {venta.enlaces?.some((l: any) => l.estado === 'ABIERTO') && <p className="tenue peq-txt">Al registrar el pago se cierra el enlace de pago abierto, para que no se cobre dos veces.</p>}
     </Modal>
   );
 }
@@ -238,6 +386,8 @@ export function VentaDetalle() {
   const toast = useToast();
   const { data, error, recargar } = useApi<any>(() => api.get(`/api/t/ventas/${id}`), [id], { cada: 5000 });
   const [anular, setAnular] = useState(false);
+  const [cobrar, setCobrar] = useState(false);
+  const [anularPago, setAnularPago] = useState<any>(null);
   const [enlace, setEnlace] = useState<string | null>(null);
   const { run, ocupado } = useAccion();
   if (error) return <><Cabecera titulo="Venta" /><div className="contenido"><ErrorCarga error={error} /><Link to="/ventas" className="btn" style={{ alignSelf: 'flex-start' }}><Icon n="atras" className="" size={16} />Volver a ventas</Link></div></>;
@@ -245,18 +395,30 @@ export function VentaDetalle() {
   const factura = data.documentos.find((d: any) => d.tipo === 'FACTURA');
   const nota = data.documentos.find((d: any) => d.tipo === 'NOTA_CREDITO');
   const prueba = factura?.proveedor_fiscal === 'sandbox';
+  const pagos: any[] = data.pagos ?? [];
+  const vigente = pagos.find((p) => p.estado === 'REGISTRADO');
+  const excedentes = pagos.filter((p) => p.estado === 'EXCEDENTE');
+  const porCobrar = data.estado === 'CONFIRMADA' && data.estado_pago !== 'PAGADA';
   const pedirEnlace = async () => {
     const r = await run(() => api.post(`/api/t/ventas/${id}/enlace-pago`));
     if (r?.enlace) { setEnlace(r.enlace); recargar(); } else if (r?.error) toast(r.error, true); else if (r?.pagada) toast('Esta venta ya está pagada.');
   };
   return (
     <>
-      <Cabecera titulo={`Venta #${data.numero}`} sub={<span className="fila envolver" style={{ gap: 8 }}>{fechaHora(data.creado_en)} · {data.cliente} <Estado v={data.origen} />{data.estado === 'ANULADA' && <Estado v="ANULADA" />}<Estado v={data.estado_pago === 'PAGADA' ? 'PAGADA' : data.estado === 'ANULADA' ? undefined : 'PENDIENTE'} texto={data.estado_pago === 'PAGADA' ? 'Pagada' : 'Por cobrar'} /></span>}>
+      <Cabecera titulo={`Venta #${data.numero}`} sub={<span className="fila envolver" style={{ gap: 8 }}>{fechaHora(data.creado_en)} · {data.cliente} <Estado v={data.origen} />{data.estado === 'ANULADA' && <Estado v="ANULADA" />}<Estado v={data.estado_pago === 'PAGADA' ? 'PAGADA' : data.estado === 'ANULADA' ? undefined : 'PENDIENTE'} texto={data.estado_pago === 'PAGADA' ? (vigente ? `Pagada · ${vigente.metodo_nombre.toLowerCase()}` : 'Pagada') : 'Por cobrar'} /></span>}>
         <Link to="/ventas" className="btn sutil"><Icon n="atras" className="" size={16} />Ventas</Link>
-        {data.estado === 'CONFIRMADA' && data.estado_pago !== 'PAGADA' && <Escritura permiso="payment:link" modulo="ventas"><button className="btn" disabled={ocupado} onClick={pedirEnlace}>Enlace de pago</button></Escritura>}
+        {porCobrar && <Escritura permiso="payment:register" modulo="ventas"><button className="btn primario" onClick={() => setCobrar(true)}><Icon n="efectivo" className="" size={16} />Registrar pago</button></Escritura>}
+        {porCobrar && <Escritura permiso="payment:link" modulo="ventas"><button className="btn" disabled={ocupado} onClick={pedirEnlace}>Enlace de pago</button></Escritura>}
         {data.estado === 'CONFIRMADA' && <Escritura permiso="order:void" modulo="ventas"><button className="btn peligro" onClick={() => setAnular(true)}>Anular</button></Escritura>}
       </Cabecera>
       <div className="contenido">
+        {excedentes.length > 0 && (
+          <div className="aviso error" role="alert">
+            <Icon n="alerta" className="" size={16} />
+            <span className="col" style={{ gap: 4 }}><b>La pasarela confirmó {excedentes.length === 1 ? 'un pago' : `${excedentes.length} pagos`} de más por {cop(excedentes.reduce((a, p) => a + p.monto, 0))}.</b>
+              <span>Esta venta ya estaba pagada o anulada cuando llegó. Omnegia no lo suma a la venta: devuélvele el dinero al cliente desde tu cuenta de Wompi.</span></span>
+          </div>
+        )}
         {enlace && (
           <div className="aviso exito" role="status">
             <Icon n="ok" className="" size={16} />
@@ -317,14 +479,34 @@ export function VentaDetalle() {
                 </div>
               )}
             </Tarjeta>
+            <Tarjeta titulo="Pagos" acciones={porCobrar && <Escritura permiso="payment:register" modulo="ventas"><button className="btn peq" onClick={() => setCobrar(true)}>Registrar pago</button></Escritura>}>
+              {pagos.length === 0 ? <span className="tenue">{data.estado === 'ANULADA' ? 'La venta se anuló sin pagos registrados.' : 'Todavía no hay pagos. La venta está por cobrar.'}</span> : (
+                <ul className="lista-pagos">
+                  {pagos.map((p) => (
+                    <li key={p.id} className={`pago ${p.estado !== 'REGISTRADO' ? 'inactivo' : ''}`}>
+                      <span className="fila entre envolver" style={{ gap: 8 }}><b>{p.metodo_nombre}</b><Estado v={p.estado} /></span>
+                      <span className="fila entre envolver" style={{ gap: 8 }}><span className="num"><b>{cop(p.monto)}</b>{p.metodo === 'EFECTIVO' && p.recibido != null && <span className="tenue peq-txt"> · recibido {cop(p.recibido)} · cambio {cop(p.cambio)}</span>}</span><span className="tenue peq-txt">{fechaHora(p.creado_en)}</span></span>
+                      {p.referencia && <span className="mono peq-txt cortar">Ref. {p.referencia}</span>}
+                      <span className="tenue peq-txt">{p.origen === 'PASARELA' ? 'Confirmado por la pasarela' : `Registró ${p.registrado_por ?? 'el equipo'}`}</span>
+                      {p.estado === 'ANULADO' && <span className="peq-txt">Anulado por {p.anulado_por ?? 'el equipo'} el {fechaHora(p.anulado_en)}: {p.motivo_anulacion}</span>}
+                      {p.estado === 'REGISTRADO' && p.metodo !== 'PASARELA' && data.estado === 'CONFIRMADA' && <Escritura permiso="payment:void" modulo="ventas"><button className="btn peq sutil" style={{ alignSelf: 'flex-start' }} onClick={() => setAnularPago(p)}>Anular este pago</button></Escritura>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Tarjeta>
             {nota && <Tarjeta titulo="Nota crédito"><div className="fila entre"><span className="mono">{nota.numero}</span><Estado v={nota.estado} /></div></Tarjeta>}
             {data.enlaces.length > 0 && <Tarjeta titulo="Enlaces de cobro"><div className="lista">{data.enlaces.map((l: any) => <div key={l.id} className="lista-fila" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}><span className="col" style={{ gap: 2, minWidth: 0 }}><span className="mono cortar">{l.referencia}</span>{l.ultimo_estado_proveedor && l.estado === 'ABIERTO' && <span className="tenue peq-txt">Último intento: {l.ultimo_estado_proveedor.toLowerCase()}</span>}</span><Estado v={l.estado} /></div>)}</div><p className="tenue peq-txt" style={{ marginTop: 8 }}>El dinero va directo a la cuenta de pagos del negocio. La venta se marca pagada solo cuando la pasarela lo confirma.</p></Tarjeta>}
           </div>
         </div>
       </div>
       {anular && <Confirmar titulo={`Anular venta #${data.numero}`} riesgo="critica" pedirMotivo textoBoton="Anular venta"
-        efecto={<>{factura && ['VALIDADO', 'ENTREGADO'].includes(factura.estado) ? <>La factura <b className="mono">{factura.numero}</b> ya fue validada: <b>no se borra</b>, se emitirá una <b>nota crédito</b> por {cop(data.total)}.</> : 'La venta quedará anulada.'} Las existencias vuelven al inventario.{data.estado_pago === 'PAGADA' && <> <b>Esta venta ya está pagada:</b> la devolución del dinero se hace por fuera de la plataforma.</>}</>}
+        efecto={<>{factura && ['VALIDADO', 'ENTREGADO'].includes(factura.estado) ? <>La factura <b className="mono">{factura.numero}</b> ya fue validada: <b>no se borra</b>, se emitirá una <b>nota crédito</b> por {cop(data.total)}.</> : 'La venta quedará anulada.'} Las existencias vuelven al inventario.{data.estado_pago === 'PAGADA' && <> <b>Esta venta ya está pagada{vigente ? ` (${vigente.metodo_nombre.toLowerCase()})` : ''}:</b> el pago queda anulado en el historial y la devolución del dinero se hace por fuera de la plataforma.</>}</>}
         onCerrar={() => setAnular(false)} onConfirmar={async (motivo) => { setAnular(false); await run(() => api.post(`/api/t/ventas/${id}/anular`, { motivo }), 'Venta anulada'); recargar(); }} />}
+      {cobrar && data.metodos_pago && <RegistrarPago venta={data} metodos={data.metodos_pago} onCerrar={() => setCobrar(false)} onHecho={() => { setCobrar(false); recargar(); }} />}
+      {anularPago && <Confirmar titulo="Anular pago" riesgo="confirmable" pedirMotivo textoBoton="Anular pago"
+        efecto={<>El pago en <b>{anularPago.metodo_nombre.toLowerCase()}</b> por <b>{cop(anularPago.monto)}</b> queda anulado en el historial (no se borra) y la venta vuelve a estar <b>por cobrar</b>. Úsalo si se registró por error; si devolviste el dinero, anula la venta.</>}
+        onCerrar={() => setAnularPago(null)} onConfirmar={async (motivo) => { const p = anularPago; setAnularPago(null); await run(() => api.post(`/api/t/ventas/${id}/pagos/${p.id}/anular`, { motivo }), 'Pago anulado. La venta quedó por cobrar.'); recargar(); }} />}
     </>
   );
 }
@@ -336,6 +518,7 @@ const TRAZA: Record<string, string> = {
   'factura.rechazada': 'Factura rechazada', 'factura.reintentar': 'Factura enviada de nuevo', 'documento.entregar': 'Factura enviada al cliente',
   'nota_credito.solicitar': 'Nota crédito solicitada', 'nota_credito.validada': 'Nota crédito validada', 'cobro.enlace': 'Enlace de pago generado',
   'cobro.conciliado': 'Pago confirmado por la pasarela', 'cobro.intento': 'Intento de pago', 'cobro.monto_no_coincide': 'Pago con monto distinto (no aplicado)',
+  'pago.registrar': 'Pago registrado', 'pago.anular': 'Pago anulado', 'cobro.pago_excedente': 'Pago recibido de más (por devolver)',
 };
 
 // =================================================================== Catálogo e inventario
@@ -343,6 +526,8 @@ export function Inventario() {
   const { puede } = useSesion();
   const productos = useApi<any[]>(() => api.get('/api/t/productos'), []);
   const movs = useApi<any[]>(() => (puede('inventory:read') ? api.get('/api/t/inventario/movimientos') : Promise.resolve([])), []);
+  const revision = useApi<any>(() => api.get('/api/t/productos/revision'), []);
+  const [verRevision, setVerRevision] = useState(false);
   const [editar, setEditar] = useState<any>(null);
   const [mov, setMov] = useState<any>(null);
   const [importar, setImportar] = useState(false);
@@ -355,8 +540,13 @@ export function Inventario() {
     delete body.id; delete body.moneda;
     if (editar.id) delete body.stock;
     const r = await run(() => (editar.id ? api.patch(`/api/t/productos/${editar.id}`, body) : api.post('/api/t/productos', body)), 'Catálogo actualizado', { silencioso: true });
-    if (r) { setEditar(null); productos.recargar(); }
+    if (r) { setEditar(null); productos.recargar(); revision.recargar(); }
   };
+  const porRevisar: any[] = revision.data?.items ?? [];
+  const problemas = new Map<string, any[]>(porRevisar.map((i) => [i.id, i.problemas]));
+  const criticos = porRevisar.filter((i) => i.problemas.some((p: any) => p.codigo !== 'sin_categoria'));
+  const soloCategoria = porRevisar.length - criticos.length;
+  const nombreSinLetras = !!editar?.nombre?.trim() && !/\p{L}/u.test(editar.nombre);
   return (
     <>
       <Cabecera titulo="Catálogo e inventario" sub="Organiza tus productos y servicios. Revisa precios y existencias. Los precios incluyen IVA.">
@@ -366,6 +556,28 @@ export function Inventario() {
       </Cabecera>
       <div className="contenido">
         {bajos.length > 0 && <Tarjeta nivel={3} titulo={<span className="fila"><Icon n="alerta" className="" size={16} /> {bajos.length === 1 ? '1 producto está' : `${bajos.length} productos están`} en o por debajo del mínimo</span>}><div className="fila envolver" style={{ gap: 6 }}>{bajos.map((p) => <span key={p.id} className="chip">{p.nombre}: <b>{p.stock}</b> / mín. {p.stock_minimo}</span>)}</div></Tarjeta>}
+        {porRevisar.length > 0 && (
+          <Tarjeta nivel={criticos.length ? 3 : 2} titulo={<span className="fila"><Icon n={criticos.length ? 'alerta' : 'info'} className="" size={16} /> {criticos.length ? `${criticos.length === 1 ? '1 ítem tiene' : `${criticos.length} ítems tienen`} datos por revisar` : `${soloCategoria === 1 ? '1 ítem no tiene' : `${soloCategoria} ítems no tienen`} categoría`}</span>}
+            acciones={<button className="btn peq sutil" aria-expanded={verRevision} onClick={() => setVerRevision(!verRevision)}>{verRevision ? 'Ocultar' : 'Ver cuáles'}</button>}>
+            <p className="tenue peq-txt" style={{ margin: 0 }}>Nada se borra ni se cambia solo: revisa cada ítem y corrígelo, o desactívalo si era una prueba. {criticos.length > 0 && soloCategoria > 0 && `Además, ${soloCategoria} sin categoría.`}</p>
+            <div className={`plegable ${verRevision ? 'abierto' : ''}`} inert={!verRevision}><div>
+              <ul className="lista entra-escalonado" style={{ listStyle: 'none', margin: '8px 0 0', padding: 0 }}>
+                {porRevisar.map((i, k) => {
+                  const p = productos.data?.find((x) => x.id === i.id);
+                  return (
+                    <li key={i.id} className="lista-fila" style={{ gridTemplateColumns: 'minmax(0,1fr) auto', ...escalon(k) }}>
+                      <span className="col" style={{ gap: 2, minWidth: 0 }}>
+                        <span><b>«{i.nombre}»</b> <span className="tenue">· {i.tipo === 'SERVICIO' ? 'Servicio' : 'Producto'} · {cop(i.precio)}{!i.activo && ' · inactivo'}</span></span>
+                        <span className="peq-txt sec">{i.problemas.map((x: any) => x.texto).join(' ')}</span>
+                      </span>
+                      {p && puede('catalog:write') && <button className="btn peq" onClick={() => setEditar(p)} aria-label={`Corregir ${i.nombre}`}>Corregir</button>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div></div>
+          </Tarjeta>
+        )}
         {productos.error && <ErrorCarga error={productos.error} reintentar={productos.recargar} />}
         <section className="tarjeta" hidden={!!productos.error}>
           {!productos.data ? <Cargando /> : productos.data.length === 0 ? <Vacio titulo="Tu catálogo está vacío" accion={<Escritura permiso="catalog:write"><button className="btn" onClick={() => setImportar(true)}>Importar desde una hoja de cálculo</button></Escritura>}>Agrega productos y servicios para venderlos y para que el agente pueda consultarlos.</Vacio> : lista.length === 0 ? <Vacio titulo="Nada coincide con la búsqueda" /> : (
@@ -374,7 +586,7 @@ export function Inventario() {
                 const bajo = p.controla_stock && p.stock <= p.stock_minimo;
                 return (
                 <tr key={p.id}>
-                  <td data-etiqueta="Nombre" className="principal"><b style={{ fontWeight: 600 }}>{p.nombre}</b>{p.duracion_min && <span className="tenue"> · {p.duracion_min} min</span>}</td>
+                  <td data-etiqueta="Nombre" className="principal"><b style={{ fontWeight: 600 }}>{p.nombre}</b>{p.duracion_min && <span className="tenue"> · {p.duracion_min} min</span>}{problemas.get(p.id)?.some((x: any) => x.codigo !== 'sin_categoria') && <> <span className="estado warn" title={problemas.get(p.id)!.map((x: any) => x.texto).join(' ')}><Icon n="alerta" className="" />Revisar</span></>}</td>
                   <td data-etiqueta="Tipo">{p.tipo === 'SERVICIO' ? 'Servicio' : 'Producto'}</td><td data-etiqueta="Categoría">{p.categoria ?? <span className="tenue">—</span>}</td>
                   <td data-etiqueta="Precio" className="num">{cop(p.precio)}</td><td data-etiqueta="IVA" className="num">{p.iva_pct}%</td>
                   <td data-etiqueta="Existencias" className="num">{p.controla_stock ? (bajo ? <span className="estado warn"><Icon n="alerta" className="" />{p.stock}<span className="sr"> (bajo mínimo)</span></span> : p.stock) : <span className="tenue">—</span>}</td>
@@ -394,11 +606,12 @@ export function Inventario() {
         )}
       </div>
       {editar && (
-        <Modal titulo={editar.id ? `Editar ${editar.nombre}` : 'Nuevo ítem'} onCerrar={() => setEditar(null)} pie={<><button className="btn" onClick={() => setEditar(null)}>Cancelar</button><button className="btn primario" disabled={ocupado || !editar.nombre?.trim() || editar.precio === ''} onClick={guardarProducto}>Guardar</button></>}>
+        <Modal titulo={editar.id ? `Editar ${editar.nombre}` : 'Nuevo ítem'} onCerrar={() => setEditar(null)} pie={<><button className="btn" onClick={() => setEditar(null)}>Cancelar</button><button className="btn primario" disabled={ocupado || !editar.nombre?.trim() || nombreSinLetras || editar.precio === ''} onClick={guardarProducto}>Guardar</button></>}>
           {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
+          {editar.id && problemas.get(editar.id) && <div className="aviso peq-txt"><Icon n="info" className="" size={14} /><span>{problemas.get(editar.id)!.map((x: any) => x.texto).join(' ')}</span></div>}
           <div className="grid g2">
             <Campo etiqueta="Tipo"><select className="input" value={editar.tipo} disabled={!!editar.id} onChange={(e) => setEditar({ ...editar, tipo: e.target.value, controla_stock: e.target.value === 'PRODUCTO' })}><option value="SERVICIO">Servicio</option><option value="PRODUCTO">Producto</option></select></Campo>
-            <Campo etiqueta="Nombre"><input className="input" value={editar.nombre} maxLength={120} onChange={(e) => setEditar({ ...editar, nombre: e.target.value })} /></Campo>
+            <Campo etiqueta="Nombre" error={nombreSinLetras ? 'El nombre debe tener al menos una letra (por ejemplo «Corte clásico»).' : undefined}><input className="input" value={editar.nombre} maxLength={120} onChange={(e) => setEditar({ ...editar, nombre: e.target.value })} aria-invalid={nombreSinLetras} /></Campo>
             <Campo etiqueta="Precio (IVA incluido)"><input className="input" inputMode="decimal" value={editar.precio} onChange={(e) => setEditar({ ...editar, precio: e.target.value.replace(/[^\d.]/g, '') })} /></Campo>
             <Campo etiqueta="IVA"><select className="input" value={editar.iva_pct} onChange={(e) => setEditar({ ...editar, iva_pct: Number(e.target.value) })}><option value={0}>0 %</option><option value={5}>5 %</option><option value={19}>19 %</option></select></Campo>
             <Campo etiqueta="Categoría"><input className="input" value={editar.categoria ?? ''} maxLength={60} onChange={(e) => setEditar({ ...editar, categoria: e.target.value })} /></Campo>

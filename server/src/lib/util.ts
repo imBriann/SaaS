@@ -81,3 +81,12 @@ export function normalizeText(s: string): string {
 
 export const cop = (n: number) =>
   '$' + Math.round(n).toLocaleString('es-CO').replace(/,/g, '.');
+
+/** «+57 300 ••• 4567»: el número completo solo se ve en el detalle, que queda auditado. */
+export function enmascararTelefono(t: string | null | undefined): string {
+  const d = String(t ?? '').replace(/\D/g, '');
+  if (d.length < 8) return '•••';
+  const pais = d.length > 10 ? d.slice(0, d.length - 10) : '';
+  const local = d.slice(-10);
+  return `+${pais ? `${pais} ` : ''}${local.slice(0, 3)} ••• ${local.slice(-4)}`;
+}

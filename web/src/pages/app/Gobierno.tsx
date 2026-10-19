@@ -325,6 +325,7 @@ function Cobros({ data, onCambio }: { data: any; onCambio: () => void }) {
   const completo = f.llave_publica && f.secreto_integridad && f.secreto_eventos;
   return (
     <div className="grid g2">
+      <MetodosCobro pasarela={!!cuenta} />
       <Tarjeta titulo="Cuenta de cobros (Wompi)" acciones={cuenta ? <Estado v="CONECTADO" texto={cuenta.proveedor === 'wompi' ? `Wompi · ${cuenta.entorno === 'produccion' ? 'producción' : 'pruebas'}` : 'Simulada'} /> : <Estado v="SIN_CONFIGURAR" />}>
         <form className="col" onSubmit={async (e) => { e.preventDefault(); const r = await run(() => api.post('/api/t/configuracion/pasarela', { proveedor: 'wompi', ...f }), 'Cuenta vinculada', { silencioso: true }); if (r) { setF({ ...f, secreto_integridad: '', secreto_eventos: '' }); onCambio(); } }}>
           <span className="sec peq-txt">El dinero de tus ventas va directo a tu cuenta de Wompi. Encuentra estos datos en el panel de Wompi › Desarrolladores.</span>
@@ -347,6 +348,48 @@ function Cobros({ data, onCambio }: { data: any; onCambio: () => void }) {
         </Tarjeta>
       )}
     </div>
+  );
+}
+
+const METODOS_MANUALES: [string, string, string][] = [
+  ['EFECTIVO', 'Efectivo', 'Se registra lo recibido y la plataforma calcula el cambio.'],
+  ['TRANSFERENCIA', 'Transferencia', 'Nequi, Daviplata o cuenta bancaria. Confirma que el dinero llegó antes de registrarla.'],
+  ['DATAFONO', 'Tarjeta (datáfono)', 'Si tienes datáfono propio. Se guarda el número de aprobación como referencia.'],
+];
+
+/** Métodos que el equipo puede registrar en el mostrador. La pasarela se activa sola al vincular Wompi. */
+function MetodosCobro({ pasarela }: { pasarela: boolean }) {
+  const { puede } = useSesion();
+  const { data, error, recargar, setData } = useApi<any>(() => api.get('/api/t/cobros/metodos'), []);
+  const { run, ocupado } = useAccion();
+  const editable = puede('tenant:configure');
+  const cambiar = async (k: string, v: boolean) => {
+    const nuevo = { EFECTIVO: !!data.EFECTIVO, TRANSFERENCIA: !!data.TRANSFERENCIA, DATAFONO: !!data.DATAFONO, [k]: v };
+    const r = await run(() => api.patch('/api/t/configuracion/cobros/metodos', nuevo), v ? 'Método activado' : 'Método desactivado');
+    if (r) setData(r);
+  };
+  return (
+    <Tarjeta titulo="Métodos de pago en el mostrador">
+      {error ? <ErrorCarga error={error} reintentar={recargar} /> : !data ? <Cargando filas={3} /> : (
+        <div className="col" style={{ gap: 12 }}>
+          <span className="sec peq-txt">Lo que tu equipo puede registrar al vender o al cobrar una venta pendiente. Son registros internos: no mueven dinero ni pasan por la pasarela.</span>
+          <div className="lista">
+            {METODOS_MANUALES.map(([k, nombre, ayuda]) => (
+              <div key={k} className="lista-fila" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
+                <span className="col" style={{ gap: 2 }}><b>{nombre}</b><span className="tenue peq-txt">{ayuda}</span></span>
+                <Interruptor on={!!data[k]} etiqueta={`Aceptar ${nombre.toLowerCase()}`} disabled={!editable || ocupado} onChange={(v) => cambiar(k, v)} />
+              </div>
+            ))}
+            <div className="lista-fila" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
+              <span className="col" style={{ gap: 2 }}><b>Pasarela de pagos (enlace)</b><span className="tenue peq-txt">Se marca pagada sola cuando Wompi confirma el pago con su firma.</span></span>
+              <Estado v={pasarela ? 'CONECTADO' : 'SIN_CONFIGURAR'} texto={pasarela ? 'Activa' : 'Vincula Wompi'} />
+            </div>
+          </div>
+          {!editable && <span className="tenue peq-txt">Solo quien administra la empresa cambia estos métodos.</span>}
+          {data.actualizado_en && <span className="tenue peq-txt">Último cambio: {fechaHora(data.actualizado_en)}{data.actualizado_por ? ` · ${data.actualizado_por}` : ''}</span>}
+        </div>
+      )}
+    </Tarjeta>
   );
 }
 

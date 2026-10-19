@@ -3,7 +3,7 @@ import type { Tx } from '../db/index.js';
 import type { Ctx } from '../core/context.js';
 import type { Permiso } from '../core/permissions.js';
 import { availability, cancelAppointmentCore, customerAppointments, insertAppointment } from '../modules/agenda.js';
-import { findProductsByName, lowStock } from '../modules/catalog.js';
+import { createProduct, findProductsByName, lowStock, updateProduct } from '../modules/catalog.js';
 import { insertOrder } from '../modules/orders.js';
 import { escalate } from '../modules/conversations.js';
 import { allQuotas } from '../core/usage.js';
@@ -11,6 +11,7 @@ import { formatFechaLarga, rangoDia, todayLocal, utcToLocal } from '../lib/time.
 import { zonaDe } from '../core/tenant.js';
 import { cop } from '../lib/util.js';
 import { createPaymentLink } from '../modules/payments.js';
+import { cobradoPorMetodo } from '../modules/pagosVentas.js';
 
 /**
  * Registro de herramientas (PRO-SW-002 fig. 07a y contrato §7.1).
@@ -30,6 +31,9 @@ export interface ToolRuntime {
   ctx: Ctx;
   conversationId: string | null;
   customerId: string | null; // cliente de la conversación (atención)
+  /** Asistente del panel: persona que debe confirmar las acciones y su conversación con el asistente. */
+  solicitante?: string | null;
+  hiloId?: string | null;
 }
 
 export interface ToolDef<A extends z.ZodType = z.ZodType> {
@@ -56,6 +60,23 @@ const uuid = z.uuid();
 const tz = zonaDe;
 
 function def<A extends z.ZodType>(d: ToolDef<A>): ToolDef<A> { return d; }
+
+/**
+ * Guía del panel. Cada texto describe pantallas y botones que existen en web/src (verificado contra el código:
+ * rutas de main.tsx, menú de Layout.tsx y etiquetas de cada pantalla). Si una pantalla cambia, se cambia aquí.
+ */
+export const TEMAS_AYUDA = ['facturacion', 'agenda', 'catalogo', 'usuarios', 'ia', 'suscripcion', 'whatsapp', 'cobros', 'conversaciones'] as const;
+export const AYUDA: Record<(typeof TEMAS_AYUDA)[number], string> = {
+  facturacion: 'La factura electrónica de cada venta se ve en el detalle de la venta y en Facturación. Si la DIAN la rechaza, corrige el dato del cliente (por ejemplo, el NIT) desde su ficha en Clientes y pulsa «Volver a enviar». Una factura validada no se borra ni se edita: se anula con «Anular» en el detalle de la venta, que emite la nota crédito. Mientras no haya un proveedor autorizado por la DIAN conectado, los documentos son de prueba y no tienen validez fiscal.',
+  agenda: 'En Agenda ves el día por persona o espacio (vistas «Por horas» y «Lista»). Con «Nueva cita» agendas en una franja libre; al tocar una cita puedes confirmarla, reprogramarla, marcarla como atendida o «No asistió», o cancelarla. Las citas que agendó el asistente de WhatsApp llevan la marca IA. Los horarios de atención se ajustan en Configuración › Horarios.',
+  catalogo: 'En Catálogo (menú de la izquierda) creas productos y servicios con «Nuevo ítem» y los cambias con «Editar». Para cargar muchos a la vez usa «Importar» en esa misma pantalla, con un archivo .xlsx o .csv (allí hay una plantilla de ejemplo); revisas las filas antes de guardar. Los precios incluyen IVA. Un ítem que ya no ofreces se desactiva con la casilla «Activo» al editarlo: no se borra. La sección «Por revisar» señala ítems con datos incompletos. Si tu rol puede editar el catálogo, también puedo crear o editar ítems por ti: te muestro el cambio y tú lo confirmas antes de guardar.',
+  usuarios: 'En Configuración › Equipo y comisiones, en «Personas con acceso», invitas a alguien con «Invitar» y eliges su rol; ahí mismo cambias el rol, decides quién recibe radicados o retiras el acceso. La tabla «Qué puede hacer cada rol» muestra los permisos de cada rol.',
+  ia: 'En Centro de IA activas o apagas cada asistente y cada acción que pueden hacer, ves su actividad reciente y las acciones bloqueadas, y fijas un «Límite de gasto de IA» si quieres un tope menor que el de tu plan. Cada acción queda con su recibo en Auditoría.',
+  suscripcion: 'En Suscripción ves el estado, el periodo y el consumo del mes; pagas o renuevas con Wompi (no hay cobros automáticos) y descargas los comprobantes en «Documentos de tus pagos». Si la suscripción se suspende, tu equipo conserva la lectura y la exportación de los datos.',
+  whatsapp: 'En Configuración › WhatsApp registras el identificador del número (Phone number ID, que Meta muestra junto a tu número) y pulsas «Probar conexión». Tus clientes escriben a ese número; el asistente responde y, si hace falta, pasa la conversación a una persona con un radicado. Tu equipo responde siempre desde Conversaciones.',
+  cobros: 'Al registrar una venta eliges cómo se pagó (efectivo, transferencia o datáfono) o la dejas por cobrar. En efectivo escribes lo que entregó el cliente y se calcula el cambio; no se registran abonos: la venta se paga completa. Una venta por cobrar se paga después desde su detalle con «Registrar pago», y con tu cuenta de Wompi vinculada puedes enviar un «Enlace de pago». Un pago registrado por error se anula con motivo (queda en el historial). Los métodos se activan en Configuración › Cobros y el resumen del día está en Ventas, en «Caja del día».',
+  conversaciones: 'En Conversaciones ves los chats de WhatsApp de tus clientes, quién atiende cada uno (la IA o una persona) y sus radicados. Al responder tomas la conversación y la IA deja de contestar; con «Devolver a la IA» vuelve a atender. Las notas internas solo las ve tu equipo. Si el soporte de Omnegia necesita revisar una conversación, quien administra la empresa puede compartirla por un tiempo con «Compartir con soporte».',
+};
 
 export const TOOLS: ToolDef<any>[] = [
   def({
@@ -201,7 +222,7 @@ export const TOOLS: ToolDef<any>[] = [
   // ---- Asistente del negocio (panel) ----------------------------------------
   def({
     nombre: 'resumen_ventas', version: '1.0.0', modulo: 'ventas',
-    descripcion: 'Total vendido, número de ventas y ticket promedio en un rango de días (por defecto los últimos 7).',
+    descripcion: 'Total vendido, número de ventas, ticket promedio y lo cobrado por método de pago (efectivo, transferencia, datáfono, pasarela) en un rango de días (por defecto los últimos 7).',
     args: z.object({ dias: z.number().int().min(1).max(90).default(7) }).strict(),
     permiso: 'order:read', riesgo: 'lectura', efectos: [],
     run: async (a, { tx }) => {
@@ -215,7 +236,8 @@ export const TOOLS: ToolDef<any>[] = [
         [String(a.dias)],
       )).rows;
       const total = Number(r.total);
-      return { dias: a.dias, ventas: r.n, total, total_texto: cop(total), ticket_promedio: r.n ? cop(total / r.n) : cop(0), mas_vendidos: top };
+      // Lo efectivamente cobrado en el periodo, por método (efectivo, transferencia, datáfono o pasarela).
+      return { dias: a.dias, ventas: r.n, total, total_texto: cop(total), ticket_promedio: r.n ? cop(total / r.n) : cop(0), mas_vendidos: top, cobrado_por_metodo: await cobradoPorMetodo(tx, a.dias) };
     },
   }),
   def({
@@ -273,11 +295,63 @@ export const TOOLS: ToolDef<any>[] = [
     run: async (_a, { tx, ctx }) => ({ consumo: await allQuotas(tx, ctx.tenantId) }),
   }),
   def({
-    nombre: 'ayuda_plataforma', version: '1.0.0', modulo: 'soporte',
-    descripcion: 'Guía de uso de la plataforma: cómo hacer tareas comunes en el panel.',
-    args: z.object({ tema: z.enum(['facturacion', 'agenda', 'catalogo', 'usuarios', 'ia', 'suscripcion', 'whatsapp']) }).strict(),
+    nombre: 'ayuda_plataforma', version: '1.1.0', modulo: 'soporte',
+    descripcion: 'Guía verificada de uso del panel: dónde está cada función y con qué botones. Úsala antes de explicar cómo hacer algo; no describas pantallas que no aparezcan en la guía.',
+    args: z.object({ tema: z.enum(TEMAS_AYUDA) }).strict(),
     permiso: 'ai:assist', riesgo: 'lectura', efectos: [],
-    run: async (a) => ({ tema: a.tema, guia: AYUDA[a.tema] }),
+    run: async (a) => ({ tema: a.tema, guia: AYUDA[a.tema as (typeof TEMAS_AYUDA)[number]], verificada: true }),
+  }),
+  // ---- Catálogo desde el asistente: siempre con confirmación explícita de la persona.
+  def({
+    nombre: 'crear_item_catalogo', version: '1.0.0', modulo: 'catalogo',
+    descripcion: 'Crea un producto o servicio en el catálogo con los datos que la persona dio. No se guarda hasta que la persona lo confirme con el botón del panel. No inventes precios, duraciones ni categorías: si falta un dato, pregúntalo.',
+    args: z.object({
+      tipo: z.enum(['PRODUCTO', 'SERVICIO']),
+      nombre: z.string().trim().min(2).max(120).refine((n) => /\p{L}/u.test(n), 'el nombre debe tener letras'),
+      precio: z.number().nonnegative().max(999_999_999).describe('Precio con IVA incluido, en pesos'),
+      categoria: z.string().trim().min(1).max(60).optional(),
+      duracion_min: z.number().int().positive().max(600).optional().describe('Obligatoria para servicios'),
+      iva_pct: z.union([z.literal(0), z.literal(5), z.literal(19)]).optional(),
+    }).strict().refine((a) => a.tipo !== 'SERVICIO' || !!a.duracion_min, { message: 'un servicio necesita su duración en minutos', path: ['duracion_min'] }),
+    permiso: 'catalog:write', riesgo: 'confirmable', efectos: ['escribe product'],
+    resumen: async (a) => `Crear ${a.tipo === 'SERVICIO' ? 'el servicio' : 'el producto'} «${a.nombre}» por ${cop(a.precio)}${a.duracion_min ? `, ${a.duracion_min} min` : ''}${a.categoria ? `, categoría «${a.categoria}»` : ', sin categoría'}, IVA ${a.iva_pct ?? 0} %`,
+    run: async (a, { tx, ctx }) => {
+      const r = await createProduct(tx, ctx, {
+        tipo: a.tipo, nombre: a.nombre, precio: a.precio, categoria: a.categoria ?? null, iva_pct: a.iva_pct ?? 0, duracion_min: a.tipo === 'SERVICIO' ? a.duracion_min : null,
+        controla_stock: false, stock: 0, stock_minimo: 0, activo: true,
+      });
+      return { product_id: r.id, tipo: a.tipo, nombre: a.nombre, precio_texto: cop(a.precio), duracion_min: a.duracion_min ?? null, categoria: a.categoria ?? null };
+    },
+  }),
+  def({
+    nombre: 'editar_item_catalogo', version: '1.0.0', modulo: 'catalogo',
+    descripcion: 'Cambia nombre, precio, categoría, duración o disponibilidad (activo) de un ítem existente (usa el id que devuelve consultar_catalogo). No se guarda hasta que la persona lo confirme con el botón del panel.',
+    args: z.object({
+      producto_id: uuid,
+      nombre: z.string().trim().min(2).max(120).refine((n) => /\p{L}/u.test(n), 'el nombre debe tener letras').optional(),
+      precio: z.number().nonnegative().max(999_999_999).optional(),
+      categoria: z.string().trim().max(60).nullable().optional(),
+      duracion_min: z.number().int().positive().max(600).optional(),
+      activo: z.boolean().optional(),
+    }).strict().refine((a) => Object.keys(a).some((k) => k !== 'producto_id'), 'indica qué cambiar'),
+    permiso: 'catalog:write', riesgo: 'confirmable', efectos: ['actualiza product'],
+    resumen: async (a, { tx }) => {
+      const p = (await tx.query(`SELECT nombre, precio, categoria, duracion_min, activo FROM product WHERE id=$1 AND eliminado_en IS NULL`, [a.producto_id])).rows[0];
+      if (!p) return 'Editar un ítem del catálogo';
+      const c: string[] = [];
+      if (a.nombre !== undefined && a.nombre !== p.nombre) c.push(`nombre «${p.nombre}» → «${a.nombre}»`);
+      if (a.precio !== undefined) c.push(`precio ${cop(Number(p.precio))} → ${cop(a.precio)}`);
+      if (a.categoria !== undefined) c.push(`categoría ${p.categoria ? `«${p.categoria}»` : 'sin categoría'} → ${a.categoria ? `«${a.categoria}»` : 'sin categoría'}`);
+      if (a.duracion_min !== undefined) c.push(`duración ${p.duracion_min ?? '—'} → ${a.duracion_min} min`);
+      if (a.activo !== undefined) c.push(a.activo ? 'volver a ofrecerlo (activo)' : 'dejar de ofrecerlo (inactivo)');
+      return `Editar «${p.nombre}»: ${c.join('; ') || 'sin cambios'}`;
+    },
+    run: async (a, { tx, ctx }) => {
+      const { producto_id, ...cambios } = a;
+      await updateProduct(tx, ctx, producto_id, cambios);
+      const p = (await tx.query(`SELECT nombre, precio, categoria, duracion_min, activo FROM product WHERE id=$1`, [producto_id])).rows[0];
+      return { product_id: producto_id, nombre: p.nombre, precio_texto: cop(Number(p.precio)), categoria: p.categoria, duracion_min: p.duracion_min, activo: p.activo, cambios: Object.keys(cambios) };
+    },
   }),
   // ---- Crítica: existe en el registro, pero ningún rol de agente tiene su permiso.
   def({
@@ -288,16 +362,6 @@ export const TOOLS: ToolDef<any>[] = [
     run: async () => ({ error: 'las acciones críticas solo las ejecuta una persona desde el panel' }),
   }),
 ];
-
-const AYUDA: Record<string, string> = {
-  facturacion: 'Las ventas confirmadas generan la factura electrónica automáticamente. En Facturación ves su estado ante la DIAN; si una es rechazada, corrige el dato indicado (por ejemplo el NIT del cliente) y pulsa «Corregir y reintentar». Un documento validado no se borra: se anula con nota crédito desde el detalle de la venta.',
-  agenda: 'En Agenda ves el día por recurso. Las citas creadas por el agente llevan la marca IA. Puedes confirmar, marcar como atendida o cancelar desde cada cita.',
-  catalogo: 'En Inventario y Catálogo puedes crear servicios y productos. Los precios incluyen IVA. Para cargar muchos a la vez usa la importación desde hoja de cálculo en Configuración.',
-  usuarios: 'En Configuración > Personas invitas a tu equipo y asignas su rol. La matriz de permisos muestra qué puede hacer cada rol.',
-  ia: 'En el Centro de IA ves el registro de herramientas con su nivel de riesgo y puedes apagar cualquiera. Todas las acciones, permitidas o bloqueadas, quedan registradas con su recibo.',
-  suscripcion: 'En Suscripción ves tu plan, el consumo del mes con su proyección y el estado de pagos. Si la suscripción se suspende conservas lectura y exportación.',
-  whatsapp: 'Tus clientes escriben al número de WhatsApp del negocio. El agente responde y, si hace falta, escala a una persona; tú respondes siempre desde Conversaciones.',
-};
 
 export const TOOL_MAP = new Map(TOOLS.map((t) => [t.nombre, t]));
 

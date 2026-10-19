@@ -32,6 +32,8 @@ export const PERMISOS = {
   'subscription:manage': 'Gestionar suscripción y pagos',
   'usage:read': 'Ver consumo frente a la cuota',
   'payment:link': 'Generar enlaces de cobro',
+  'payment:register': 'Registrar pagos de ventas (efectivo, transferencia, datáfono)',
+  'payment:void': 'Anular pagos registrados',
   'platform:govern': 'Gobierno global de la plataforma',
 } as const;
 
@@ -44,6 +46,8 @@ export const PERMISOS_SOLO_PLATAFORMA: Permiso[] = ['platform:govern'];
 export const PERMISOS_PROHIBIDOS_A_AGENTES: Permiso[] = [
   'invoice:void', 'invoice:issue', 'user:manage', 'tenant:configure', 'audit:read',
   'subscription:manage', 'ai:configure', 'order:void', 'platform:govern',
+  // Que un pago se recibió lo afirma una persona o la pasarela, nunca un agente de IA.
+  'payment:register', 'payment:void',
 ];
 
 export const TODOS_LOS_PERMISOS_DE_TENANT = (Object.keys(PERMISOS) as Permiso[]).filter(

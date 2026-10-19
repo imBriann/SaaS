@@ -1,0 +1,89 @@
+/* =====================================================================
+   Texto con formato de la IA (Markdown) y bloques de código.
+   Tipografía de lectura del panel; el código va en una pieza oscura con
+   resaltado sobrio, copia, contracción de fragmentos largos y vista previa
+   aislada para HTML. Sin brillos: el contraste hace el trabajo.
+   ===================================================================== */
+.md { font-size: 15px; line-height: 1.62; color: var(--tinta); overflow-wrap: anywhere; }
+.md > * { margin: 0; }
+.md > * + * { margin-top: .72em; }
+.md p { white-space: normal; }
+.md strong { font-weight: 600; color: var(--tinta); }
+.md a { color: var(--acento-texto, #3f2da0); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+.md a:hover { text-decoration-thickness: 2px; }
+.md .md-h { font-size: 15.5px; font-weight: 600; line-height: 1.35; letter-spacing: -.005em; margin-top: 1.05em; }
+.md h3.md-h { font-size: 16.5px; }
+.md > .md-h:first-child { margin-top: 0; }
+.md ul, .md ol { padding-left: 1.35em; }
+.md li + li { margin-top: .28em; }
+.md li::marker { color: var(--tinta-4); }
+.md blockquote { padding: 2px 0 2px 12px; border-left: 3px solid var(--borde-2); color: var(--tinta-2); }
+.md hr { border: 0; border-top: 1px solid var(--borde); }
+.md del { color: var(--tinta-3); }
+
+.md-code-in { font-family: var(--mono); font-size: .86em; padding: .08em .38em; border-radius: 4px; background: var(--superficie-2); border: 1px solid var(--borde); color: var(--tinta); white-space: break-spaces; }
+
+/* ---------------------------------------------------------------- tablas */
+.md-tabla { overflow-x: auto; border: 1px solid var(--borde); border-radius: 8px; max-width: 100%; }
+.md-tabla:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.md-tabla table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+.md-tabla th, .md-tabla td { padding: 7px 12px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+.md-tabla th { background: var(--superficie-2); font-weight: 600; font-size: 13px; color: var(--tinta-2); white-space: nowrap; }
+.md-tabla tr:last-child td { border-bottom: 0; }
+
+/* ---------------------------------------------------------------- bloques de código */
+.md-bloque-wrap { max-width: 100%; }
+.md-bloque { position: relative; margin: 0; border-radius: 10px; overflow: hidden; background: #15171c; color: #e4e5e8; border: 1px solid #262a32; box-shadow: 0 1px 2px rgba(15, 17, 21, .12); }
+.md-bloque-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 40px; padding: 5px 6px 5px 14px; background: #1b1e24; border-bottom: 1px solid #272b33; }
+.md-lang { display: inline-flex; align-items: baseline; gap: 8px; font-size: 12.5px; font-weight: 550; color: #d8dae0; letter-spacing: .01em; }
+.md-lineas { font-weight: 400; color: #8b909b; font-variant-numeric: tabular-nums; }
+.md-bloque-acciones { display: inline-flex; align-items: center; gap: 6px; }
+.md-copiar { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid #343944; border-radius: 7px; background: transparent; color: #d5d8df; font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 120ms var(--ease-out); }
+@media (hover: hover) { .md-copiar:hover { background: #262a33; border-color: #454b58; } }
+.md-copiar:active { transform: scale(.96); }
+.md-copiar.copiado { color: #9ad9a8; border-color: #3d6b49; }
+.md-copiar.error { color: #f2a7a7; }
+.md-copiar:focus-visible, .md-expandir:focus-visible, .md-segmento button:focus-visible { outline: 2px solid #b9a8ff; outline-offset: 2px; }
+.md-segmento { display: inline-flex; padding: 2px; border: 1px solid #343944; border-radius: 8px; }
+.md-segmento button { height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: #a9aeb9; font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 160ms ease, color 160ms ease; }
+.md-segmento button.on { background: #2d313b; color: #f1f2f4; }
+
+.md-pre { margin: 0; padding: 14px 16px; overflow: auto; font-family: var(--mono); font-size: 13px; line-height: 1.6; tab-size: 2; white-space: pre; color: #e4e5e8; scrollbar-color: #3a3f4a transparent; }
+.md-pre:focus-visible { outline: 2px solid #b9a8ff; outline-offset: -2px; }
+.md-pre code { font: inherit; }
+.md-bloque.recogido .md-pre { max-height: calc(18 * 1.6em + 28px); overflow-y: hidden; -webkit-mask-image: linear-gradient(#000 78%, transparent); mask-image: linear-gradient(#000 78%, transparent); }
+.md-expandir { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 36px; border: 0; border-top: 1px solid #272b33; background: #1b1e24; color: #c9ccd4; font: inherit; font-size: 13px; cursor: pointer; transition: background-color 160ms ease; }
+@media (hover: hover) { .md-expandir:hover { background: #22252c; } }
+.md-incompleto { margin: 0; padding: 8px 14px; font-size: 12.5px; color: #f2c97d; border-top: 1px solid #272b33; }
+
+.tk-kw, .tk-at { color: #c9b3ff; }
+.tk-str { color: #b8e0a3; }
+.tk-com { color: #7f8592; font-style: italic; }
+.tk-num, .tk-attr, .tk-var { color: #f0c987; }
+.tk-lit, .tk-ent { color: #f4a8a3; }
+.tk-fn, .tk-key, .tk-prop { color: #94c6ff; }
+.tk-tag { color: #ff9e88; }
+.tk-sel { color: #ffd38f; }
+
+/* Vista previa de HTML: superficie clara, con el aviso de aislamiento siempre visible. */
+.md-preview { background: #fff; }
+.md-preview-aviso { display: flex; align-items: center; gap: 6px; margin: 0; padding: 8px 12px; font-size: 12.5px; color: var(--tinta-2); background: var(--superficie-2); border-bottom: 1px solid var(--borde); }
+.md-preview iframe { display: block; width: 100%; height: 340px; border: 0; background: #fff; }
+
+/* ---------------------------------------------------------------- aparición por bloques */
+@keyframes md-in { from { opacity: 0; transform: translateY(6px); } }
+.md-revelar > * { animation: md-in 380ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 55ms); }
+
+.texto-wa strong { font-weight: 600; }
+.texto-wa a { color: inherit; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  .md { font-size: 15px; }
+  .md-pre { font-size: 12.5px; padding: 12px; }
+  .md-lineas { display: none; }
+  .md-preview iframe { height: 280px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-revelar > * { animation: none; }
+  .md-copiar, .md-expandir, .md-segmento button { transition: none; }
+}
