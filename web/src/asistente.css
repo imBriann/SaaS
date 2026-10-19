@@ -88,9 +88,34 @@
 .as-quien { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--tinta-4); font-variant-numeric: tabular-nums; }
 .as-quien b { font-weight: 600; color: var(--tinta-2); }
 .as-avatar { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--ia-tinte); border: 1px solid var(--ia-borde); }
-.as-cuerpo-msg, .as-msg.ia > .as-recibos, .as-msg.ia > .as-accion, .as-msg.ia > .as-msg-acciones, .as-pasos { margin-left: 34px; }
-.as-recibos { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-.as-recibos .recibo { width: auto; max-width: 100%; }
+.as-cuerpo-msg, .as-msg.ia > .as-consultas, .as-msg.ia > .md-visual-wrap, .as-msg.ia > .as-accion, .as-msg.ia > .as-msg-acciones, .as-pasos { margin-left: 34px; }
+.as-paso-n { color: var(--tinta-3); font-variant-numeric: tabular-nums; }
+
+/* «Dónde buscó»: una tarjeta por respuesta con las consultas agrupadas por fuente. */
+.as-consultas { border: 1px solid var(--borde); border-radius: 12px; background: var(--superficie); overflow: hidden; max-width: 560px; animation: as-entra 320ms 120ms var(--ease-suave, ease-out) both; }
+.as-consultas-cab { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: var(--superficie-2); border-bottom: 1px solid var(--borde); font-size: 13px; }
+.as-consultas-cab b { font-weight: 600; }
+.as-consultas-ico { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--acento-tinte); color: var(--acento-texto); }
+.as-consultas-meta { margin-left: auto; color: var(--tinta-3); font-size: 12px; }
+.as-consultas-lista { list-style: none; margin: 0; padding: 4px 0; }
+.as-consulta { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px; padding: 8px 12px; animation: as-entra 280ms calc(160ms + var(--i, 0) * 60ms) var(--ease-suave, ease-out) both; }
+.as-consulta + .as-consulta { border-top: 1px solid var(--borde); }
+.as-consulta-ico { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--superficie-2); color: var(--tinta-2); }
+.as-consulta-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.as-consulta-txt b { font-size: 13.5px; font-weight: 600; }
+.as-consulta-txt > span { font-size: 12.5px; color: var(--tinta-3); font-variant-numeric: tabular-nums; }
+.as-consulta-dias { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.as-consulta-dias i { font-style: normal; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--superficie-2); color: var(--tinta-2); text-transform: capitalize; }
+.as-consulta-motivo { font-size: 12px; color: var(--error); }
+.as-consulta-estado { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; }
+.as-consulta-estado.si { background: var(--ok-tinte); color: var(--ok); }
+.as-consulta-estado.no { background: var(--error-tinte); color: var(--error); }
+.as-consulta.denegada .as-consulta-ico { background: var(--error-tinte); color: var(--error); }
+.as-consulta-audit { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--tinta-3); }
+.as-consulta-audit:hover { background: var(--superficie-2); color: var(--tinta); }
+.as-consulta-audit:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+@keyframes as-entra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (max-width: 520px) { .as-consulta { grid-template-columns: auto 1fr auto; } .as-consulta-audit { display: none; } .as-consultas-meta { display: none; } }
 
 /* Copiar la respuesta: discreto; aparece al pasar el cursor en escritorio y siempre en pantallas táctiles. */
 .as-msg-acciones { display: flex; gap: 6px; min-height: 28px; }
@@ -170,14 +195,14 @@
   .as-cab-orbe, .as-estado { display: none; }
   .as-hilo { gap: 22px; padding-top: 18px; }
   .as-msg.yo { max-width: 92%; }
-  .as-cuerpo-msg, .as-msg.ia > .as-recibos, .as-msg.ia > .as-accion, .as-msg.ia > .as-msg-acciones, .as-pasos { margin-left: 0; }
+  .as-cuerpo-msg, .as-msg.ia > .as-consultas, .as-msg.ia > .md-visual-wrap, .as-msg.ia > .as-accion, .as-msg.ia > .as-msg-acciones, .as-pasos { margin-left: 0; }
 }
 @media (max-width: 520px) {
   .as-pie { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .asistente-hilos > li, .as-hero, .as-sugerencia, .as-msg, .as-recibos, .as-pasos li, .as-accion, .as-fallo, .as-ir-final { animation: none; }
+  .asistente-hilos > li, .as-hero, .as-sugerencia, .as-msg, .as-consultas, .as-consulta, .as-pasos li, .as-accion, .as-fallo, .as-ir-final { animation: none; }
   .as-punto { animation: none; }
   .as-escena::before, .asistente-hilo::before, .asistente-hilo, .as-caja { transition: none; }
 }

@@ -11,6 +11,7 @@ import { addMessage, escalate } from '../modules/conversations.js';
 import { guardarIntercambio, guardarMensajeAsistente, guardarResumen, LOTE_RESUMEN, VENTANA, hiloPropio, memoriaDelHilo, pendientesDeResumir, tituloDe, type Recibo } from '../modules/asistente.js';
 import { AppError, invalid, notFound } from '../lib/errors.js';
 import { fichaDelNegocio } from './contexto.js';
+import { sanearRespuesta } from './visual.js';
 import { recordConsent } from '../modules/customers.js';
 import { isUuid, normalizeText, uuidv7 } from '../lib/util.js';
 import { todayLocal, formatFechaLarga } from '../lib/time.js';
@@ -130,7 +131,7 @@ function systemPrompt(agent: AgentProfile & { prompt_base?: string }, negocio: {
     `- Hoy es ${formatFechaLarga(hoy)} (${hoy}), zona horaria ${negocio.zona ?? 'America/Bogota'}. Responde en español, breve y cordial.`,
     agent.configuracion === 'atencion'
       ? '- Escribes por WhatsApp: párrafos cortos, *negrita* (un asterisco) solo para datos clave, sin títulos, tablas ni bloques de código.'
-      : '- Puedes usar Markdown: listas, **negrita**, tablas sencillas y bloques de código con su lenguaje (```html). Si te piden código o un ejemplo, entrégalo como bloque de código y aclara que es un ejemplo para copiar: no puedes instalar ni cambiar nada en la plataforma por tu cuenta.',
+      : '- Puedes usar Markdown: listas, **negrita** y tablas sencillas. No escribes código de programación (HTML, CSS, JavaScript, SQL ni otro), páginas web, juegos ni scripts, aunque te lo pidan: di en una frase que aquí respondes con los datos del negocio, gráficas e informes, y ofrece eso.',
     '- No puedes ver imágenes, audios ni documentos: si te envían uno, pide que lo cuenten por escrito.',
     extra,
   ].filter(Boolean).join('\n');
@@ -381,6 +382,11 @@ const REGLAS_ASISTENTE = [
   'Hablas con una persona del equipo, dentro de su panel. Esta conversación se conserva: recuerdas lo que ya se dijo en ella y puedes retomarlo («y la semana pasada», «ese cliente»). No pidas repetir lo que ya está arriba.',
   'La ficha del negocio te orienta (qué ofrece, precios, horarios, módulos) pero NO es una fuente de cifras: ventas, citas, existencias y consumo salen siempre de las herramientas, porque cambian.',
   'Si te preguntan por algo que la ficha o las herramientas no cubren (datos de contacto, NIT, claves, datos personales de clientes), di que no lo manejas por aquí.',
+  'Cuenta solo las consultas que de verdad hiciste en esta respuesta. Nunca digas que revisaste algo que no consultaste ni corrijas una respuesta anterior sin haber consultado de nuevo. El panel ya muestra a la persona qué consultaste: no enumeres tus pasos.',
+  'Para varios días seguidos (una semana, un mes) usa agenda_periodo en UNA consulta, no citas_del_dia día por día.',
+  'Para mostrar cifras de forma visual escribe un bloque ```grafica con JSON: {"tipo":"barras"|"lineas"|"dona","titulo":"…","unidad":"COP"|"citas"|"unidades"|"%","etiquetas":["…"],"series":[{"nombre":"…","valores":[…]}]}. Hasta 3 series con un valor por etiqueta; la dona lleva una sola serie de hasta 8 partes. Barras para comparar, líneas para la evolución en el tiempo, dona para partes de un total.',
+  'Si piden un informe o reporte, escribe un bloque ```informe con JSON: {"titulo":"…","periodo":"…","resumen":"…","cifras":[{"etiqueta":"…","valor":"…"}],"secciones":[{"titulo":"…","texto":"…","tabla":{"columnas":["…"],"filas":[["…"]]},"grafica":{…}}]}. El panel lo presenta con la plantilla de Omnegia y los datos de la empresa y permite descargarlo como imagen o PDF. Fuera del bloque escribe a lo sumo una frase.',
+  'Gráficas e informes llevan SOLO cifras que te dieron las herramientas en esta conversación; si faltan datos, consúltalos primero o dilo.',
 ].map((r) => `- ${r}`).join('\n');
 
 const Memoria = z.object({ resumen: z.string().max(2500) });
@@ -415,7 +421,7 @@ async function resumirHilo(db: Database, ctx: Ctx, hiloId: string) {
 /** Avance real de una respuesta (lo que de verdad está pasando, no una animación por tiempo). */
 export type EventoAsistente =
   | { tipo: 'estado'; fase: 'pensando' | 'redactando' }
-  | { tipo: 'herramienta'; herramienta: string; fase: 'inicio' | 'fin'; decision?: string };
+  | { tipo: 'herramienta'; herramienta: string; fase: 'inicio' | 'fin'; decision?: string; alcance?: Alcance };
 
 export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string, hiloId: string | null = null, opts: { onEvento?: (e: EventoAsistente) => void } = {}) {
   const avisar = (e: EventoAsistente) => { try { opts.onEvento?.(e); } catch { /* un oyente caído no detiene la respuesta */ } };
@@ -437,6 +443,7 @@ export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string,
   if (prep.cuota.agotada) return { texto: 'Se agotó la cuota de IA del plan este mes. Puedes ampliarla desde Suscripción.', ejecuciones: [], hilo_id: hiloId };
   const ctx: Ctx = { ...userCtx, actor: { tipo: 'AGENTE', id: prep.agent.id, nombre: `Asistente (para ${userCtx.actor.nombre})` }, permisos: prep.agent.permisos, origen: 'PANEL' };
   const ejecuciones: GatewayResult[] = [];
+  const alcances = new Map<GatewayResult, Alcance | undefined>();
   const extra = [
     REGLAS_ASISTENTE,
     `<ficha_del_negocio>\n${prep.ficha}\n</ficha_del_negocio>`,
@@ -455,10 +462,11 @@ export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string,
       negocio: { nombre: prep.t.nombre },
     },
     async (name, args) => {
-      avisar({ tipo: 'herramienta', herramienta: name, fase: 'inicio' });
+      avisar({ tipo: 'herramienta', herramienta: name, fase: 'inicio', alcance: alcanceDe(args) });
       const r = await db.withTenant(userCtx.tenantId, (tx) => evaluateAndExecute(
         { tx, ctx, conversationId: null, customerId: null, solicitante: userCtx.actor.id, hiloId: prep.hilo?.id ?? null }, prep.agent, { nombre: name, argumentos: args }));
       ejecuciones.push(r);
+      alcances.set(r, alcanceDe(args, r.resultado));
       avisar({ tipo: 'herramienta', herramienta: name, fase: 'fin', decision: r.decision });
       return outcomeFor(r, 'panel');
     },
@@ -466,9 +474,11 @@ export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string,
   avisar({ tipo: 'estado', fase: 'redactando' });
   const recibos: Recibo[] = ejecuciones.map((e) => ({
     id: e.executionId, herramienta: e.herramienta, decision: e.decision, motivo: e.motivo, riesgo: e.riesgo,
+    ...(alcances.get(e) ? { alcance: alcances.get(e) } : {}),
     ...(e.pendingActionId ? { pendiente_id: e.pendingActionId, resumen: e.resumen ?? null } : {}),
   }));
-  const texto = out.text?.trim() || 'No logré armar una respuesta. ¿Me lo preguntas de otra forma?';
+  // Sin código en el panel; las gráficas y los informes llegan validados.
+  const texto = sanearRespuesta(out.text?.trim() ?? '').texto || 'No logré armar una respuesta. ¿Me lo preguntas de otra forma?';
   const id = await db.withTenant(userCtx.tenantId, async (tx) => {
     await registrarIA(tx, userCtx.tenantId, llm().nombre, out);
     const hilo = await guardarIntercambio(tx, userCtx, prep.hilo?.id ?? null, pregunta, texto, recibos);
@@ -480,6 +490,26 @@ export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string,
   // Memoria a largo plazo: solo cuando se acumulan mensajes fuera de la ventana. Si falla, la respuesta ya se entregó.
   await resumirHilo(db, userCtx, id).catch((e) => console.error(`[asistente ${userCtx.correlacion}] resumen del hilo:`, depurar((e as Error).message, 200)));
   return { texto, ejecuciones: recibos, hilo_id: id, titulo: prep.hilo?.titulo ?? tituloDe(pregunta) };
+}
+
+/**
+ * Qué abarcó una consulta (fechas, periodo y cuántos registros encontró), para que el panel agrupe los
+ * recibos en una sola tarjeta («Revisó la agenda · 19 – 24 oct · 1 cita»). Solo fechas, periodos y
+ * conteos: ni nombres ni textos libres.
+ */
+interface Alcance { fecha?: string; desde?: string; hasta?: string; periodo?: string; dias?: number; encontrados?: number }
+function alcanceDe(args: unknown, resultado?: Record<string, unknown>): Alcance | undefined {
+  const a = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>;
+  const f = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+  const r = (resultado ?? {}) as Record<string, any>;
+  const lista = ['citas', 'productos', 'clientes', 'items', 'ventas'].map((k) => r[k]).find(Array.isArray) as unknown[] | undefined;
+  const x: Alcance = {
+    fecha: f(a.fecha) ?? f(r.fecha), desde: f(a.desde), hasta: f(a.hasta),
+    periodo: typeof a.periodo === 'string' && /^[\w-]{1,20}$/.test(a.periodo) ? a.periodo : undefined,
+    dias: Number.isInteger(a.dias) && (a.dias as number) > 0 && (a.dias as number) <= 366 ? a.dias as number : undefined,
+    encontrados: typeof r.total === 'number' ? r.total : lista?.length,
+  };
+  return Object.values(x).some((v) => v !== undefined) ? x : undefined;
 }
 
 /** Texto con que el asistente informa el resultado de una acción confirmada. */

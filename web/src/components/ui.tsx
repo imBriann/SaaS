@@ -294,7 +294,7 @@ export const ACCION_IA: Record<string, string> = {
   consultar_catalogo: 'Consultó el catálogo', consultar_precio: 'Consultó un precio', consultar_disponibilidad: 'Consultó la agenda',
   crear_cita: 'Agendar una cita', mis_citas: 'Consultó las citas del cliente', cancelar_cita: 'Cancelar una cita', consultar_inventario: 'Consultó existencias',
   registrar_venta: 'Registrar una venta', generar_enlace_pago: 'Generó un enlace de pago', estado_factura: 'Consultó facturas', escalar_a_humano: 'Pasó la conversación a una persona',
-  resumen_ventas: 'Resumió las ventas', citas_del_dia: 'Consultó las citas del día', stock_bajo_minimo: 'Revisó productos bajo mínimo', buscar_cliente: 'Buscó un cliente',
+  resumen_ventas: 'Resumió las ventas', citas_del_dia: 'Consultó las citas del día', agenda_periodo: 'Consultó la agenda de varios días', stock_bajo_minimo: 'Revisó productos bajo mínimo', buscar_cliente: 'Buscó un cliente',
   historial_cliente: 'Revisó el historial del cliente', consumo_del_plan: 'Consultó el consumo del plan', ayuda_plataforma: 'Explicó cómo usar el panel', emitir_nota_credito: 'Anular una factura (nota crédito)',
   crear_item_catalogo: 'Crear un ítem del catálogo', editar_item_catalogo: 'Editar un ítem del catálogo',
 };

@@ -1,11 +1,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from './icons';
+import { BloqueVisual } from './Visual';
 
 /**
  * Markdown de las respuestas de la IA, convertido a elementos de React. Nunca se inserta HTML crudo:
  * un «<script>» en una respuesta se muestra como texto. Los enlaces solo admiten http(s), mailto y rutas
- * del propio panel. El código va en bloques con resaltado, copia y, para HTML, una vista previa aislada.
+ * del propio panel. Los bloques ```grafica e ```informe se dibujan como gráfica o informe; el código de
+ * conversaciones antiguas se muestra como texto con resaltado y copia, nunca se ejecuta.
  */
 
 // ---------------------------------------------------------------- bloques
@@ -180,56 +182,25 @@ export function BotonCopiar({ texto, etiqueta = 'Copiar', className = '' }: { te
   );
 }
 
-/**
- * Vista previa de HTML en un marco aislado: sin «allow-same-origin» el documento tiene un origen opaco y no
- * puede leer la sesión, las cookies ni el almacenamiento del panel; la política de contenido bloquea toda
- * conexión de red (solo estilos y scripts del propio fragmento, imágenes embebidas).
- */
-function VistaPrevia({ codigo }: { codigo: string }) {
-  const doc = useMemo(() => {
-    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; form-action 'none'">`;
-    const base = '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:16px;color:#1b1b19}</style>';
-    return /<html[\s>]/i.test(codigo) ? codigo.replace(/<head([^>]*)>/i, `<head$1>${csp}`).replace(/^(?![\s\S]*<head)/, `${csp}`) : `<!doctype html><html><head>${csp}${base}</head><body>${codigo}</body></html>`;
-  }, [codigo]);
-  return (
-    <div className="md-preview">
-      <p className="md-preview-aviso"><Icon n="candado" className="" size={13} />Vista previa aislada: se ejecuta sin acceso a tu cuenta, tus datos ni internet. Es una demostración; no instala nada en tu negocio.</p>
-      <iframe title="Vista previa del código" sandbox="allow-scripts" srcDoc={doc} referrerPolicy="no-referrer" loading="lazy" />
-    </div>
-  );
-}
-
 export function BloqueCodigo({ codigo, lang, abierto = false }: { codigo: string; lang: string; abierto?: boolean }) {
   const lineas = codigo.split('\n').length;
   const largo = lineas > LINEAS_VISIBLES + 4;
   const [expandido, setExpandido] = useState(false);
-  const [vista, setVista] = useState<'codigo' | 'preview'>('codigo');
-  const esHtml = lenguaje(lang) === 'html' && /<\w/.test(codigo) && !abierto;
   const contenido = useMemo(() => resaltar(codigo, lang), [codigo, lang]);
   const nombre = NOMBRE_LENGUAJE[lenguaje(lang)] ?? (lang ? lang.toUpperCase() : 'Código');
   return (
-    <figure className={`md-bloque ${largo && !expandido && vista === 'codigo' ? 'recogido' : ''}`}>
+    <figure className={`md-bloque ${largo && !expandido ? 'recogido' : ''}`}>
       <figcaption className="md-bloque-cab">
         <span className="md-lang">{nombre}<span className="md-lineas">{lineas} {lineas === 1 ? 'línea' : 'líneas'}</span></span>
         <span className="md-bloque-acciones">
-          {esHtml && (
-            <span className="md-segmento" role="group" aria-label="Ver como">
-              <button type="button" className={vista === 'codigo' ? 'on' : ''} aria-pressed={vista === 'codigo'} onClick={() => setVista('codigo')}>Código</button>
-              <button type="button" className={vista === 'preview' ? 'on' : ''} aria-pressed={vista === 'preview'} onClick={() => setVista('preview')}>Vista previa</button>
-            </span>
-          )}
           <BotonCopiar texto={codigo} />
         </span>
       </figcaption>
-      {vista === 'preview' ? <VistaPrevia codigo={codigo} /> : (
-        <>
-          <pre className="md-pre" tabIndex={0} aria-label={`Código ${nombre}`}><code>{contenido}</code></pre>
-          {largo && (
-            <button type="button" className="md-expandir" onClick={() => setExpandido((v) => !v)} aria-expanded={expandido}>
-              {expandido ? 'Mostrar menos' : `Mostrar las ${lineas} líneas`}<Icon n={expandido ? 'arriba' : 'abajo'} className="" size={14} />
-            </button>
-          )}
-        </>
+      <pre className="md-pre" tabIndex={0} aria-label={`Código ${nombre}`}><code>{contenido}</code></pre>
+      {largo && (
+        <button type="button" className="md-expandir" onClick={() => setExpandido((v) => !v)} aria-expanded={expandido}>
+          {expandido ? 'Mostrar menos' : `Mostrar las ${lineas} líneas`}<Icon n={expandido ? 'arriba' : 'abajo'} className="" size={14} />
+        </button>
       )}
       {abierto && <p className="md-incompleto">El bloque de código llegó incompleto.</p>}
     </figure>
@@ -250,7 +221,10 @@ export function Markdown({ texto, revelar = false }: { texto: string; revelar?: 
             const Tag = (`h${Math.min(6, b.nivel + 2)}`) as 'h3';
             return <Tag key={k} className="md-h" style={estilo}>{enLinea(b.texto, k)}</Tag>;
           }
-          case 'code': return <div key={k} style={estilo} className="md-bloque-wrap"><BloqueCodigo codigo={b.codigo} lang={b.lang} abierto={b.abierto} /></div>;
+          case 'code':
+            // Gráficas e informes del asistente: datos que el panel dibuja (nunca código que se ejecute).
+            if ((b.lang === 'grafica' || b.lang === 'informe') && !b.abierto) return <div key={k} style={estilo} className="md-visual-wrap"><BloqueVisual lang={b.lang} json={b.codigo} /></div>;
+            return <div key={k} style={estilo} className="md-bloque-wrap"><BloqueCodigo codigo={b.codigo} lang={b.lang} abierto={b.abierto} /></div>;
           case 'ul': return <ul key={k} style={estilo}>{b.items.map((it, j) => <li key={j}>{enLinea(it, `${k}-${j}`)}</li>)}</ul>;
           case 'ol': return <ol key={k} start={b.inicio} style={estilo}>{b.items.map((it, j) => <li key={j}>{enLinea(it, `${k}-${j}`)}</li>)}</ol>;
           case 'quote': return <blockquote key={k} style={estilo}>{enLinea(b.texto, k)}</blockquote>;

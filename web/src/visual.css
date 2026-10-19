@@ -1,0 +1,86 @@
+/*
+ * Gráficas e informes del asistente (components/Visual.tsx). Superficie clara del panel, acento de
+ * la empresa y plantilla de Omnegia. El movimiento es solo de entrada y se apaga con movimiento reducido.
+ */
+.md-visual-wrap { margin: 10px 0; }
+
+/* ---------------------------------------------------------------- gráfica */
+.vz-grafica { margin: 0; border: 1px solid var(--borde); border-radius: 12px; background: var(--superficie); overflow: hidden; animation: vz-entra 420ms var(--ease-suave, ease-out) both; }
+.vz-grafica.en-informe { border: 0; border-radius: 0; animation: none; }
+.vz-cab { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px 4px; }
+.vz-grafica.en-informe .vz-cab { padding: 4px 0; }
+.vz-titulos { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vz-titulos b { font-size: 14.5px; font-weight: 600; color: var(--tinta); }
+.vz-titulos small { font-size: 12.5px; color: var(--tinta-3); }
+.vz-acciones { display: inline-flex; gap: 6px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.vz-boton { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border: 1px solid var(--borde); border-radius: 8px; background: var(--superficie); color: var(--tinta-2); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out, transform 150ms ease-out; }
+.vz-boton:hover { background: var(--superficie-2); border-color: var(--borde-2); }
+.vz-boton:active { transform: scale(.97); }
+.vz-boton:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.vz-boton[aria-pressed='true'] { background: var(--acento-tinte); border-color: var(--acento); color: var(--acento-texto); }
+.vz-boton.trabajando { cursor: progress; opacity: .7; }
+.vz-boton.error { color: var(--error); border-color: var(--error-borde); }
+.vz-svg { padding: 4px 8px 8px; }
+.vz-svg svg { display: block; width: 100%; height: auto; }
+.vz-svg svg path, .vz-svg svg rect[rx] { transition: opacity 150ms ease-out; }
+.vz-svg svg g:hover > path, .vz-svg svg g:hover > circle:last-of-type { opacity: .82; }
+.vz-datos { overflow-x: auto; padding: 4px 14px 12px; }
+.vz-grafica.en-informe .vz-datos, .vz-informe .vz-datos { padding: 4px 0 8px; }
+.vz-datos table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.vz-datos th, .vz-datos td { padding: 7px 10px; border-bottom: 1px solid var(--borde); text-align: left; }
+.vz-datos thead th { font-size: 12px; font-weight: 600; color: var(--tinta-2); background: var(--superficie-2); }
+.vz-datos tbody th { font-weight: 500; }
+.vz-datos .num { text-align: right; }
+.vz-error { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--atencion); }
+
+/* ---------------------------------------------------------------- informe con la plantilla de Omnegia */
+.vz-informe { border: 1px solid var(--borde); border-radius: 14px; background: #fff; overflow: hidden; box-shadow: 0 12px 30px -24px #25345080; animation: vz-entra 480ms var(--ease-suave, ease-out) both; }
+.vz-inf-cab { display: flex; align-items: center; gap: 16px; padding: 16px 20px; border-top: 6px solid var(--acento); border-bottom: 1px solid var(--borde); }
+.vz-inf-marca, .vz-inf-empresa { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.vz-inf-marca > span, .vz-inf-empresa > span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.vz-inf-marca b { font-size: 15px; letter-spacing: -.01em; }
+.vz-inf-marca small, .vz-inf-empresa small { font-size: 12px; color: var(--tinta-3); }
+.vz-inf-empresa { margin-left: auto; text-align: right; }
+.vz-inf-empresa b { font-size: 14.5px; }
+.vz-inf-empresa img { width: 44px; height: 44px; object-fit: contain; border-radius: 8px; }
+.vz-inf-monograma { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; background: var(--acento); color: var(--sobre-acento); font-weight: 650; }
+.vz-inf-cuerpo { padding: 20px 20px 8px; }
+.vz-inf-titulo { margin: 0; font-size: 24px; font-weight: 650; letter-spacing: -.02em; line-height: 1.2; }
+.vz-inf-periodo { margin: 4px 0 0; font-size: 13px; color: var(--tinta-3); }
+.vz-inf-resumen { margin: 14px 0 0; font-size: 15px; line-height: 1.6; color: var(--tinta-2); }
+.vz-inf-cifras { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 16px; }
+.vz-inf-cifra { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 12px 14px 12px 18px; border-radius: 10px; background: var(--superficie-2); animation: vz-entra 380ms calc(160ms + var(--i, 0) * 70ms) var(--ease-suave, ease-out) both; }
+.vz-inf-cifra::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0; background: var(--acento); }
+.vz-inf-cifra span { font-size: 12px; color: var(--tinta-3); }
+.vz-inf-cifra b { font-size: 20px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.vz-inf-cifra small { font-size: 11.5px; color: var(--tinta-3); }
+.vz-inf-seccion { margin-top: 20px; }
+.vz-inf-seccion h4 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.vz-inf-seccion h4::after { content: ''; display: block; width: 32px; height: 3px; margin-top: 6px; border-radius: 3px; background: var(--acento); }
+.vz-inf-seccion p { margin: 0 0 8px; font-size: 14px; line-height: 1.6; color: var(--tinta-2); }
+.vz-inf-notas { margin: 16px 0 0; font-size: 12.5px; color: var(--tinta-3); }
+.vz-inf-pie { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 20px 16px; border-top: 1px solid var(--borde); margin-top: 12px; font-size: 12px; color: var(--tinta-3); }
+.vz-inf-pie > span:first-child { flex: 1 1 260px; }
+
+@keyframes vz-entra { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 560px) {
+  .vz-cab { flex-wrap: wrap; }
+  .vz-acciones { margin-left: 0; justify-content: flex-start; }
+  .vz-inf-cab { flex-wrap: wrap; }
+  .vz-inf-empresa { margin-left: 0; text-align: left; flex-direction: row-reverse; justify-content: flex-end; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vz-grafica, .vz-informe, .vz-inf-cifra, .as-consultas, .as-consulta { animation: none !important; }
+  .vz-boton, .vz-svg svg path { transition: none; }
+}
+
+/* Impresión / PDF: solo el informe elegido, en hoja blanca. */
+@media print {
+  body.imprimiendo-informe * { visibility: hidden !important; }
+  body.imprimiendo-informe .vz-informe[data-imprimir], body.imprimiendo-informe .vz-informe[data-imprimir] * { visibility: visible !important; }
+  body.imprimiendo-informe .vz-informe[data-imprimir] { position: absolute; inset: 0 auto auto 0; width: 100%; border: 0; box-shadow: none; animation: none; }
+  body.imprimiendo-informe .vz-informe[data-imprimir] .vz-acciones { display: none !important; }
+  body.imprimiendo-informe .vz-inf-cab { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.imprimiendo-informe .vz-inf-cifra, body.imprimiendo-informe .vz-informe section { break-inside: avoid; }
+}

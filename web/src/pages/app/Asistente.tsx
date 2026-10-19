@@ -6,16 +6,17 @@ import { useSesion } from '../../components/Layout';
 import { AiOrb } from '../../components/AiOrb';
 import { AiVoice } from '../../components/AiVoice';
 import { BotonCopiar, Markdown } from '../../components/Markdown';
-import { accionIA, Cargando, Confirmar, Recibo, useAccion, useApi, Vacio } from '../../components/ui';
+import { accionIA, Cargando, Confirmar, motivoIA, useAccion, useApi, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
 
-interface Ejecucion { id: string; herramienta: string; decision: string; motivo?: string | null; riesgo?: string | null; pendiente_id?: string; resumen?: string | null; pendiente?: { estado: string; expira_en: string } | null }
+interface Alcance { fecha?: string; desde?: string; hasta?: string; periodo?: string; dias?: number; encontrados?: number }
+interface Ejecucion { id: string; herramienta: string; decision: string; motivo?: string | null; riesgo?: string | null; pendiente_id?: string; resumen?: string | null; pendiente?: { estado: string; expira_en: string } | null; alcance?: Alcance }
 interface Item { id?: string; rol: 'user' | 'assistant'; contenido: string; ejecuciones?: Ejecucion[]; creado_en?: string; nuevo?: boolean; fallo?: string | null }
 interface Paso { herramienta: string; fase: 'inicio' | 'fin'; decision?: string }
 
 /** Lo que el asistente está haciendo en este momento, en presente (lo informa el servidor, no un temporizador). */
 const PROGRESO: Record<string, string> = {
-  resumen_ventas: 'Consultando las ventas', citas_del_dia: 'Revisando la agenda', stock_bajo_minimo: 'Revisando el inventario', buscar_cliente: 'Buscando el cliente',
+  resumen_ventas: 'Consultando las ventas', citas_del_dia: 'Revisando la agenda', agenda_periodo: 'Revisando la agenda', stock_bajo_minimo: 'Revisando el inventario', buscar_cliente: 'Buscando el cliente',
   consultar_catalogo: 'Consultando el catálogo', consumo_del_plan: 'Revisando el consumo del plan', ayuda_plataforma: 'Buscando en la guía del panel',
   crear_item_catalogo: 'Preparando el nuevo ítem', editar_item_catalogo: 'Preparando el cambio',
 };
@@ -25,10 +26,14 @@ const MAX = 1000;
 function Trabajando({ pasos, fase }: { pasos: Paso[]; fase: string }) {
   const [s, setS] = useState(0);
   useEffect(() => { const t = window.setInterval(() => setS((x) => x + 1), 1000); return () => window.clearInterval(t); }, []);
-  const herramientas = pasos.reduce<{ herramienta: string; hecho: boolean; bloqueada: boolean }[]>((acc, p) => {
-    const ya = acc.find((x) => x.herramienta === p.herramienta && !x.hecho);
-    if (p.fase === 'inicio') acc.push({ herramienta: p.herramienta, hecho: false, bloqueada: false });
-    else if (ya) { ya.hecho = true; ya.bloqueada = p.decision === 'DENEGADA' || p.decision === 'ERROR'; }
+  // Varias consultas a la misma fuente (p. ej. la agenda día por día) se muestran como un solo paso con su conteo.
+  const herramientas = pasos.reduce<{ herramienta: string; veces: number; listas: number; hecho: boolean; bloqueada: boolean }[]>((acc, p) => {
+    const fuente = FUENTE[p.herramienta]?.clave ?? p.herramienta;
+    let ya = acc.find((x) => (FUENTE[x.herramienta]?.clave ?? x.herramienta) === fuente);
+    if (!ya) { ya = { herramienta: p.herramienta, veces: 0, listas: 0, hecho: false, bloqueada: false }; acc.push(ya); }
+    if (p.fase === 'inicio') ya.veces++;
+    else { ya.listas++; ya.bloqueada ||= p.decision === 'DENEGADA' || p.decision === 'ERROR'; }
+    ya.hecho = ya.listas >= ya.veces;
     return acc;
   }, []);
   return (
@@ -38,7 +43,7 @@ function Trabajando({ pasos, fase }: { pasos: Paso[]; fase: string }) {
         {herramientas.map((h, i) => (
           <li key={i} className={h.hecho ? (h.bloqueada ? 'bloqueado' : 'hecho') : 'actual'}>
             <span className="as-paso-ico" aria-hidden="true">{h.hecho ? <Icon n={h.bloqueada ? 'candado' : 'ok'} className="" size={13} /> : <span className="as-punto" />}</span>
-            {PROGRESO[h.herramienta] ?? 'Consultando tus datos'}{h.hecho && h.bloqueada ? ' · no permitido' : ''}
+            {PROGRESO[h.herramienta] ?? 'Consultando tus datos'}{h.veces > 1 ? <span className="as-paso-n"> · {h.listas} de {h.veces}</span> : null}{h.hecho && h.bloqueada ? ' · no permitido' : ''}
           </li>
         ))}
         <li className="actual"><span className="as-paso-ico" aria-hidden="true"><span className="as-punto" /></span>{fase === 'redactando' ? 'Redactando la respuesta' : herramientas.length ? 'Analizando lo encontrado' : 'Pensando'}</li>
@@ -82,6 +87,82 @@ function AccionPendiente({ e, onResuelta }: { e: Ejecucion; onResuelta: (texto: 
   );
 }
 
+// ---------------------------------------------------------------- dónde buscó
+/** Fuente de datos de cada herramienta: agrupa los recibos («la agenda», aunque haya sido día por día). */
+const FUENTE: Record<string, { clave: string; titulo: string; icono: string; unidad?: [string, string] }> = {
+  citas_del_dia: { clave: 'agenda', titulo: 'Agenda', icono: 'agenda', unidad: ['cita', 'citas'] },
+  agenda_periodo: { clave: 'agenda', titulo: 'Agenda', icono: 'agenda', unidad: ['cita', 'citas'] },
+  resumen_ventas: { clave: 'ventas', titulo: 'Ventas y cobros', icono: 'ventas' },
+  stock_bajo_minimo: { clave: 'inventario', titulo: 'Inventario', icono: 'inventario', unidad: ['producto bajo mínimo', 'productos bajo mínimo'] },
+  consultar_catalogo: { clave: 'catalogo', titulo: 'Catálogo', icono: 'inventario', unidad: ['ítem', 'ítems'] },
+  buscar_cliente: { clave: 'clientes', titulo: 'Clientes', icono: 'clientes', unidad: ['coincidencia', 'coincidencias'] },
+  consumo_del_plan: { clave: 'plan', titulo: 'Consumo del plan', icono: 'suscripcion' },
+  ayuda_plataforma: { clave: 'guia', titulo: 'Guía del panel', icono: 'soporte' },
+};
+const DIA = (f: string) => new Date(`${f}T12:00:00Z`).toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).replace(/\./g, '');
+const DIA_CORTO = (f: string) => new Date(`${f}T12:00:00Z`).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace(/\./g, '');
+
+/** Fechas que abarcó un grupo de consultas: «19 – 24 oct · 6 días» o los días sueltos. */
+function rango(es: Ejecucion[]): { texto: string; dias: string[] } | null {
+  const dias = new Set<string>();
+  for (const e of es) {
+    const a = e.alcance;
+    if (a?.fecha) dias.add(a.fecha);
+    if (a?.desde && a?.hasta) for (let d = a.desde, i = 0; d <= a.hasta && i < 62; i++) { dias.add(d); const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); d = x.toISOString().slice(0, 10); }
+  }
+  const l = [...dias].sort();
+  if (!l.length) return null;
+  if (l.length === 1) return { texto: DIA(l[0]), dias: l };
+  const seguidos = l.every((d, i) => i === 0 || (new Date(`${d}T12:00:00Z`).getTime() - new Date(`${l[i - 1]}T12:00:00Z`).getTime()) === 86_400_000);
+  return { texto: seguidos ? `${DIA_CORTO(l[0])} – ${DIA_CORTO(l[l.length - 1])} · ${l.length} días` : `${l.length} días`, dias: l };
+}
+
+/** Una sola tarjeta con lo que consultó el asistente, agrupado por fuente, en vez de un recibo por llamada. */
+function Consultas({ recibos }: { recibos: Ejecucion[] }) {
+  const grupos = recibos.reduce<{ clave: string; fuente: (typeof FUENTE)[string] | null; es: Ejecucion[] }[]>((acc, e) => {
+    const f = FUENTE[e.herramienta] ?? null;
+    const clave = `${f?.clave ?? e.herramienta}:${e.decision === 'PERMITIDA' ? 'ok' : e.decision}`;
+    const g = acc.find((x) => x.clave === clave);
+    if (g) g.es.push(e); else acc.push({ clave, fuente: f, es: [e] });
+    return acc;
+  }, []);
+  const total = recibos.length;
+  const bloqueadas = recibos.filter((e) => e.decision === 'DENEGADA' || e.decision === 'ERROR').length;
+  return (
+    <section className="as-consultas" aria-label="Dónde buscó el asistente">
+      <header className="as-consultas-cab">
+        <span className="as-consultas-ico" aria-hidden="true"><Icon n="buscar" className="" size={14} /></span>
+        <b>Dónde buscó</b>
+        <span className="as-consultas-meta">{total} {total === 1 ? 'consulta' : 'consultas'} a tus datos{bloqueadas ? ` · ${bloqueadas} no permitida${bloqueadas === 1 ? '' : 's'}` : ' · todas permitidas'}</span>
+      </header>
+      <ul className="as-consultas-lista">
+        {grupos.map((g, i) => {
+          const r = rango(g.es);
+          const encontrados = g.es.reduce<number | null>((s, e) => (typeof e.alcance?.encontrados === 'number' ? (s ?? 0) + e.alcance.encontrados : s), null);
+          const denegada = g.es[0].decision === 'DENEGADA' || g.es[0].decision === 'ERROR';
+          const u = g.fuente?.unidad;
+          return (
+            <li key={g.clave} className={`as-consulta ${denegada ? 'denegada' : ''}`} style={{ ['--i' as any]: i }}>
+              <span className="as-consulta-ico" aria-hidden="true"><Icon n={denegada ? 'candado' : g.fuente?.icono ?? 'ia'} className="" size={15} /></span>
+              <span className="as-consulta-txt">
+                <b>{g.fuente?.titulo ?? accionIA(g.es[0].herramienta)}</b>
+                <span>
+                  {r ? r.texto : g.es[0].alcance?.dias ? (g.es[0].alcance.dias === 1 ? 'Hoy' : `Últimos ${g.es[0].alcance.dias} días`) : g.es.length > 1 ? `${g.es.length} consultas` : accionIA(g.es[0].herramienta)}
+                  {encontrados !== null && u ? ` · ${encontrados === 0 ? `sin ${u[1]}` : `${encontrados} ${encontrados === 1 ? u[0] : u[1]}`}` : ''}
+                </span>
+                {r && r.dias.length > 1 && r.dias.length <= 14 && <span className="as-consulta-dias" aria-label="Días consultados">{r.dias.map((d) => <i key={d}>{DIA(d).split(' ')[0]} {d.slice(8).replace(/^0/, '')}</i>)}</span>}
+                {denegada && g.es[0].motivo && <small className="as-consulta-motivo">{motivoIA(g.es[0].motivo)}</small>}
+              </span>
+              <span className={`as-consulta-estado ${denegada ? 'no' : 'si'}`}><Icon n={denegada ? 'candado' : 'ok'} className="" size={12} />{denegada ? 'No permitida' : g.es.length > 1 ? 'Permitidas' : 'Permitida'}</span>
+              <Link className="as-consulta-audit" to={`/auditoria?q=${g.es[0].id}`} aria-label={`Ver ${g.fuente?.titulo ?? 'la consulta'} en auditoría`}><Icon n="auditoria" className="" size={14} /></Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function Respuesta({ m, onAccion }: { m: Item; onAccion: (texto: string, recibo: Ejecucion) => void }) {
   const pendientes = (m.ejecuciones ?? []).filter((e) => e.pendiente_id);
   const recibos = (m.ejecuciones ?? []).filter((e) => !e.pendiente_id);
@@ -93,7 +174,7 @@ function Respuesta({ m, onAccion }: { m: Item; onAccion: (texto: string, recibo:
       </div>
       <div className="as-cuerpo-msg"><Markdown texto={m.contenido} revelar={!!m.nuevo} /></div>
       {pendientes.map((e) => <AccionPendiente key={e.pendiente_id} e={e} onResuelta={onAccion} />)}
-      {recibos.length > 0 && <div className="as-recibos">{recibos.map((r) => <Recibo key={r.id} e={{ ...r, nivel_riesgo: r.riesgo, motivo_denegacion: r.motivo }} compacto />)}</div>}
+      {recibos.length > 0 && <Consultas recibos={recibos} />}
       <div className="as-msg-acciones"><BotonCopiar texto={m.contenido} etiqueta="Copiar respuesta" className="sutil" /></div>
     </article>
   );

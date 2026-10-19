@@ -21,6 +21,8 @@ export interface Recibo {
   pendiente_id?: string; resumen?: string | null;
   /** Estado actual de esa acción al leer el hilo: PENDIENTE, CONFIRMADA, RECHAZADA o EXPIRADA. */
   pendiente?: { estado: string; expira_en: string } | null;
+  /** Qué abarcó la consulta (fechas y conteo), para agrupar los recibos en el panel. */
+  alcance?: { fecha?: string; desde?: string; hasta?: string; periodo?: string; dias?: number; encontrados?: number };
 }
 export interface MensajeHilo { id: string; orden: number; rol: 'user' | 'assistant'; contenido: string; ejecuciones: Recibo[]; creado_en: string }
 

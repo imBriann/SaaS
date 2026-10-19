@@ -229,12 +229,44 @@ export class MockLlm implements LlmClient {
       const r = await tc('editar_item_catalogo', precio ? { producto_id: it.id, precio: pesos(precio[2]) } : { producto_id: it.id, activo: false });
       return propuesta(r, 'editar ese ítem');
     }
-    if (/venta|vend|ingreso|\bentr(o|aron)\b|cobrad[oa]s?|\bcobre\b|cobramos|recaud|factur(a|e) (hoy|esta)|ticket/.test(t) && tools.has('resumen_ventas')) {
+    if (!/informe|reporte/.test(t) && /venta|vend|ingreso|\bentr(o|aron)\b|cobrad[oa]s?|\bcobre\b|cobramos|recaud|factur(a|e) (hoy|esta)|ticket/.test(t) && tools.has('resumen_ventas')) {
       const dias = /hoy/.test(t) ? 1 : /mes/.test(t) ? 30 : 7;
       const r = (await tc('resumen_ventas', { dias })).content as any;
       const top = (r.mas_vendidos ?? []).slice(0, 3).map((x: any) => `${x.descripcion} (${x.unidades})`).join(', ');
       const cobrado = (r.cobrado_por_metodo ?? []).map((x: any) => `${x.metodo} ${x.total_texto} (${x.pagos})`).join(', ');
       return `${r.dias === 1 ? 'Hoy' : `En los últimos ${r.dias} días`}: ${r.ventas} ${r.ventas === 1 ? 'venta' : 'ventas'} por ${r.total_texto}, ticket promedio ${r.ticket_promedio}.${top ? ` Lo más vendido: ${top}.` : ''}${cobrado ? `\nCobrado por método: ${cobrado}.` : '\nNo hay pagos registrados en ese periodo.'}\nFuente: ventas confirmadas y pagos registrados.`;
+    }
+    // --- Código: el asistente del panel no lo escribe (regla del sistema).
+    if (/\b(codigo|html|css|javascript|script|programa|juego|pagina web)\b/.test(t)) {
+      return 'Aquí no escribo código, páginas ni juegos. Puedo responderte con los datos de tu negocio, prepararte una gráfica o armarte un informe para descargar.';
+    }
+    // --- Informe de ventas con la plantilla de Omnegia.
+    if (/informe|reporte/.test(t) && tools.has('resumen_ventas')) {
+      const dias = /hoy/.test(t) ? 1 : /mes/.test(t) ? 30 : 7;
+      const r = (await tc('resumen_ventas', { dias })).content as any;
+      const top = (r.mas_vendidos ?? []).slice(0, 5);
+      const informe = {
+        titulo: 'Informe de ventas', periodo: r.dias === 1 ? 'Hoy' : `Últimos ${r.dias} días`,
+        resumen: `${r.ventas} ${r.ventas === 1 ? 'venta' : 'ventas'} por ${r.total_texto}, con un ticket promedio de ${r.ticket_promedio}.`,
+        cifras: [{ etiqueta: 'Ventas', valor: String(r.ventas) }, { etiqueta: 'Total vendido', valor: r.total_texto }, { etiqueta: 'Ticket promedio', valor: r.ticket_promedio }],
+        secciones: [
+          ...(top.length ? [{ titulo: 'Lo más vendido', tabla: { columnas: ['Producto o servicio', 'Unidades'], filas: top.map((x: any) => [x.descripcion, Number(x.unidades)]) },
+            grafica: { tipo: 'barras', titulo: 'Unidades vendidas', unidad: 'unidades', etiquetas: top.map((x: any) => String(x.descripcion).slice(0, 24)), series: [{ nombre: 'Unidades', valores: top.map((x: any) => Number(x.unidades)) }] } }] : []),
+          { titulo: 'Cobros por método', texto: (r.cobrado_por_metodo ?? []).length ? (r.cobrado_por_metodo as any[]).map((x) => `${x.metodo}: ${x.total_texto} (${x.pagos} pagos)`).join(' · ') : 'No hay pagos registrados en el periodo.' },
+        ],
+      };
+      return 'Este es tu informe con las ventas confirmadas del periodo.\n\n```informe\n' + JSON.stringify(informe) + '\n```';
+    }
+    // --- Agenda de varios días en una sola consulta.
+    if (/cita|agenda|turno/.test(t) && /semana|proximos dias|este mes/.test(t) && tools.has('agenda_periodo')) {
+      const hoy = this.hoy();
+      const d = new Date(`${hoy}T12:00:00Z`);
+      const lunes = new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 86_400_000);
+      const iso = (x: Date) => x.toISOString().slice(0, 10);
+      const r = (await tc('agenda_periodo', { desde: iso(lunes), hasta: iso(new Date(lunes.getTime() + 6 * 86_400_000)) })).content as any;
+      const grafica = { tipo: 'barras', titulo: 'Citas por día', unidad: 'citas', etiquetas: (r.por_dia ?? []).map((x: any) => x.fecha.slice(5)), series: [{ nombre: 'Citas', valores: (r.por_dia ?? []).map((x: any) => x.citas) }] };
+      const lista = (r.citas ?? []).map((c: any) => `• ${c.fecha} ${c.hora} ${c.cliente} — ${c.servicio} con ${c.recurso}`).join('\n');
+      return `Del ${r.desde} al ${r.hasta} hay ${r.total} ${r.total === 1 ? 'cita' : 'citas'}.${lista ? `\n${lista}` : ''}\n\n\`\`\`grafica\n${JSON.stringify(grafica)}\n\`\`\``;
     }
     if (/cita|agenda|turno/.test(t) && tools.has('citas_del_dia')) {
       const fecha = parseFecha(texto, this.hoy()) ?? undefined;

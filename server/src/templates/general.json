@@ -248,6 +248,7 @@
       "herramientas": [
         "resumen_ventas",
         "citas_del_dia",
+        "agenda_periodo",
         "stock_bajo_minimo",
         "buscar_cliente",
         "consultar_catalogo",

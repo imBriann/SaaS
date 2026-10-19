@@ -7,7 +7,7 @@ import { createProduct, findProductsByName, lowStock, updateProduct } from '../m
 import { insertOrder } from '../modules/orders.js';
 import { escalate } from '../modules/conversations.js';
 import { allQuotas } from '../core/usage.js';
-import { formatFechaLarga, rangoDia, todayLocal, utcToLocal } from '../lib/time.js';
+import { addDays, formatFechaLarga, rangoDia, todayLocal, utcToLocal } from '../lib/time.js';
 import { zonaDe } from '../core/tenant.js';
 import { cop } from '../lib/util.js';
 import { createPaymentLink } from '../modules/payments.js';
@@ -255,6 +255,27 @@ export const TOOLS: ToolDef<any>[] = [
         [rangoDia(f, zona).desde.toISOString(), rangoDia(f, zona).hasta.toISOString()],
       )).rows;
       return { fecha: f, citas: rows.map((r: any) => ({ ...r, hora: utcToLocal(new Date(r.inicio), zona).hora })) };
+    },
+  }),
+  def({
+    nombre: 'agenda_periodo', version: '1.0.0', modulo: 'agenda',
+    descripcion: 'Citas de un rango de fechas (hasta 31 días) en UNA consulta, con el conteo por día. Úsala para «esta semana», «este mes» o varios días; para un solo día basta citas_del_dia.',
+    args: z.object({ desde: fecha, hasta: fecha }).strict(),
+    permiso: 'appointment:read', riesgo: 'lectura', efectos: [],
+    run: async (a, { tx }) => {
+      const zona = await tz(tx);
+      if (a.hasta < a.desde) return { error: 'rango_invalido', mensaje: 'La fecha final es anterior a la inicial.' };
+      const dias: string[] = [];
+      for (let d = a.desde; d <= a.hasta && dias.length <= 31; d = addDays(d, 1)) dias.push(d);
+      if (dias.length > 31) return { error: 'rango_muy_largo', mensaje: 'Consulta como máximo 31 días a la vez.' };
+      const rows = (await tx.query(
+        `SELECT a.inicio, a.estado, a.origen, c.nombre AS cliente, p.nombre AS servicio, r.nombre AS recurso FROM appointment a
+         JOIN customer c ON c.id=a.customer_id JOIN product p ON p.id=a.product_id JOIN resource r ON r.id=a.resource_id
+         WHERE a.inicio >= $1 AND a.inicio < $2 ORDER BY a.inicio LIMIT 300`,
+        [rangoDia(a.desde, zona).desde.toISOString(), rangoDia(a.hasta, zona).hasta.toISOString()],
+      )).rows.map((r: any) => { const l = utcToLocal(new Date(r.inicio), zona); return { ...r, fecha: l.fecha, hora: l.hora }; });
+      const porDia = dias.map((d) => ({ fecha: d, citas: rows.filter((r) => r.fecha === d).length }));
+      return { desde: a.desde, hasta: a.hasta, total: rows.length, por_dia: porDia, citas: rows };
     },
   }),
   def({

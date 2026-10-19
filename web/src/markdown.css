@@ -43,10 +43,7 @@
 .md-copiar:active { transform: scale(.96); }
 .md-copiar.copiado { color: #9ad9a8; border-color: #3d6b49; }
 .md-copiar.error { color: #f2a7a7; }
-.md-copiar:focus-visible, .md-expandir:focus-visible, .md-segmento button:focus-visible { outline: 2px solid #b9a8ff; outline-offset: 2px; }
-.md-segmento { display: inline-flex; padding: 2px; border: 1px solid #343944; border-radius: 8px; }
-.md-segmento button { height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: #a9aeb9; font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 160ms ease, color 160ms ease; }
-.md-segmento button.on { background: #2d313b; color: #f1f2f4; }
+.md-copiar:focus-visible, .md-expandir:focus-visible { outline: 2px solid #b9a8ff; outline-offset: 2px; }
 
 .md-pre { margin: 0; padding: 14px 16px; overflow: auto; font-family: var(--mono); font-size: 13px; line-height: 1.6; tab-size: 2; white-space: pre; color: #e4e5e8; scrollbar-color: #3a3f4a transparent; }
 .md-pre:focus-visible { outline: 2px solid #b9a8ff; outline-offset: -2px; }
@@ -65,10 +62,6 @@
 .tk-tag { color: #ff9e88; }
 .tk-sel { color: #ffd38f; }
 
-/* Vista previa de HTML: superficie clara, con el aviso de aislamiento siempre visible. */
-.md-preview { background: #fff; }
-.md-preview-aviso { display: flex; align-items: center; gap: 6px; margin: 0; padding: 8px 12px; font-size: 12.5px; color: var(--tinta-2); background: var(--superficie-2); border-bottom: 1px solid var(--borde); }
-.md-preview iframe { display: block; width: 100%; height: 340px; border: 0; background: #fff; }
 
 /* ---------------------------------------------------------------- aparición por bloques */
 @keyframes md-in { from { opacity: 0; transform: translateY(6px); } }
@@ -81,7 +74,6 @@
   .md { font-size: 15px; }
   .md-pre { font-size: 12.5px; padding: 12px; }
   .md-lineas { display: none; }
-  .md-preview iframe { height: 280px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .md-revelar > * { animation: none; }
