@@ -108,11 +108,17 @@ export async function procesarPlataforma(db: Database, conversacionId: string, m
     const conv = (await tx.query(`SELECT * FROM plataforma_conversacion WHERE id=$1 FOR UPDATE`, [conversacionId])).rows[0];
     const msg = (await tx.query(`SELECT id, creado_en FROM plataforma_mensaje WHERE id=$1 AND conversacion_id=$2`, [mensajeId, conversacionId])).rows[0];
     if (!conv || !msg) return { omitir: true };
+    // Las fechas se comparan dentro de la base: PostgreSQL guarda microsegundos y el controlador las
+    // devuelve truncadas a milisegundos, así que el propio mensaje parecería «posterior» a sí mismo.
     // Ráfaga: responde el trabajo del último mensaje (su lectura incluye a los anteriores).
-    const posterior = (await tx.query(`SELECT 1 FROM plataforma_mensaje WHERE conversacion_id=$1 AND remitente='CLIENTE' AND creado_en > $2 LIMIT 1`, [conversacionId, msg.creado_en])).rows[0];
+    const posterior = (await tx.query(
+      `SELECT 1 FROM plataforma_mensaje WHERE conversacion_id=$1 AND remitente='CLIENTE' AND id <> $2
+         AND creado_en > (SELECT creado_en FROM plataforma_mensaje WHERE id=$2) LIMIT 1`, [conversacionId, mensajeId])).rows[0];
     if (posterior) return { omitir: true };
     // Reintento de un trabajo que ya respondió: nada que hacer.
-    const respondido = (await tx.query(`SELECT 1 FROM plataforma_mensaje WHERE conversacion_id=$1 AND remitente IN ('ASISTENTE','OPERADOR') AND creado_en > $2 LIMIT 1`, [conversacionId, msg.creado_en])).rows[0];
+    const respondido = (await tx.query(
+      `SELECT 1 FROM plataforma_mensaje WHERE conversacion_id=$1 AND remitente IN ('ASISTENTE','OPERADOR')
+         AND creado_en > (SELECT creado_en FROM plataforma_mensaje WHERE id=$2) LIMIT 1`, [conversacionId, mensajeId])).rows[0];
     if (respondido) return { omitir: true };
 
     if (conv.control === 'HUMANO') {

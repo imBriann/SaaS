@@ -45,6 +45,7 @@ const sinPrivados = (texto: string) => {
 
 /** Claves que el panel puede devolver. Las claves en MAYÚSCULAS son valores de enumeración (estados, gravedades). */
 const PERMITIDAS = new Set(`
+asistente resueltas escaladas
 id nombre email rol permisos periodo desde hasta empresas total por_estado altas_periodo bajas_periodo serie_altas dia altas ingresos moneda aprobados
 pendientes rechazados n monto mrr_estimado modulos codigo ia llamadas errores tokens_entrada tokens_salida tokens_mes_actual costo_estimado_usd
 precios_configurados solicitudes errores_5xx errores_4xx latencia_media_ms p95_ms disponibilidad cola en_curso fallidos reintentando espera_mas_antigua_s

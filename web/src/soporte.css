@@ -1,0 +1,47 @@
+/* Soporte con asistente de IA: revisión en vivo de la cuenta, propuesta con atajos y paso al equipo. */
+.modal-soporte { width: min(680px, calc(100% - 32px)); }
+.sop-intro { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--r); background: var(--acento-tinte); color: var(--acento-texto); font-size: 13.5px; line-height: 1.45; }
+.sop-intro .ai-orb { flex: none; }
+
+/* Guía del listado */
+.sop-guia { grid-template-columns: auto minmax(0, 1fr) auto; }
+.sop-guia-orbe { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; background: color-mix(in srgb, var(--acento) 8%, #fff); }
+.sop-cifra { display: inline-flex; align-items: center; gap: 6px; margin: 10px 0 0; padding: 4px 10px; border-radius: var(--r-pildora); background: var(--ok-tinte); color: var(--ok); font-size: 13px; font-weight: 500; }
+
+/* Revisando: el orbe busca y cada área se enciende en orden */
+.sop-revisando { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px 28px; align-items: center; padding: 12px 4px 8px; }
+.sop-areas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.sop-areas li { display: flex; align-items: center; gap: 10px; font-size: 14.5px; color: var(--tinta-2); opacity: .35; animation: sop-area 1600ms calc(var(--i, 0) * 190ms) var(--ease-suave) forwards; }
+.sop-punto { position: relative; width: 10px; height: 10px; border-radius: 50%; background: var(--borde-2); flex: none; }
+.sop-areas li .sop-punto { animation: sop-punto 1600ms calc(var(--i, 0) * 190ms) var(--ease-suave) forwards; }
+@keyframes sop-area { 0% { opacity: .35; transform: translateX(-4px); } 25% { opacity: 1; transform: none; color: var(--tinta); } 100% { opacity: 1; transform: none; color: var(--tinta-2); } }
+@keyframes sop-punto { 0% { background: var(--borde-2); box-shadow: 0 0 0 0 transparent; } 25% { background: var(--acento); box-shadow: 0 0 0 6px color-mix(in srgb, var(--acento) 18%, transparent); } 100% { background: var(--ok); box-shadow: 0 0 0 0 transparent; } }
+
+/* Propuesta */
+.sop-respuesta { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--r-lg); background: var(--superficie); border: 1px solid color-mix(in srgb, var(--acento) 25%, var(--borde)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--acento) 6%, transparent); animation: sube-entra 420ms var(--ease-suave) both; }
+.sop-quien { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.sop-pasos { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.5; }
+.sop-pasos li { animation: sube-entra 360ms calc(200ms + var(--i, 0) * 90ms) var(--ease-suave) both; }
+.sop-revisiones { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.sop-revision { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--borde); border-radius: var(--r); background: var(--superficie); }
+.sop-revision.error { border-color: var(--error-borde); background: color-mix(in srgb, var(--error-tinte) 40%, #fff); }
+.sop-revision.aviso { border-color: var(--atencion-borde); background: color-mix(in srgb, var(--atencion-tinte) 45%, #fff); }
+.sop-icono { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--ok-tinte); color: var(--ok); }
+.sop-revision.aviso .sop-icono { background: var(--atencion-tinte); color: var(--atencion); }
+.sop-revision.error .sop-icono { background: var(--error-tinte); color: var(--error); }
+.sop-revisiones.compacta .sop-revision { padding: 8px 10px; }
+.sop-no-sirvio { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px dashed var(--borde-2); border-radius: var(--r); animation: sube-entra 300ms var(--ease-suave) both; }
+
+/* Diagnóstico del asistente dentro de una solicitud */
+.hilo-soporte li.de-sistema { background: color-mix(in srgb, var(--acento) 5%, #fff); border-style: dashed; border-color: color-mix(in srgb, var(--acento) 30%, var(--borde)); }
+
+@media (max-width: 640px) {
+  .sop-guia { grid-template-columns: minmax(0, 1fr); }
+  .sop-guia-orbe { display: none; }
+  .sop-revisando { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+  .sop-revision { grid-template-columns: auto minmax(0, 1fr); }
+  .sop-revision > .btn { grid-column: 1 / -1; justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sop-areas li, .sop-areas li .sop-punto, .sop-respuesta, .sop-pasos li, .sop-no-sirvio { animation: none !important; opacity: 1; }
+}

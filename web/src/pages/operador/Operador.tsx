@@ -594,6 +594,14 @@ export function OpSoporte() {
   return (
     <>
       <Cabecera titulo="Soporte" sub="Solicitudes que llegan desde el panel de las empresas o por el WhatsApp de Omnegia. Solo se ve lo que la persona escribió en su solicitud." />
+      {data?.asistente?.total > 0 && (
+        <div className="kpis" style={{ marginBottom: 16 }}>
+          <Cifra etiqueta="Consultas al asistente (30 días)" valor={data.asistente.total} />
+          <Cifra etiqueta="Resueltas sin esperar" valor={data.asistente.resueltas} detalle={`${Math.round((data.asistente.resueltas / data.asistente.total) * 100)} % del total`} />
+          <Cifra etiqueta="Pasaron al equipo" valor={data.asistente.escaladas} detalle="con el diagnóstico adjunto" />
+          <Cifra etiqueta="Esperando respuesta de la empresa" valor={Math.max(0, data.asistente.total - data.asistente.resueltas - data.asistente.escaladas)} detalle="propuestas sin confirmar" />
+        </div>
+      )}
       <Tarjeta sinCuerpo>
         <div className="filtros">
           <select className="input" value={estado} onChange={(e) => setEstado(e.target.value)} aria-label="Estado"><option value="">Todos los estados</option>{Object.entries(ESTADO_TICKET).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
@@ -635,7 +643,7 @@ export function OpTicket() {
       <div className="grid g-main">
         <Tarjeta titulo="Conversación">
           <ol className="hilo-soporte">{data.mensajes.map((m: any) => (
-            <li key={m.id} className={m.autor_tipo === 'OPERADOR' ? 'de-soporte' : 'de-empresa'}>
+            <li key={m.id} className={m.autor_tipo === 'OPERADOR' ? 'de-soporte' : m.autor_tipo === 'SISTEMA' ? 'de-sistema' : 'de-empresa'}>
               <div className="msg-meta"><b>{m.autor_tipo === 'OPERADOR' ? 'Soporte' : m.autor}</b><span className="tenue peq-txt">{fechaHora(m.fecha)}</span></div>
               <p className="msg-texto">{m.cuerpo}</p>
             </li>))}

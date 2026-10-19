@@ -22,6 +22,7 @@ import * as pagos from '../../modules/pagosVentas.js';
 import * as admin from '../../modules/admin.js';
 import * as team from '../../modules/team.js';
 import * as soporte from '../../modules/soporte.js';
+import * as soporteIA from '../../modules/soporteIA.js';
 import * as asistente from '../../modules/asistente.js';
 import * as exportsMod from '../../modules/exports.js';
 import { iniciarPagoSuscripcion } from '../../modules/billing.js';
@@ -339,6 +340,11 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
 
   // --- Soporte de la plataforma (la empresa escribe a Omnegia). Funciona aunque la suscripción esté suspendida.
   r('get', '/soporte', (tx, ctx) => soporte.listarTickets(tx, ctx));
+  // Asistente de soporte: revisa la cuenta y propone; si no puede o el caso lo exige, abre la solicitud al equipo.
+  rx('post', '/soporte/asistente', (ctx, req) => soporteIA.atenderConAsistente(db, ctx, req.body));
+  r('post', '/soporte/asistente/:id/resuelto', (tx, ctx, req) => soporteIA.marcarResuelto(tx, ctx, req.params.id));
+  r('post', '/soporte/asistente/:id/escalar', (tx, ctx, req) => soporteIA.escalarPorPersona(tx, ctx, req.params.id, req.body));
+  r('post', '/soporte/:id/resolver', (tx, ctx, req) => soporte.marcarResuelta(tx, ctx, req.params.id));
   r('post', '/soporte', (tx, ctx, req) => soporte.crearTicket(tx, ctx, req.body));
   r('get', '/soporte/:id', (tx, ctx, req) => soporte.verTicket(tx, ctx, req.params.id));
   r('post', '/soporte/:id/mensajes', (tx, ctx, req) => soporte.responderTicket(tx, ctx, req.params.id, req.body));

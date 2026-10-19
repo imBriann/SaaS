@@ -274,6 +274,7 @@ export class MockLlm implements LlmClient {
     if (input.tarea === 'mapear_columnas') raw = mapColumnsHeuristic(input.datos as any);
     if (input.tarea === 'resumir_caso') raw = summarizeHeuristic(input.datos as any);
     if (input.tarea === 'sugerir_respuesta') raw = suggestHeuristic(input.datos as any);
+    if (input.tarea === 'atender_soporte') raw = soporteHeuristic(input.datos as any);
     if (input.tarea === 'resumir_hilo') {
       const d = input.datos as { previo: string | null; mensajes: { rol: string; contenido: string }[] };
       const preguntas = d.mensajes.filter((m) => m.rol === 'user').map((m) => m.contenido.replace(/\s+/g, ' ').slice(0, 80));
@@ -392,4 +393,22 @@ function suggestHeuristic(d: { mensajes: { remitente: string; contenido: string 
   if (/reembolso|devolu|cobr/.test(t)) sugerencia = `Hola ${nombre}, lamento lo ocurrido. Revisé tu compra y vamos a gestionar la devolución. ¿Me confirmas el medio de pago que usaste?`;
   else if (/reclamo|queja|mal/.test(t)) sugerencia = `Hola ${nombre}, gracias por avisarnos y disculpa la experiencia. ¿Me cuentas qué pasó para solucionarlo hoy mismo?`;
   return { sugerencia };
+}
+
+/** Simulador del asistente de soporte: redacta solo con las revisiones de la cuenta y las guías verificadas. */
+function soporteHeuristic(d: { problemas?: { nivel: string; titulo: string; detalle: string; accion?: { etiqueta: string } }[]; guias?: { tema: string; guia: string }[] }) {
+  const p = d.problemas ?? [];
+  if (p.length) {
+    const graves = p.filter((x) => x.nivel === 'error');
+    const lista = (graves.length ? graves : p).slice(0, 3);
+    return {
+      puede_resolver: true, confianza: graves.length ? 'alta' : 'media',
+      respuesta: lista.length === 1 ? 'Revisé tu cuenta y encontré lo que explica el problema:' : 'Revisé tu cuenta y encontré esto, que puede explicar el problema:',
+      // El detalle va en las tarjetas de la revisión; aquí solo qué hacer.
+      pasos: lista.map((x) => `${x.titulo}${x.accion ? `: entra a «${x.accion.etiqueta}» desde el botón de abajo.` : '.'}`.slice(0, 300)),
+    };
+  }
+  if (d.guias?.length) return { puede_resolver: true, confianza: 'media', respuesta: `No encontré fallas en tu cuenta. Esto es lo que indica la guía verificada:
+${d.guias[0].guia}`.slice(0, 1500), pasos: [] };
+  return { puede_resolver: false, confianza: 'baja', respuesta: '', pasos: [] };
 }

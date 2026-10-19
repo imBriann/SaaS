@@ -541,6 +541,10 @@ export async function listarTickets(db: Database, op: Operador, q: any) {
        ORDER BY (k.estado IN ('RESUELTO','CERRADO')), CASE k.prioridad WHEN 'URGENTE' THEN 0 WHEN 'ALTA' THEN 1 WHEN 'NORMAL' THEN 2 ELSE 3 END, k.actualizado_en DESC LIMIT 200`, [estado, canal])).rows
       .map((k: any) => ({ id: k.id, numero: k.numero, empresa_id: k.empresa_id, empresa: k.empresa, empresa_sin_verificar: k.sin_verificar && !!k.empresa, canal: k.canal, conversacion_id: k.conversacion_id,
         categoria: k.categoria, categoria_nombre: ETIQUETA_CATEGORIA[k.categoria], prioridad: k.prioridad, estado: k.estado, asunto: k.asunto, solicitante: k.solicitante_nombre, creado_en: k.creado_en, actualizado_en: k.actualizado_en })),
+    // Asistente de soporte de las empresas (30 días): solo cifras; el operador no ve lo que escribieron.
+    asistente: (await tx.query(
+      `SELECT count(*) FILTER (WHERE resultado='RESUELTO')::int AS resueltas, count(*) FILTER (WHERE resultado='ESCALADO')::int AS escaladas, count(*)::int AS total
+       FROM soporte_intento_ia WHERE creado_en > now() - interval '30 days'`)).rows[0],
   }));
 }
 

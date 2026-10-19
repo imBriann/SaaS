@@ -12,6 +12,7 @@ import './markdown.css';
 import './cobros.css';
 import './atencion.css';
 import './movimiento.css';
+import './soporte.css';
 import './asistente.css';
 import './workspace-birth.css';
 import './creation.css';

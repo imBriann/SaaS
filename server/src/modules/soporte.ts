@@ -27,7 +27,7 @@ export function revisarContenido(texto: string) {
   }
 }
 
-const TicketInput = z.object({
+export const TicketInput = z.object({
   categoria: z.enum(CATEGORIAS, 'Elige una categoría.'),
   prioridad: z.enum(PRIORIDADES, 'Elige una prioridad.').default('NORMAL'),
   asunto: z.string().trim().min(5, 'Escribe un asunto de al menos 5 caracteres.').max(120, 'El asunto es demasiado largo.'),
@@ -75,7 +75,25 @@ export async function listarTickets(tx: Tx, _ctx: Ctx) {
       `SELECT id, numero, categoria, prioridad, estado, asunto, solicitante_nombre, creado_en, actualizado_en,
               (SELECT count(*)::int FROM soporte_mensaje m WHERE m.ticket_id=t.id) AS mensajes
        FROM soporte_ticket t ORDER BY (estado IN ('RESUELTO','CERRADO')), actualizado_en DESC LIMIT 100`)).rows,
+    // Lo que el asistente de soporte resolvió sin esperar a una persona (últimos 90 días).
+    asistente: (await tx.query(
+      `SELECT count(*) FILTER (WHERE resultado='RESUELTO')::int AS resueltas, count(*) FILTER (WHERE resultado='ESCALADO')::int AS escaladas
+       FROM soporte_intento_ia WHERE creado_en > now() - interval '90 days'`)).rows[0],
   };
+}
+
+/** La empresa da por resuelta su solicitud (el equipo la ve y puede cerrarla). */
+export async function marcarResuelta(tx: Tx, ctx: Ctx, id: string) {
+  if (!isUuid(id)) throw notFound();
+  const t = (await tx.query(`SELECT id, numero, estado FROM soporte_ticket WHERE id=$1 FOR UPDATE`, [id])).rows[0];
+  if (!t) throw notFound();
+  if (t.estado === 'CERRADO' || t.estado === 'RESUELTO') throw new AppError('CONFLICT', 'Esta solicitud ya está resuelta.');
+  const u = await solicitante(tx, ctx);
+  await tx.query(`INSERT INTO soporte_mensaje (id, tenant_id, ticket_id, autor_tipo, autor_nombre, cuerpo) VALUES ($1,$2,$3,'SISTEMA',$4,$5)`,
+    [uuidv7(), ctx.tenantId, id, 'Panel de la empresa', `${u.nombre} marcó la solicitud como resuelta.`]);
+  await tx.query(`UPDATE soporte_ticket SET estado='RESUELTO', actualizado_en=now() WHERE id=$1`, [id]);
+  await audit(tx, ctx, { accion: 'soporte.ticket_resuelto_empresa', recurso: 'soporte_ticket', recursoId: id, resultado: 'EXITO', detalle: { numero: t.numero } });
+  return { ok: true };
 }
 
 export async function verTicket(tx: Tx, _ctx: Ctx, id: string) {
