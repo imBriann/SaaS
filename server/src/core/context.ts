@@ -15,6 +15,8 @@ export interface Ctx {
   permisos: ReadonlySet<string>;
   origen: Origen;
   correlacion: string;
+  /** La persona es la propietaria de la empresa (rango por encima del administrador). */
+  propietario?: boolean;
   /** Suscripción SUSPENDIDA: solo lectura y exportación. */
   soloLectura?: boolean;
 }

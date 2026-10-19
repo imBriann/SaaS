@@ -1,12 +1,12 @@
 import { z } from 'zod';
-import type { Tx } from '../db/index.js';
+import type { Database, Tx } from '../db/index.js';
 import { type Ctx, can, requirePerm, requireWritable } from '../core/context.js';
 import { audit } from '../core/audit.js';
 import { allQuotas } from '../core/usage.js';
 import { zonaDe } from '../core/tenant.js';
 import { PERMISOS, PERMISOS_PROHIBIDOS_A_AGENTES } from '../core/permissions.js';
 import { AppError, invalid, notFound } from '../lib/errors.js';
-import { isUuid } from '../lib/util.js';
+import { isUuid, verifyPassword } from '../lib/util.js';
 import { addDays, rangoDia, todayLocal, utcToLocal, zonaValida } from '../lib/time.js';
 import { TOOLS } from '../ai/registry.js';
 import { effectiveRisk } from '../ai/gateway.js';
@@ -36,7 +36,8 @@ export async function me(tx: Tx, ctx: Ctx) {
   const rol = (await tx.query(`SELECT nombre FROM role WHERE clave=$1`, [ctx.roleKey])).rows[0]?.nombre;
   const u = (await tx.query(`SELECT email, email_verificado_en FROM users WHERE id=$1`, [ctx.actor.id])).rows[0];
   return {
-    usuario: { id: ctx.actor.id, nombre: ctx.actor.nombre, rol: ctx.roleKey, rol_nombre: rol, email: u?.email ?? null, correo_verificado: !!u?.email_verificado_en },
+    usuario: { id: ctx.actor.id, nombre: ctx.actor.nombre, rol: ctx.roleKey, rol_nombre: ctx.propietario ? 'Propietario' : rol, propietario: !!ctx.propietario,
+      email: u?.email ?? null, correo_verificado: !!u?.email_verificado_en },
     tenant: { ...t, zona_horaria: zonaValida(t.zona_horaria) }, modulos, permisos: [...ctx.permisos], solo_lectura: !!ctx.soloLectura,
     consumo: can(ctx, 'usage:read') ? await allQuotas(tx, ctx.tenantId) : null,
     simuladores: config.simuladores,
@@ -242,8 +243,10 @@ export async function settings(tx: Tx, ctx: Ctx) {
   requirePerm(ctx, 'tenant:configure');
   const personas = (await tx.query(
     `SELECT u.id, coalesce(ut.nombre_visible,u.nombre) AS nombre, u.email, r.clave AS rol, r.nombre AS rol_nombre, ut.activo, ut.disponible, ut.creado_en,
+            (t.propietario_id = u.id) AS propietario, (u.email_verificado_en IS NOT NULL) AS correo_verificado,
             EXISTS (SELECT 1 FROM role_permission rp WHERE rp.role_id=r.id AND rp.permiso='case:manage') AS atiende_casos
-     FROM user_tenant ut JOIN users u ON u.id=ut.user_id JOIN role r ON r.id=ut.role_id ORDER BY ut.activo DESC, ut.creado_en`,
+     FROM user_tenant ut JOIN users u ON u.id=ut.user_id JOIN role r ON r.id=ut.role_id JOIN tenant t ON t.id=ut.tenant_id
+     ORDER BY (t.propietario_id = u.id) DESC, ut.activo DESC, ut.creado_en`,
   )).rows;
   const roles = (await tx.query(
     `SELECT r.id, r.clave, r.nombre, r.es_agente, coalesce(array_agg(rp.permiso ORDER BY rp.permiso) FILTER (WHERE rp.permiso IS NOT NULL), '{}') AS permisos
@@ -260,7 +263,7 @@ export async function settings(tx: Tx, ctx: Ctx) {
   const plantillas = (await tx.query(`SELECT clave, categoria, cuerpo, nombre_proveedor, idioma, variables, estado_aprobacion FROM message_template ORDER BY clave`)).rows;
   return {
     tenant: { ...t, ia_tope_mensual: t.ia_tope_mensual === null ? null : Number(t.ia_tope_mensual) },
-    personas, invitaciones: can(ctx, 'user:manage') ? await listInvitations(tx, ctx) : [], roles, modulos, recursos, plantillas,
+    personas, soy_propietario: !!ctx.propietario, invitaciones: can(ctx, 'user:manage') ? await listInvitations(tx, ctx) : [], roles, modulos, recursos, plantillas,
     catalogo_permisos: PERMISOS, pasarela: await gatewayAccount(tx, ctx),
     integraciones: integraciones().map(({ clave, nombre, estado, detalle }) => ({ clave, nombre, estado, detalle })),
     webhook_whatsapp: `${config.apiPublicUrl}/api/webhooks/whatsapp`,
@@ -314,6 +317,13 @@ export async function updateMember(tx: Tx, ctx: Ctx, userId: string, body: unkno
   const m = (await tx.query(`SELECT ut.user_id, ut.activo, r.clave, r.nombre AS rol_nombre FROM user_tenant ut JOIN role r ON r.id=ut.role_id WHERE ut.user_id=$1 FOR UPDATE OF ut`, [userId])).rows[0];
   if (!m) throw notFound();
   if (userId === ctx.actor.id && (d.activo === false || (d.rol && d.rol !== m.clave))) throw new AppError('CONFLICT', 'No puedes quitarte tu propio acceso de administración.');
+  // El propietario está por encima del administrador: nadie más cambia su rol, su nombre ni su acceso.
+  const propietario = (await tx.query(`SELECT propietario_id FROM tenant WHERE id=$1`, [ctx.tenantId])).rows[0]?.propietario_id;
+  if (userId === propietario && userId !== ctx.actor.id && (d.rol !== undefined || d.activo !== undefined || d.nombre !== undefined)) {
+    throw new AppError('FORBIDDEN', 'Esta persona es la propietaria de la empresa: solo ella puede cambiar su rol, su nombre o su acceso.', {
+      audit: { accion: 'usuario.editar', recurso: 'user', motivo: 'propietario_protegido' },
+    });
+  }
   if(d.nombre) await tx.query('UPDATE user_tenant SET nombre_visible=$2 WHERE user_id=$1',[userId,d.nombre]);
   let rolNuevo: string | null = null;
   if (d.rol) {
@@ -347,6 +357,51 @@ export async function updateMember(tx: Tx, ctx: Ctx, userId: string, body: unkno
       correo: plantillas.cambioAcceso({ nombre: u.nombre, empresa, rolAnterior: m.rol_nombre, rolNuevo, desactivado, reactivado, urlPanel: config.publicUrl }) });
   }
   return { ok: true };
+}
+
+/**
+ * Cede la propiedad de la empresa a otra persona activa del equipo. Solo el propietario lo hace y
+ * confirma con su contraseña. Quien recibe pasa al rol de administración; quien cede se queda como
+ * administrador (desde ese momento el nuevo propietario puede cambiarle el rol). El registro de la
+ * empresa es de plataforma, así que todo ocurre en una sola transacción de plataforma, filtrada
+ * explícitamente por la empresa del contexto.
+ */
+export async function transferirPropiedad(db: Database, ctx: Ctx, body: unknown) {
+  requireWritable(ctx);
+  if (!ctx.propietario) {
+    throw new AppError('FORBIDDEN', 'Solo el propietario puede ceder la propiedad de la empresa.', {
+      audit: { accion: 'empresa.propiedad_ceder', recurso: 'tenant', motivo: 'no_propietario' },
+    });
+  }
+  const d = z.object({ user_id: z.string(), contrasena: z.string().max(200) }).parse(body);
+  if (!isUuid(d.user_id)) throw notFound();
+  if (d.user_id === ctx.actor.id) throw invalid('Ya eres el propietario de esta empresa.');
+  return db.withPlatform(async (tx) => {
+    const t = (await tx.query(`SELECT nombre, propietario_id FROM tenant WHERE id=$1 FOR UPDATE`, [ctx.tenantId])).rows[0];
+    if (!t || t.propietario_id !== ctx.actor.id) throw new AppError('CONFLICT', 'La propiedad de la empresa cambió. Recarga la página.');
+    const yo = (await tx.query(`SELECT email, password_hash FROM users WHERE id=$1`, [ctx.actor.id])).rows[0];
+    if (!yo?.password_hash || !verifyPassword(d.contrasena, yo.password_hash)) throw new AppError('VALIDATION', 'La contraseña no es correcta.');
+    const m = (await tx.query(
+      `SELECT ut.activo, r.es_agente, coalesce(ut.nombre_visible, u.nombre) AS nombre, u.email, u.email_verificado_en
+       FROM user_tenant ut JOIN users u ON u.id=ut.user_id JOIN role r ON r.tenant_id=ut.tenant_id AND r.id=ut.role_id
+       WHERE ut.tenant_id=$1 AND ut.user_id=$2 FOR UPDATE OF ut`, [ctx.tenantId, d.user_id])).rows[0];
+    if (!m) throw notFound();
+    if (!m.activo || m.es_agente) throw new AppError('CONFLICT', 'Solo puedes ceder la propiedad a una persona con acceso activo.');
+    if (!m.email_verificado_en) throw new AppError('CONFLICT', `${m.nombre} debe confirmar su correo antes de recibir la propiedad.`);
+    // Rol de administración de la plantilla: el que gestiona el equipo con más permisos.
+    const adminRol = (await tx.query(
+      `SELECT r.id, r.clave FROM role r JOIN role_permission rp ON rp.tenant_id=r.tenant_id AND rp.role_id=r.id
+       WHERE r.tenant_id=$1 AND NOT r.es_agente
+       GROUP BY r.id, r.clave HAVING bool_or(rp.permiso='user:manage') ORDER BY count(*) DESC, r.clave LIMIT 1`, [ctx.tenantId])).rows[0];
+    if (adminRol) await tx.query(`UPDATE user_tenant SET role_id=$3 WHERE tenant_id=$1 AND user_id=$2`, [ctx.tenantId, d.user_id, adminRol.id]);
+    await tx.query(`UPDATE tenant SET propietario_id=$2 WHERE id=$1`, [ctx.tenantId, d.user_id]);
+    await audit(tx, ctx, { accion: 'empresa.propiedad_cedida', recurso: 'user', recursoId: d.user_id, resultado: 'EXITO', detalle: { rol: adminRol?.clave ?? null } });
+    await encolarCorreo(tx, { tenantId: ctx.tenantId, userId: d.user_id, para: m.email,
+      correo: plantillas.propiedadCedida({ nombre: m.nombre, empresa: t.nombre, recibe: true, otro: ctx.actor.nombre, urlPanel: config.publicUrl }) });
+    await encolarCorreo(tx, { tenantId: ctx.tenantId, userId: ctx.actor.id!, para: yo.email,
+      correo: plantillas.propiedadCedida({ nombre: ctx.actor.nombre, empresa: t.nombre, recibe: false, otro: m.nombre, urlPanel: config.publicUrl }) });
+    return { ok: true, propietario: { id: d.user_id, nombre: m.nombre } };
+  });
 }
 
 /** Mi disponibilidad para el motor de asignación (cualquier asesor). */

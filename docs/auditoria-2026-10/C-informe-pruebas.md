@@ -29,6 +29,15 @@ Todas las cifras corresponden a ejecuciones reales del 18 y 19 de octubre de 202
 
 Las pruebas del WhatsApp pasaban en PGlite y fallaban en PostgreSQL (17 casos) por la precisión de las fechas. Tras la corrección pasan en ambos. Por eso las pruebas nuevas quedaron incluidas en `test:postgres`.
 
+### Propietario y varias empresas (19 de octubre de 2026)
+
+| Ejecución | Resultado |
+|---|---|
+| `npm test` (PGlite) | 471 de 472 en la primera pasada: `catalogo-asistente` quitaba un permiso a la administradora demo, que ahora es propietaria. Se ajustó la prueba para usar una administradora no propietaria y el archivo pasó 12 de 12 |
+| `npm run test:postgres` | **277 de 277** en 18 archivos, incluido `propietario` |
+| `propietario.test.ts` (9 casos) | Varias empresas por cuenta, permisos completos del propietario, protección frente a otro administrador, cesión con contraseña y reinicio (simulacro, negativas y aplicado) |
+| Recorrido visual del selector, la cortina de cambio, Configuración y teléfono | 9 de 9, sin errores de consola |
+
 ## Recorridos visuales (Playwright, servidor local aislado)
 
 | Recorrido | Comprobaciones | Resultado |

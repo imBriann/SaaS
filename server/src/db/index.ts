@@ -184,7 +184,7 @@ export class Database {
     return this.engine.exec(sql);
   }
 
-  /** Transacción sin rol ni contexto: solo pruebas de seguridad. */
+  /** Transacción sin rol ni contexto: pruebas de seguridad y la consola de reinicio (dueño del esquema). */
   raw<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
     return this.engine.transaction(fn);
   }

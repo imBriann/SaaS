@@ -2,7 +2,20 @@
 
 Todo se comprueba en el servidor: cada ruta exige un permiso concreto (`requirePerm`) y la base aplica aislamiento por empresa con RLS forzada. La interfaz solo oculta lo que el servidor ya rechazaría.
 
-## 1. Roles de la empresa (plantilla de barbería; las demás plantillas siguen el mismo criterio)
+## 1. Propietario de la empresa (rango por encima del administrador)
+
+Cada empresa tiene un propietario (`tenant.propietario_id`): quien hizo el alta o a quien se le cedió.
+
+| Regla | Dónde se aplica |
+|---|---|
+| Siempre tiene todos los permisos de la empresa, cualquiera sea su rol | `tenantGuard` (servidor) |
+| Ningún administrador puede cambiarle el rol, el nombre ni retirarle el acceso (403 y evento de auditoría) | `admin.updateMember` |
+| Solo él cede la propiedad, con su contraseña, a una persona activa con correo confirmado; quien la recibe pasa a administrador y quien la cede sigue como administrador | `POST /api/t/configuracion/propietario` (una transacción) |
+| Se avisa por correo a los dos | `plantillas.propiedadCedida` |
+
+Una misma cuenta puede pertenecer a varias empresas con un rango distinto en cada una; el selector del panel cambia de empresa y el servidor valida la pertenencia en cada petición.
+
+## 2. Roles de la empresa (plantilla de barbería; las demás plantillas siguen el mismo criterio)
 
 | Permiso | Administrador | Supervisor | Recepción | Barbero |
 |---|:-:|:-:|:-:|:-:|
@@ -25,7 +38,7 @@ Todo se comprueba en el servidor: cada ruta exige un permiso concreto (`requireP
 
 **Soporte de Omnegia:** cualquier persona de la empresa puede abrir una consulta. Solo quien la abrió puede marcarla como resuelta o pasarla al equipo; otra empresa recibe 404.
 
-## 2. Agentes de IA (nunca reciben permisos de dinero, configuración ni auditoría)
+## 3. Agentes de IA (nunca reciben permisos de dinero, configuración ni auditoría)
 
 | Agente | Puede | Nunca puede (`PERMISOS_PROHIBIDOS_A_AGENTES`) |
 |---|---|---|
@@ -33,7 +46,7 @@ Todo se comprueba en el servidor: cada ruta exige un permiso concreto (`requireP
 | Asistente del panel | Consultar datos con los permisos de la persona; **crear o editar ítems del catálogo solo con su confirmación** (vence en 15 minutos y vuelve a comprobar los permisos al confirmar) | Lo mismo |
 | Copiloto del asesor | Sugerir respuestas y resumir casos | Lo mismo |
 
-## 3. Panel del operador de Omnegia
+## 4. Panel del operador de Omnegia
 
 | Permiso | ADMIN | SOPORTE |
 |---|:-:|:-:|
@@ -49,7 +62,7 @@ Todo se comprueba en el servidor: cada ruta exige un permiso concreto (`requireP
 | Verificar el WhatsApp de una empresa con Meta (solo consulta) | ✓ | ✓ |
 | Editar productos, precios, inventario o ventas de una empresa | **Nunca** | **Nunca** |
 
-## 4. Roles de la base de datos
+## 5. Roles de la base de datos
 
 | Rol | Uso | Restricción |
 |---|---|---|

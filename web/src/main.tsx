@@ -14,6 +14,7 @@ import './atencion.css';
 import './movimiento.css';
 import './soporte.css';
 import './dashboard.css';
+import './empresas.css';
 import './asistente.css';
 import './workspace-birth.css';
 import './creation.css';

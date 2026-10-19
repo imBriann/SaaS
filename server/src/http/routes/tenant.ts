@@ -237,6 +237,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('get', '/configuracion', (tx, ctx) => admin.settings(tx, ctx));
   r('patch', '/configuracion/modulos/:modulo', (tx, ctx, req) => admin.toggleModule(tx, ctx, req.params.modulo, !!req.body?.activo));
   r('patch', '/configuracion/personas/:id', (tx, ctx, req) => admin.updateMember(tx, ctx, req.params.id, req.body));
+  rx('post', '/configuracion/propietario', (ctx, req) => admin.transferirPropiedad(db, ctx, req.body));
   r('get', '/configuracion/invitaciones', (tx, ctx) => team.listInvitations(tx, ctx));
   r('post', '/configuracion/invitaciones', (tx, ctx, req) => team.invite(tx, ctx, req.body));
   r('post', '/configuracion/invitaciones/:id/revocar', (tx, ctx, req) => team.revokeInvitation(tx, ctx, req.params.id));

@@ -96,6 +96,52 @@ const DIAS: [string, string][] = [['lun', 'Lunes'], ['mar', 'Martes'], ['mie', '
 const ZONAS = ['America/Bogota', 'America/Mexico_City', 'America/Lima', 'America/Guayaquil', 'America/Caracas', 'America/Santiago', 'America/Argentina/Buenos_Aires', 'America/Panama', 'America/New_York', 'Europe/Madrid'];
 const TABS: [string, string][] = [['personas', 'Equipo y comisiones'], ['equipo', 'Horarios'], ['empresa', 'Empresa'], ['canal', 'WhatsApp'], ['cobros', 'Cobros'], ['modulos', 'Módulos'], ['integraciones', 'Integraciones']];
 
+/**
+ * Propiedad de la empresa. El propietario está por encima de los administradores: nadie más le cambia
+ * el rol ni le retira el acceso. Puede ceder la propiedad a otra persona activa, confirmando con su
+ * contraseña; él se queda como administrador.
+ */
+function Propiedad({ personas, soyPropietario, soloLectura, yo, onCambio }: { personas: any[]; soyPropietario: boolean; soloLectura: boolean; yo: string; onCambio: () => void }) {
+  const titular = personas.find((p) => p.propietario);
+  const [abierto, setAbierto] = useState(false);
+  const [destino, setDestino] = useState('');
+  const [contrasena, setContrasena] = useState('');
+  const { run, ocupado } = useAccion();
+  const candidatas = personas.filter((p) => p.activo && p.id !== yo);
+  const elegida = candidatas.find((p) => p.id === destino);
+  const cerrar = () => { setAbierto(false); setDestino(''); setContrasena(''); };
+  const ceder = async () => {
+    const r = await run(() => api.post('/api/t/configuracion/propietario', { user_id: destino, contrasena }), `${elegida?.nombre ?? 'La persona'} es ahora el propietario.`);
+    if (r) { cerrar(); onCambio(); }
+  };
+  if (!titular) return null;
+  return (
+    <Tarjeta titulo="Propiedad de la empresa">
+      <div className="propiedad">
+        <span className="propiedad-corona" aria-hidden="true"><Icon n="corona" className="" size={22} /></span>
+        <div style={{ minWidth: 0 }}>
+          <b>{soyPropietario ? 'Eres el propietario' : `${titular.nombre} es el propietario`}</b>
+          <p className="tenue peq-txt">El propietario está por encima de los administradores: siempre tiene todos los permisos y nadie más puede cambiarle el rol, el nombre ni retirarle el acceso.{soyPropietario ? ' Si cedes la propiedad, sigues como administrador.' : ''}</p>
+        </div>
+        {soyPropietario && <button className="btn" disabled={soloLectura || !candidatas.length} title={!candidatas.length ? 'Invita primero a otra persona' : undefined} onClick={() => setAbierto(true)}>Ceder la propiedad</button>}
+      </div>
+      {abierto && (
+        <Modal titulo="Ceder la propiedad" onCerrar={cerrar} pie={<><button className="btn" onClick={cerrar}>Cancelar</button>
+          <button className="btn peligro" disabled={ocupado || !elegida || !contrasena} onClick={ceder}>{ocupado ? 'Cediendo…' : 'Ceder la propiedad'}</button></>}>
+          <Campo etiqueta="Nuevo propietario" ayuda="Debe tener acceso activo y su correo confirmado">
+            <select className="input" value={destino} onChange={(e) => setDestino(e.target.value)}>
+              <option value="">Elige una persona</option>
+              {candidatas.map((p) => <option key={p.id} value={p.id} disabled={!p.correo_verificado}>{p.nombre} · {p.rol_nombre}{p.correo_verificado ? '' : ' (sin correo confirmado)'}</option>)}
+            </select>
+          </Campo>
+          <Campo etiqueta="Tu contraseña" ayuda="Confirma que eres tú"><input className="input" type="password" autoComplete="current-password" value={contrasena} onChange={(e) => setContrasena(e.target.value)} /></Campo>
+          {elegida && <p className="aviso" role="note"><Icon n="alerta" className="" size={16} />{elegida.nombre} quedará como administrador con todos los permisos y, desde ese momento, podrá cambiar tu rol o retirarte el acceso. Les enviaremos un correo a los dos.</p>}
+        </Modal>
+      )}
+    </Tarjeta>
+  );
+}
+
 export function Configuracion() {
   const { s, recargar: recargarSesion } = useSesion();
   const { data, error, recargar } = useApi<any>(() => api.get('/api/t/configuracion'), []);
@@ -128,15 +174,21 @@ export function Configuracion() {
           {s.permisos.includes('user:manage') && <TeamCommissions people={data.personas} />}
           <Tarjeta titulo="Personas con acceso" acciones={<Escritura permiso="user:manage"><button className="btn primario peq" onClick={() => setInvitar(true)}><Icon n="mas" className="" size={14} />Invitar</button></Escritura>} sinCuerpo>
             <div className="tabla-wrap"><table className="tabla tabla-movil"><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Recibe radicados</th><th>Acceso</th></tr></thead>
-              <tbody>{data.personas.map((p: any) => (
-                <tr key={p.id} className={p.activo ? '' : 'inactiva'}>
-                  <td data-etiqueta="Nombre" className="principal"><input className="input" aria-label={`Nombre de ${p.nombre}`} defaultValue={p.nombre} disabled={s.solo_lectura || !s.permisos.includes('user:manage')} onBlur={e=>{if(e.target.value!==p.nombre)run(()=>api.patch(`/api/t/configuracion/personas/${p.id}`,{nombre:e.target.value}),'Nombre actualizado').then(recargar);}} />{p.id === s.usuario.id && <span className="tenue"> (tú)</span>}</td><td data-etiqueta="Correo" className="mono">{p.email}</td>
-                  <td data-etiqueta="Rol"><select className="input" style={{ width: 'auto', minWidth: 150 }} value={p.rol} disabled={p.id === s.usuario.id || s.solo_lectura} aria-label={`Rol de ${p.nombre}`} onChange={(e) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { rol: e.target.value }), 'Rol actualizado').then(recargar)}>{rolesPersonas.map((r: any) => <option key={r.clave} value={r.clave}>{r.nombre}</option>)}</select></td>
+              <tbody>{data.personas.map((p: any) => {
+                // El propietario está por encima del administrador: solo él cambia su nombre, rol o acceso.
+                const protegido = p.propietario && p.id !== s.usuario.id;
+                const motivo = protegido ? 'Solo el propietario puede cambiar esto' : undefined;
+                return (
+                <tr key={p.id} className={`${p.activo ? '' : 'inactiva'} ${p.propietario ? 'fila-propietario' : ''}`}>
+                  <td data-etiqueta="Nombre" className="principal"><input className="input" aria-label={`Nombre de ${p.nombre}`} defaultValue={p.nombre} title={motivo} disabled={s.solo_lectura || !s.permisos.includes('user:manage') || protegido} onBlur={e=>{if(e.target.value!==p.nombre)run(()=>api.patch(`/api/t/configuracion/personas/${p.id}`,{nombre:e.target.value}),'Nombre actualizado').then(recargar);}} />
+                    {(p.propietario || p.id === s.usuario.id) && <span className="fila envolver" style={{ gap: 6, marginTop: 4 }}>{p.propietario && <span className="insignia-propietario"><Icon n="corona" className="" size={12} />Propietario</span>}{p.id === s.usuario.id && <span className="tenue peq-txt">(tú)</span>}</span>}</td><td data-etiqueta="Correo" className="mono">{p.email}</td>
+                  <td data-etiqueta="Rol"><select className="input" style={{ width: 'auto', minWidth: 150 }} value={p.rol} title={motivo} disabled={p.id === s.usuario.id || s.solo_lectura || protegido} aria-label={`Rol de ${p.nombre}`} onChange={(e) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { rol: e.target.value }), 'Rol actualizado').then(recargar)}>{rolesPersonas.map((r: any) => <option key={r.clave} value={r.clave}>{r.nombre}</option>)}</select></td>
                   <td data-etiqueta="Radicados">{p.atiende_casos ? <Interruptor on={p.disponible} disabled={s.solo_lectura || !p.activo} etiqueta={`${p.nombre} recibe radicados`} onChange={(v) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { disponible: v }), v ? 'Recibirá radicados' : 'No recibirá radicados nuevos').then(recargar)} /> : <span className="tenue peq-txt">Su rol no atiende</span>}</td>
-                  <td data-etiqueta="Acceso"><Interruptor on={p.activo} disabled={p.id === s.usuario.id || s.solo_lectura} etiqueta={`Acceso de ${p.nombre}`} onChange={(v) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { activo: v }), v ? 'Acceso restituido' : 'Acceso retirado. Sus radicados volvieron a la cola.').then(recargar)} /></td>
+                  <td data-etiqueta="Acceso"><Interruptor on={p.activo} disabled={p.id === s.usuario.id || s.solo_lectura || protegido} etiqueta={`Acceso de ${p.nombre}`} onChange={(v) => run(() => api.patch(`/api/t/configuracion/personas/${p.id}`, { activo: v }), v ? 'Acceso restituido' : 'Acceso retirado. Sus radicados volvieron a la cola.').then(recargar)} /></td>
                 </tr>
-              ))}</tbody></table></div>
+              ); })}</tbody></table></div>
           </Tarjeta>
+          <Propiedad personas={data.personas} soyPropietario={!!data.soy_propietario} soloLectura={s.solo_lectura} yo={s.usuario.id} onCambio={() => { recargar(); recargarSesion(); }} />
           {data.invitaciones.length > 0 && (
             <Tarjeta titulo="Invitaciones" sinCuerpo>
               <div className="tabla-wrap"><table className="tabla tabla-movil"><thead><tr><th>Persona</th><th>Rol</th><th>Estado</th><th>Vence</th><th><span className="sr">Acciones</span></th></tr></thead>
