@@ -36,8 +36,8 @@ export function Conversaciones() {
               <ul className="lista-conv" aria-label="Conversaciones">
                 {data.conversaciones.map((c: any) => (
                   <li key={c.id}>
-                    <Link to={`/conversaciones/${c.id}`} className="conv-fila">
-                      <span className="conv-quien"><b className="cortar">{c.cliente}</b><span className="tenue peq-txt">{hace(c.actualizado_en)}</span></span>
+                    <Link to={`/conversaciones/${c.id}`} className={`conv-fila ${c.sin_leer ? 'sin-leer' : ''}`}>
+                      <span className="conv-quien"><b className="cortar">{c.sin_leer && <span className="conv-nuevo" aria-label="Sin leer" />}{c.cliente}</b><span className="tenue peq-txt">{hace(c.actualizado_en)}</span></span>
                       <span className="conv-ultimo cortar">{c.ultimo}</span>
                       <span className="conv-estado">
                         {c.radicado && c.estado_caso !== 'CERRADO' ? <Estado v={c.estado_caso} /> : <Estado v={c.estado} />}
@@ -62,8 +62,8 @@ export function Conversaciones() {
                 <ul className="lista-conv compacta">
                   {data.conversaciones.map((c: any) => (
                     <li key={c.id}>
-                      <Link to={`/conversaciones/${c.id}`} className={`conv-fila ${c.id === id ? 'sel' : ''}`} aria-current={c.id === id ? 'page' : undefined}>
-                        <span className="conv-quien"><b className="cortar">{c.cliente}</b><span className="tenue peq-txt">{hace(c.actualizado_en)}</span></span>
+                      <Link to={`/conversaciones/${c.id}`} className={`conv-fila ${c.id === id ? 'sel' : ''} ${c.sin_leer && c.id !== id ? 'sin-leer' : ''}`} aria-current={c.id === id ? 'page' : undefined}>
+                        <span className="conv-quien"><b className="cortar">{c.sin_leer && c.id !== id && <span className="conv-nuevo" aria-label="Sin leer" />}{c.cliente}</b><span className="tenue peq-txt">{hace(c.actualizado_en)}</span></span>
                         <span className="conv-ultimo cortar">{c.ultimo}</span>
                         <span className="conv-estado">{c.radicado && c.estado_caso !== 'CERRADO' ? <Estado v={c.estado_caso} /> : <Estado v={c.estado} />}<Sla c={c} /></span>
                       </Link>

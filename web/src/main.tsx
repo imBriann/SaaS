@@ -20,6 +20,7 @@ import './creation.css';
 import './legal.css';
 import './numeros.css';
 import './visual.css';
+import './pulido.css';
 import { ToastProvider } from './components/ui';
 import { PanelLayout } from './components/Layout';
 import { slugDelHost, tenantSlug } from './api';

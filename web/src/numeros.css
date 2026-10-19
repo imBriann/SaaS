@@ -163,7 +163,7 @@
 /* Final: el número y el asistente unidos por una línea que se dibuja; el mensaje de prueba la recorre. */
 .num-final .cuerpo { padding-top: 22px; }
 .num-final-titulo { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.015em; animation: num-sube 420ms 200ms var(--ease-suave) both; }
-.num-union { position: relative; display: flex; align-items: center; width: min(280px, 100%); height: 72px; }
+.num-union { position: relative; display: flex; align-items: center; width: min(280px, 100%); height: 72px; overflow: clip; }
 .num-union-nodo { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 50%; background: var(--acento-tinte); color: var(--acento-texto); animation: num-entra-nodo 520ms var(--ease-salto) both; }
 .num-union-ia { flex: none; display: grid; place-items: center; width: 64px; height: 64px; animation: num-entra-nodo 520ms 180ms var(--ease-salto) both; }
 .num-union-linea { flex: 1; height: 24px; overflow: visible; }

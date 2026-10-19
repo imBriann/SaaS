@@ -109,6 +109,46 @@ export function ventanaAbierta(ultimoMensajeCliente: string | Date | null | unde
 // ---------------------------------------------------------------------------
 const FILTROS = ['todas', 'escaladas', 'ia', 'mias', 'cola', 'cerradas'] as const;
 
+/** Un asesor sin supervisión solo ve sus casos, la cola sin asignar y las conversaciones sin caso. */
+function soloLasSuyas(ctx: Ctx, params: unknown[]): string | null {
+  if (can(ctx, 'case:supervise') || can(ctx, 'tenant:configure')) return null;
+  params.push(ctx.actor.id);
+  return `(k.id IS NULL OR k.asignado_a = $${params.length} OR k.estado = 'EN_COLA')`;
+}
+
+/** Ventana en que un mensaje sin leer cuenta como aviso (lo más antiguo ya no es una novedad). */
+const DIAS_AVISO = 7;
+
+/**
+ * Avisos del menú: conversaciones con mensajes del cliente que esta persona aún no ha visto y
+ * conversaciones que esperan la respuesta de una persona (escaladas cuyo último mensaje es del
+ * cliente). Liviano: lo consulta el panel cada pocos segundos.
+ */
+export async function avisos(tx: Tx, ctx: Ctx) {
+  const params: unknown[] = [ctx.actor.id];
+  const filtro = soloLasSuyas(ctx, params);
+  const base = `
+    FROM conversation v JOIN customer c ON c.id=v.customer_id
+    LEFT JOIN LATERAL (SELECT * FROM support_case s WHERE s.conversation_id=v.id ORDER BY creado_en DESC LIMIT 1) k ON true
+    LEFT JOIN conversation_lectura l ON l.conversation_id=v.id AND l.user_id=$1
+    LEFT JOIN LATERAL (SELECT max(coalesce(m.ocurrido_en, m.creado_en)) AS en FROM message m WHERE m.conversation_id=v.id AND m.remitente='HUMAN' AND m.tipo<>'NOTA_INTERNA') h ON true
+    WHERE v.ultimo_mensaje_cliente_en > now() - interval '${DIAS_AVISO} days' ${filtro ? `AND ${filtro}` : ''}`;
+  const nuevo = `v.ultimo_mensaje_cliente_en > coalesce(l.leido_en, 'epoch'::timestamptz)`;
+  const espera = `(v.estado='ESCALADA' AND v.ultimo_mensaje_cliente_en > coalesce(h.en, 'epoch'::timestamptz))`;
+  const r = (await tx.query(
+    `SELECT count(*) FILTER (WHERE ${nuevo} OR ${espera})::int AS total, count(*) FILTER (WHERE ${nuevo})::int AS sin_leer, count(*) FILTER (WHERE ${espera})::int AS por_atender ${base}`, params)).rows[0];
+  const ultima = (await tx.query(
+    `SELECT v.id, c.nombre AS cliente, v.ultimo_mensaje_cliente_en AS en, ${espera} AS espera,
+            (SELECT contenido FROM message m WHERE m.conversation_id=v.id AND m.remitente='CUSTOMER' ORDER BY coalesce(m.ocurrido_en, m.creado_en) DESC LIMIT 1) AS texto
+     ${base} AND (${nuevo} OR ${espera}) ORDER BY v.ultimo_mensaje_cliente_en DESC LIMIT 1`, params)).rows[0];
+  return {
+    conversaciones: {
+      total: r.total, sin_leer: r.sin_leer, por_atender: r.por_atender,
+      ultima: ultima ? { id: ultima.id, cliente: ultima.cliente, en: ultima.en, espera: !!ultima.espera, texto: String(ultima.texto ?? '').slice(0, 120) } : null,
+    },
+  };
+}
+
 export async function listInbox(tx: Tx, ctx: Ctx, filtro: string = 'todas', q?: string) {
   requirePerm(ctx, 'conversation:read');
   const f = (FILTROS as readonly string[]).includes(filtro) ? filtro : 'todas';
@@ -121,11 +161,10 @@ export async function listInbox(tx: Tx, ctx: Ctx, filtro: string = 'todas', q?: 
   if (f === 'mias') { params.push(ctx.actor.id); where.push(`k.asignado_a = $${params.length} AND k.estado <> 'CERRADO'`); }
   const busqueda = (q ?? '').trim().slice(0, 80);
   if (busqueda) { params.push(`%${busqueda}%`); where.push(`(c.nombre ILIKE $${params.length} OR c.telefono ILIKE $${params.length} OR k.radicado ILIKE $${params.length})`); }
-  // Asesor sin supervisión: solo sus casos, la cola sin asignar y las conversaciones sin caso.
-  if (!can(ctx, 'case:supervise') && !can(ctx, 'tenant:configure')) {
-    params.push(ctx.actor.id);
-    where.push(`(k.id IS NULL OR k.asignado_a = $${params.length} OR k.estado = 'EN_COLA')`);
-  }
+  const propias = soloLasSuyas(ctx, params);
+  if (propias) where.push(propias);
+  params.push(ctx.actor.id);
+  const yo = params.length;
   const rows = (await tx.query(
     `SELECT v.id, v.canal, v.estado, v.control, v.resuelta_por, v.actualizado_en, v.ultimo_mensaje_cliente_en,
             c.id AS customer_id, c.nombre AS cliente, c.telefono,
@@ -133,7 +172,9 @@ export async function listInbox(tx: Tx, ctx: Ctx, filtro: string = 'todas', q?: 
             (SELECT count(*)::int FROM ai_execution e WHERE e.conversation_id=v.id AND e.decision IN ('PERMITIDA','CONFIRMADA')) AS ia_ejecutadas,
             (SELECT count(*)::int FROM ai_execution e WHERE e.conversation_id=v.id AND e.decision='DENEGADA') AS ia_bloqueadas,
             k.id AS case_id, k.radicado, k.prioridad, k.estado AS estado_caso, k.sla_vence_en, k.primera_respuesta_en, k.asignado_a,
-            u.nombre AS asignado
+            u.nombre AS asignado,
+            (v.ultimo_mensaje_cliente_en IS NOT NULL AND v.ultimo_mensaje_cliente_en > now() - interval '${DIAS_AVISO} days'
+              AND v.ultimo_mensaje_cliente_en > coalesce((SELECT l.leido_en FROM conversation_lectura l WHERE l.conversation_id=v.id AND l.user_id=$${yo}), 'epoch'::timestamptz)) AS sin_leer
      FROM conversation v JOIN customer c ON c.id=v.customer_id
      LEFT JOIN LATERAL (SELECT * FROM support_case s WHERE s.conversation_id=v.id ORDER BY creado_en DESC LIMIT 1) k ON true
      LEFT JOIN users u ON u.id = k.asignado_a
@@ -165,6 +206,11 @@ export async function conversationDetail(tx: Tx, ctx: Ctx, id: string) {
      WHERE k.conversation_id=$1 ORDER BY k.creado_en DESC LIMIT 1`, [id])).rows[0] ?? null;
   if (caso && !can(ctx, 'case:supervise') && !can(ctx, 'tenant:configure') && caso.asignado_a && caso.asignado_a !== ctx.actor.id && caso.estado !== 'CERRADO') {
     throw notFound();
+  }
+  // Abrirla la marca como leída para esta persona (el aviso del menú desaparece).
+  if (ctx.actor.tipo === 'USUARIO' && ctx.actor.id) {
+    await tx.query(`INSERT INTO conversation_lectura (tenant_id, user_id, conversation_id) VALUES ($1,$2,$3)
+                    ON CONFLICT (tenant_id, user_id, conversation_id) DO UPDATE SET leido_en=now()`, [ctx.tenantId, ctx.actor.id, id]);
   }
   const mensajes = (await tx.query(
     `SELECT m.id, m.remitente, m.tipo, m.contenido, m.metadatos, m.estado_entrega, m.error_entrega, coalesce(m.ocurrido_en, m.creado_en) AS creado_en, u.nombre AS autor

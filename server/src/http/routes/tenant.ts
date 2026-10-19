@@ -2,7 +2,7 @@ import * as commissions from '../../modules/commissions.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Database, Tx } from '../../db/index.js';
-import { type Ctx, requirePerm, requireWritable } from '../../core/context.js';
+import { type Ctx, can, requirePerm, requireWritable } from '../../core/context.js';
 import { audit, auditPlatform } from '../../core/audit.js';
 import { enqueue } from '../../core/events.js';
 import { zonaDe } from '../../core/tenant.js';
@@ -142,6 +142,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
 
   // --- Conversaciones y radicados
   r('get', '/conversaciones', (tx, ctx, req) => conv.listInbox(tx, ctx, req.query?.filtro, req.query?.q));
+  r('get', '/avisos', async (tx, ctx) => (can(ctx, 'conversation:read') ? conv.avisos(tx, ctx) : { conversaciones: { total: 0, sin_leer: 0, por_atender: 0, ultima: null } }));
   r('get', '/conversaciones/:id', (tx, ctx, req) => conv.conversationDetail(tx, ctx, req.params.id));
   r('post', '/conversaciones/:id/responder', (tx, ctx, req) => conv.humanReply(tx, ctx, req.params.id, String(req.body?.texto ?? ''), false));
   r('post', '/conversaciones/:id/nota', (tx, ctx, req) => conv.humanReply(tx, ctx, req.params.id, String(req.body?.texto ?? ''), true));

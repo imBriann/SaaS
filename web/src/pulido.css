@@ -1,0 +1,156 @@
+/*
+ * Pulido del panel (pedido el 2026-10-19): avisos del menú, transiciones entre secciones,
+ * microinteracciones y ajustes para teléfono. Va al final de la cascada. Solo se animan
+ * transform y opacity (o colores), con curvas suaves; todo se apaga con «reducir movimiento».
+ */
+:root { --ease-suave: cubic-bezier(.22, 1, .36, 1); --ease-salto: cubic-bezier(.34, 1.56, .64, 1); }
+
+/* ---------------------------------------------------------------- transición entre secciones */
+.transicion-seccion { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; animation: seccion-entra 420ms var(--ease-suave) both; }
+@keyframes seccion-entra { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+/* Los bloques de cada pantalla entran escalonados (solo los primeros: el resto ya está fuera de vista). */
+.transicion-seccion > .contenido > *, .transicion-seccion > .cabecera { animation: bloque-entra 460ms var(--ease-suave) both; }
+.transicion-seccion > .contenido > *:nth-child(1) { animation-delay: 60ms; }
+.transicion-seccion > .contenido > *:nth-child(2) { animation-delay: 110ms; }
+.transicion-seccion > .contenido > *:nth-child(3) { animation-delay: 160ms; }
+.transicion-seccion > .contenido > *:nth-child(4) { animation-delay: 210ms; }
+.transicion-seccion > .contenido > *:nth-child(n+5) { animation-delay: 250ms; }
+@keyframes bloque-entra { from { opacity: 0; transform: translateY(14px) scale(.995); } to { opacity: 1; transform: none; } }
+
+/* ---------------------------------------------------------------- avisos: insignia del menú */
+.insignia {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: auto;
+  border-radius: 999px; background: var(--acento); color: var(--sobre-acento); font-size: 11.5px; font-weight: 650; line-height: 1;
+  font-variant-numeric: tabular-nums; position: relative; animation: insignia-entra 520ms var(--ease-salto) both;
+}
+.insignia.urgente { background: var(--error); color: #fff; }
+.insignia.urgente::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 0 0 color-mix(in srgb, var(--error) 55%, transparent); animation: insignia-late 2200ms ease-out infinite; }
+.insignia.flotante { position: absolute; top: -3px; right: 2px; margin: 0; min-width: 18px; height: 18px; padding: 0 5px; font-size: 10.5px; box-shadow: 0 0 0 2px var(--superficie); }
+@keyframes insignia-entra { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.18); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes insignia-late { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--error) 50%, transparent); } 70%, 100% { box-shadow: 0 0 0 8px transparent; } }
+
+/* Barra superior en el teléfono: acceso directo a lo que espera. */
+.aviso-movil { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px 0 10px; margin-left: auto; border-radius: 999px; background: var(--acento-tinte); color: var(--acento-texto); text-decoration: none; animation: insignia-entra 520ms var(--ease-salto) both; }
+.aviso-movil.urgente { background: var(--error-tinte); color: var(--error); }
+.aviso-movil .insignia { margin-left: 0; }
+.aviso-movil:hover { text-decoration: none; }
+
+/* Aviso de mensaje entrante: entra deslizándose, la barra inferior muestra cuánto le queda. */
+.aviso-entrante {
+  position: fixed; z-index: 70; top: 18px; right: 18px; width: min(380px, calc(100vw - 24px));
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 12px 12px 14px 14px;
+  background: color-mix(in srgb, var(--superficie) 96%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--borde); border-radius: 14px; box-shadow: 0 18px 40px -22px #1b1b1966, 0 2px 6px -3px #1b1b1922; overflow: hidden;
+  animation: aviso-entra 560ms var(--ease-salto) both;
+}
+.aviso-entrante-ico { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: var(--acento-tinte); color: var(--acento-texto); animation: aviso-ico 900ms 200ms var(--ease-salto) both; }
+.aviso-entrante.urgente .aviso-entrante-ico { background: var(--error-tinte); color: var(--error); }
+.aviso-entrante-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.aviso-entrante-txt b { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aviso-entrante-txt span { font-size: 13px; color: var(--tinta-3); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.aviso-entrante-cerrar { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--tinta-3); cursor: pointer; }
+.aviso-entrante-cerrar:hover { background: var(--superficie-2); color: var(--tinta); }
+.aviso-entrante-tiempo { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--acento); transform-origin: left center; animation: aviso-tiempo 8000ms linear forwards; opacity: .7; }
+.aviso-entrante.urgente .aviso-entrante-tiempo { background: var(--error); }
+@keyframes aviso-entra { from { opacity: 0; transform: translate3d(24px, -12px, 0) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes aviso-ico { 0% { transform: scale(.5) rotate(-20deg); } 60% { transform: scale(1.12) rotate(6deg); } 100% { transform: none; } }
+@keyframes aviso-tiempo { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* Conversaciones sin leer en la bandeja. */
+.conv-fila { transition: background-color 180ms ease-out, transform 220ms var(--ease-suave); }
+.conv-fila.sin-leer { background: color-mix(in srgb, var(--acento) 5%, var(--superficie)); }
+.conv-fila.sin-leer .conv-quien b { font-weight: 700; color: var(--tinta); }
+.conv-fila.sin-leer .conv-ultimo { color: var(--tinta); font-weight: 500; }
+.conv-nuevo { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: var(--acento); vertical-align: 1px; position: relative; }
+.conv-nuevo::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: var(--acento); animation: punto-onda 1800ms ease-out infinite; }
+@keyframes punto-onda { 0% { transform: scale(1); opacity: .5; } 80%, 100% { transform: scale(2.8); opacity: 0; } }
+
+/* ---------------------------------------------------------------- navegación */
+.app .nav-item { position: relative; transition: background-color 180ms ease-out, color 180ms ease-out; }
+.app .nav-item svg { transition: transform 260ms var(--ease-salto), color 180ms ease-out; }
+@media (hover: hover) { .app .nav-item:hover svg { transform: translateX(2px) scale(1.06); } }
+.app .nav-item.activo::before { content: ''; position: absolute; left: -12px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--acento); animation: indicador-entra 360ms var(--ease-salto) both; }
+@keyframes indicador-entra { from { transform: scaleY(0); opacity: 0; } to { transform: scaleY(1); opacity: 1; } }
+
+/* Barra inferior: el activo aparece con un salto suave y el toque responde. */
+.tab { transition: color 180ms ease-out; -webkit-tap-highlight-color: transparent; }
+.tab .tab-ico { transition: background-color 220ms ease-out, transform 280ms var(--ease-salto); }
+.tab.activo .tab-ico { animation: tab-activa 420ms var(--ease-salto); }
+.tab:active .tab-ico { transform: scale(.9); }
+@keyframes tab-activa { 0% { transform: scale(.82); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+
+/* ---------------------------------------------------------------- controles */
+.btn { transition: background-color 160ms ease-out, border-color 160ms ease-out, box-shadow 200ms ease-out, transform 160ms var(--ease-suave), color 160ms ease-out; }
+@media (hover: hover) {
+  .btn.primario:not(:disabled):hover { box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--acento) 80%, transparent); transform: translateY(-1px); }
+}
+.btn:active:not(:disabled) { transform: scale(.97); transition-duration: 80ms; }
+.input { transition: border-color 160ms ease-out, box-shadow 200ms ease-out, background-color 160ms ease-out; }
+.input:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--acento) 18%, transparent); }
+.tabs button { transition: background-color 180ms ease-out, color 180ms ease-out, box-shadow 220ms ease-out, transform 160ms ease-out; }
+.tabs button:active { transform: scale(.97); }
+.tabs button.on { animation: pestana-on 300ms var(--ease-suave); }
+@keyframes pestana-on { from { box-shadow: 0 0 0 0 transparent; transform: scale(.96); } to { transform: none; } }
+/* Pestañas que no caben: se deslizan con imán y un desvanecido indica que hay más. */
+.tabs { scroll-snap-type: x proximity; scroll-behavior: smooth; }
+.tabs button { scroll-snap-align: start; }
+@media (max-width: 760px) {
+  /* El desvanecido del borde solo aparece si las pestañas no caben y se quita al llegar al final. */
+  @supports (animation-timeline: scroll()) {
+    .tabs::after { content: ''; position: sticky; right: -3px; flex: none; width: 32px; margin: -3px -3px -3px -32px; border-radius: 0 var(--r) var(--r) 0; background: linear-gradient(90deg, transparent, var(--superficie-3) 85%); pointer-events: none; opacity: 0; animation: tabs-borde linear both; animation-timeline: scroll(nearest inline); }
+  }
+}
+
+/* Tarjetas y filas que se pueden tocar: elevación leve al pasar. */
+.app .tarjeta { transition: box-shadow 240ms ease-out, border-color 200ms ease-out; }
+@media (hover: hover) {
+  a.tarjeta:hover, .tarjeta.clic:hover { box-shadow: 0 14px 28px -20px #25345066; border-color: var(--borde-2); }
+  .conv-fila:hover, .lista-fila:hover { background: var(--superficie-2); }
+  .tabla tbody tr { transition: background-color 160ms ease-out; }
+}
+
+/* Carga: el destello recorre las líneas con más suavidad. */
+.esqueleto { animation-duration: 1.6s; animation-timing-function: var(--ease-suave); }
+.col[aria-busy='true'] .esqueleto:nth-child(2) { animation-delay: 120ms; }
+.col[aria-busy='true'] .esqueleto:nth-child(3) { animation-delay: 240ms; }
+.col[aria-busy='true'] .esqueleto:nth-child(4) { animation-delay: 360ms; }
+
+/* Avisos y estados: aparecen, no saltan. */
+.estado { transition: background-color 200ms ease-out, color 200ms ease-out; }
+.toast { animation: toast-entra 460ms var(--ease-salto) both; }
+@keyframes toast-entra { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
+
+/* ---------------------------------------------------------------- teléfono */
+@media (max-width: 1000px) {
+  .barra-movil { position: sticky; top: 0; z-index: 30; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); background: color-mix(in srgb, var(--superficie) 88%, transparent) !important; border-bottom: 1px solid color-mix(in srgb, var(--borde) 70%, transparent); }
+  .app .tabbar { box-shadow: 0 -8px 24px -18px #1b1b1940; }
+  /* El menú «Más» se desliza desde el borde, con el fondo que se oscurece a la vez. */
+  .app .lateral { transition: transform 340ms var(--ease-suave), box-shadow 340ms ease-out, visibility 0s linear 340ms !important; }
+  .app.nav-abierta .lateral { transition: transform 340ms var(--ease-suave), box-shadow 340ms ease-out, visibility 0s !important; }
+  .app.nav-abierta .lateral { box-shadow: 18px 0 48px -24px #1b1b1966; }
+  .app .velo-nav { transition: opacity 300ms ease-out; }
+  .aviso-entrante { top: calc(10px + env(safe-area-inset-top)); right: 12px; left: 12px; width: auto; animation-name: aviso-entra-movil; }
+  @keyframes aviso-entra-movil { from { opacity: 0; transform: translateY(-24px) scale(.97); } to { opacity: 1; transform: none; } }
+}
+@media (max-width: 760px) {
+  /* Tablas y cuadrículas nunca empujan la página hacia los lados. */
+  .grid > *, .num-gestion > *, .contenido > * { min-width: 0; }
+  .tabla-wrap { max-width: 100%; }
+  .cabecera .titulo { font-size: 28px; letter-spacing: -.025em; }
+  .app .tarjeta { border-radius: 14px; }
+  .conv-fila { padding: 14px 16px; }
+  .conv-fila:active { background: var(--superficie-2); }
+  .btn { min-height: 44px; }
+  .btn.peq { min-height: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transicion-seccion, .transicion-seccion > .contenido > *, .transicion-seccion > .cabecera, .insignia, .insignia.urgente::after, .aviso-movil,
+  .aviso-entrante, .aviso-entrante-ico, .conv-nuevo::after, .app .nav-item.activo::before, .tab.activo .tab-ico, .tabs button.on, .toast { animation: none !important; }
+  .aviso-entrante-tiempo { display: none; }
+  .btn, .tab .tab-ico, .app .nav-item svg, .conv-fila, .app .lateral { transition: none !important; }
+  .btn.primario:hover, .app .nav-item:hover svg, .btn:active:not(:disabled), .tab:active .tab-ico { transform: none !important; }
+  .tabs { scroll-behavior: auto; }
+}
+
+@keyframes tabs-borde { 0%, 90% { opacity: 1; } 100% { opacity: 0; } }

@@ -719,7 +719,7 @@ function Gestion({ c, onCambio }: { c: C; onCambio: (c: C) => void }) {
       <Tarjeta titulo="Historial de pagos del número" sinCuerpo>
         {c.pagos.length === 0 ? <p className="cuerpo sec">Sin pagos todavía.</p> : (
           <div className="tabla-wrap">
-            <table className="tabla">
+            <table className="tabla tabla-movil">
               <thead><tr><th>Fecha</th><th>Concepto</th><th>Estado</th><th className="num">Valor</th></tr></thead>
               <tbody>{c.pagos.map((p: any) => (
                 <tr key={p.referencia}>

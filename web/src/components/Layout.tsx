@@ -179,7 +179,16 @@ export function PanelLayout() {
   const slug = tenantSlug();
   const { data, error, recargar } = useApi<Sesion>(() => api.get('/api/t/yo'), [slug]);
   useEffect(() => { if (data) { aplicarTema(data.tenant.tema); setZona(data.tenant.zona_horaria); document.title = `${data.tenant.nombre} · ${MARCA.nombre}`; } }, [data]);
-  const inbox = useApi<any>(() => (data && data.permisos.includes('conversation:read') && data.modulos.includes('conversaciones') ? api.get('/api/t/conversaciones?filtro=escaladas') : Promise.resolve(null)), [data?.tenant?.id], { cada: 20000 });
+  const veConversaciones = !!data && data.permisos.includes('conversation:read') && data.modulos.includes('conversaciones');
+  // Avisos livianos: se consultan cada pocos segundos, al volver a la pestaña y al cambiar de pantalla (abrir una conversación la marca leída).
+  const avisos = useApi<Avisos | null>(() => (veConversaciones ? api.get('/api/t/avisos') : Promise.resolve(null)), [data?.tenant?.id, veConversaciones, loc.pathname], { cada: 12000 });
+  useEffect(() => {
+    const volver = () => { if (document.visibilityState === 'visible') avisos.recargar(); };
+    document.addEventListener('visibilitychange', volver);
+    return () => document.removeEventListener('visibilitychange', volver);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const pendientes = avisos.data?.conversaciones.total ?? 0;
+  useEffect(() => { if (data) document.title = `${pendientes ? `(${pendientes}) ` : ''}${data.tenant.nombre} · ${MARCA.nombre}`; }, [pendientes, data]);
   const [navAbierta, setNavAbierta] = useState(false);
   const [contrasena, setContrasena] = useState(false);
   useEffect(() => setNavAbierta(false), [loc.pathname]);
@@ -218,7 +227,9 @@ export function PanelLayout() {
   const puede = (p: string) => data.permisos.includes(p);
   const visible = (i: Item) => (!i.permiso || puede(i.permiso)) && (!i.modulo || data.modulos.includes(i.modulo));
   const t = data.tenant;
-  const escaladas = inbox.data?.contadores?.escaladas ?? 0;
+  const av = avisos.data?.conversaciones;
+  const urgente = (av?.por_atender ?? 0) > 0;
+  const textoAviso = av ? [av.sin_leer ? `${av.sin_leer} sin leer` : null, av.por_atender ? `${av.por_atender} ${av.por_atender === 1 ? 'espera' : 'esperan'} a una persona` : null].filter(Boolean).join(' · ') : '';
   const gobierno = GOBIERNO.filter(visible);
   // El asistente usa toda la ventana (menos el menú): es una conversación, no una página con título.
   const completa = loc.pathname.startsWith('/asistente');
@@ -228,7 +239,7 @@ export function PanelLayout() {
   const marca = <span className="marca-negocio" aria-hidden="true">{t.logo_data_url ? <img src={t.logo_data_url} alt="" /> : t.tema?.monograma ?? t.nombre.slice(0, 2)}</span>;
   const enlace = (i: Item) => (
     <NavLink key={i.to} to={i.to} end={i.to === '/'} className={({ isActive }) => `nav-item ${isActive ? 'activo' : ''}`}>
-      <Icon n={i.n} className="" size={18} />{i.t}{i.n === 'conversaciones' && escaladas > 0 && <span className="cont" aria-label={`${escaladas} con una persona`}>{escaladas}</span>}
+      <Icon n={i.n} className="" size={18} />{i.t}{i.n === 'conversaciones' && pendientes > 0 && <Insignia n={pendientes} urgente={urgente} etiqueta={textoAviso} />}
     </NavLink>
   );
   const movil = OPERACION.filter((i) => i.movil && visible(i)).slice(0, 4);
@@ -240,7 +251,7 @@ export function PanelLayout() {
         <a className="saltar" href="#contenido">Saltar al contenido</a>
         <header className="barra-movil">
           <Link to="/" className="contexto" aria-label={`${t.nombre}, inicio`}>{marca}<span className="contexto-txt"><b>{t.nombre}</b><span>{data.usuario.rol_nombre}</span></span></Link>
-          {escaladas > 0 && visible(OPERACION.find((i) => i.to === '/conversaciones')!) && <Link to="/conversaciones" className="estado info" aria-label={`${escaladas} conversaciones con una persona`}><Icon n="persona" className="" />{escaladas}</Link>}
+          {pendientes > 0 && <Link to="/conversaciones" className={`aviso-movil ${urgente ? 'urgente' : ''}`} aria-label={`Conversaciones: ${textoAviso}`}><Icon n="conversaciones" className="" size={16} /><Insignia n={pendientes} urgente={urgente} /></Link>}
         </header>
 
         <aside className="lateral" id="nav-lateral" aria-label="Navegación del panel">
@@ -293,15 +304,16 @@ export function PanelLayout() {
           <AvisoSuscripcion s={data} puede={puede} />
           {!data.usuario.correo_verificado && <AvisoCorreo s={data} onVerificado={recargar} />}
           <main className={`pagina ${completa ? 'completa' : ''}`} id="contenido" tabIndex={-1}>
-            <Outlet />
+            {/* Cada sección entra con una transición corta; dentro de una sección (p. ej. otra conversación) no se reinicia. */}
+            <div className="transicion-seccion" key={loc.pathname.split('/')[1] || 'inicio'}><Outlet /></div>
           </main>
         </div>
 
         <nav className="tabbar" aria-label="Navegación principal">
           {movil.map((i) => (
             <NavLink key={i.to} to={i.to} end={i.to === '/'} className={({ isActive }) => `tab ${isActive ? 'activo' : ''}`}>
-              <span className="tab-ico"><Icon n={i.n} className="" size={20} />{i.n === 'conversaciones' && escaladas > 0 && <span className="punto" aria-hidden="true" />}</span>
-              <span>{i.t}</span>{i.n === 'conversaciones' && escaladas > 0 && <span className="sr"> ({escaladas} con una persona)</span>}
+              <span className="tab-ico"><Icon n={i.n} className="" size={20} />{i.n === 'conversaciones' && pendientes > 0 && <Insignia n={pendientes} urgente={urgente} flotante />}</span>
+              <span>{i.t}</span>{i.n === 'conversaciones' && pendientes > 0 && <span className="sr"> ({textoAviso})</span>}
             </NavLink>
           ))}
           <button type="button" className={`tab ${navAbierta ? 'activo' : ''}`} onClick={() => setNavAbierta(true)} aria-expanded={navAbierta} aria-controls="nav-lateral">
@@ -310,8 +322,53 @@ export function PanelLayout() {
         </nav>
       </div>
       {contrasena && <CambiarContrasena onCerrar={() => setContrasena(false)} />}
+      {veConversaciones && av && <AvisoEntrante ultima={av.ultima} />}
       </WorkspaceBirth>
     </SesionCtx.Provider>
+  );
+}
+
+interface Avisos { conversaciones: { total: number; sin_leer: number; por_atender: number; ultima: { id: string; cliente: string; en: string; espera: boolean; texto: string } | null } }
+
+/** Contador del menú: aparece con un salto y late si una conversación espera a una persona. */
+function Insignia({ n, urgente, etiqueta, flotante }: { n: number; urgente?: boolean; etiqueta?: string; flotante?: boolean }) {
+  return (
+    <span key={n} className={`insignia ${urgente ? 'urgente' : ''} ${flotante ? 'flotante' : ''}`} aria-label={etiqueta || undefined} aria-hidden={etiqueta ? undefined : true} title={etiqueta || undefined}>
+      {n > 99 ? '99+' : n}
+    </span>
+  );
+}
+
+/**
+ * Aviso de un mensaje nuevo de WhatsApp mientras se trabaja en otra pantalla. Solo aparece cuando
+ * llega algo después de abrir el panel (no al cargar) y nunca sobre la conversación que ya se está leyendo.
+ */
+function AvisoEntrante({ ultima }: { ultima: Avisos['conversaciones']['ultima'] }) {
+  const loc = useLocation();
+  const visto = useRef<string | null | undefined>(undefined);
+  const [aviso, setAviso] = useState<NonNullable<typeof ultima> | null>(null);
+  useEffect(() => {
+    const clave = ultima ? `${ultima.id}:${ultima.en}` : null;
+    if (visto.current === undefined) { visto.current = clave; return; }
+    if (clave && clave !== visto.current && (!visto.current || new Date(ultima!.en) > new Date(visto.current.split(':').slice(1).join(':')))) {
+      if (!loc.pathname.endsWith(ultima!.id)) setAviso(ultima);
+    }
+    visto.current = clave;
+  }, [ultima?.id, ultima?.en]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!aviso) return; const t = window.setTimeout(() => setAviso(null), 8000); return () => window.clearTimeout(t); }, [aviso]);
+  useEffect(() => { if (aviso && loc.pathname.endsWith(aviso.id)) setAviso(null); }, [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!aviso) return null;
+  return (
+    <div className={`aviso-entrante ${aviso.espera ? 'urgente' : ''}`} role="status" aria-live="polite">
+      <span className="aviso-entrante-ico" aria-hidden="true"><Icon n={aviso.espera ? 'persona' : 'conversaciones'} className="" size={18} /></span>
+      <span className="aviso-entrante-txt">
+        <b>{aviso.espera ? `${aviso.cliente} espera a una persona` : `Nuevo mensaje de ${aviso.cliente}`}</b>
+        {aviso.texto && <span>{aviso.texto}</span>}
+      </span>
+      <Link className="btn peq primario" to={`/conversaciones/${aviso.id}`} onClick={() => setAviso(null)}>Abrir</Link>
+      <button type="button" className="aviso-entrante-cerrar" onClick={() => setAviso(null)} aria-label="Cerrar aviso"><Icon n="x" className="" size={14} /></button>
+      <span className="aviso-entrante-tiempo" aria-hidden="true" />
+    </div>
   );
 }
 
