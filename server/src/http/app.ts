@@ -16,6 +16,8 @@ import { registerPublicRoutes } from './routes/public.js';
 import { registerTenantRoutes } from './routes/tenant.js';
 import { limitador } from './limits.js';
 import { registerOperatorRoutes } from './routes/operador.js';
+import { registerNumerosRoutes } from './routes/numeros.js';
+import { instalarResolverToken } from '../numeros/servicio.js';
 import { registrarPeticion } from '../core/metricas.js';
 import { registrarIncidente } from '../core/incidentes.js';
 import { depurar } from '../lib/depurar.js';
@@ -161,6 +163,9 @@ export async function buildApp(db: Database, opts: { logger?: boolean; webDir?: 
   await registerPublicRoutes(app, db);
   await registerTenantRoutes(app, db);
   await registerOperatorRoutes(app, db);
+  await registerNumerosRoutes(app, db);
+  // Las empresas conectadas con el registro integrado de Meta usan su propio token de negocio.
+  instalarResolverToken(db);
 
   // Panel compilado (producción): SPA servida por el mismo proceso.
   const webDir = opts.webDir ?? resolve(process.cwd(), '../web/dist');

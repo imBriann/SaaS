@@ -282,6 +282,12 @@ function CanalWhatsApp({ data, onCambio, guardarEmpresa }: { data: any; onCambio
           </div>
         </Tarjeta>
       </div>
+      {t.whatsapp_estado !== 'CONECTADO' && (
+        <Link to="/whatsapp/numero" className="aviso enlace-bloque" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <Icon n="telefono" className="" size={16} />
+          <span><b>¿No tienes un número para WhatsApp Business?</b> Contrata uno desde Omnegia: eliges el número, ves el precio antes de pagar y lo dejamos conectado a tu asistente.</span>
+        </Link>
+      )}
       <Tarjeta titulo="Plantillas de mensajes" sinCuerpo>
         <p className="cuerpo sec peq-txt">Fuera de las 24 horas siguientes al último mensaje del cliente, WhatsApp solo entrega plantillas aprobadas. Crea cada una en el administrador de WhatsApp de Meta con el mismo texto y marca aquí su nombre cuando Meta la apruebe.</p>
         <div className="lista">{data.plantillas.map((p: any) => <Plantilla key={p.clave} p={p} onCambio={onCambio} />)}</div>
@@ -495,6 +501,7 @@ export function Suscripcion() {
           {institucional && ren && <p className="aviso peq-txt" style={{ marginTop: 12 }}><Icon n="info" className="" size={14} /><span>{ren.disponible ? ren.mensaje : 'La renovación en línea no está disponible por ahora. Escríbenos y te ayudamos.'} No hay cobros automáticos.</span></p>}
         </Tarjeta>
         <DocumentosPagos />
+        <NumeroContratado />
         {data.periodos?.length > 0 && (
           <Tarjeta titulo="Pagos de tu suscripción" sinCuerpo>
             <div className="tabla-wrap"><table className="tabla"><thead><tr><th>Periodo</th><th>Modalidad</th><th className="num">Pagado</th><th className="num">Referencia comercial</th></tr></thead>
@@ -522,6 +529,27 @@ export function Suscripcion() {
         )}
       </div>
     </>
+  );
+}
+
+/** Número de WhatsApp contratado: cargo separado del plan y de lo que cobra Meta. */
+function NumeroContratado() {
+  const { data } = useApi<any>(() => api.get('/api/t/numeros/contratacion'), []);
+  const c = data?.contratacion && data.contratacion.estado !== 'CANCELADO' ? data.contratacion : null;
+  return (
+    <Tarjeta titulo="Número de WhatsApp" acciones={<Link className="btn peq" to="/whatsapp/numero">{c ? 'Gestionar' : 'Contratar un número'}</Link>}>
+      {c ? (
+        <>
+          <dl className="plan-def">
+            <div><dt>Número</dt><dd className="mono">{c.numero}</dd></div>
+            <div><dt>Mensualidad del número</dt><dd>{cop(c.cotizacion.total_mensual)}</dd></div>
+            <div><dt>{c.estado === 'CANCELACION_PENDIENTE' ? 'Activo hasta' : 'Próxima renovación'}</dt><dd>{c.periodo_fin ? fecha(c.periodo_fin) : 'Al entregarse el número'}</dd></div>
+            <div><dt>Proveedor</dt><dd>{c.proveedor}</dd></div>
+          </dl>
+          <p className="sec" style={{ marginTop: 12 }}>Se paga aparte de tu plan de Omnegia y no incluye lo que Meta cobra por las plantillas que envías.</p>
+        </>
+      ) : <p className="sec">No tienes un número contratado con Omnegia. Si usas tu propio número de WhatsApp Business no pagas mensualidad de número.</p>}
+    </Tarjeta>
   );
 }
 

@@ -18,6 +18,7 @@ import './asistente.css';
 import './workspace-birth.css';
 import './creation.css';
 import './legal.css';
+import './numeros.css';
 import { ToastProvider } from './components/ui';
 import { PanelLayout } from './components/Layout';
 import { slugDelHost, tenantSlug } from './api';
@@ -54,6 +55,7 @@ const CentroIA = lazy(() => gobierno().then((m) => ({ default: m.CentroIA })));
 const Configuracion = lazy(() => gobierno().then((m) => ({ default: m.Configuracion })));
 const Simulador = lazy(() => gobierno().then((m) => ({ default: m.Simulador })));
 const Suscripcion = lazy(() => gobierno().then((m) => ({ default: m.Suscripcion })));
+const NumeroWhatsApp = lazy(() => import('./pages/app/NumeroWhatsApp').then((m) => ({ default: m.NumeroWhatsApp })));
 const soporte = () => import('./pages/app/Soporte');
 const Soporte = lazy(() => soporte().then((m) => ({ default: m.Soporte })));
 const SoporteDetalle = lazy(() => soporte().then((m) => ({ default: m.SoporteDetalle })));
@@ -160,6 +162,7 @@ function App() {
             <Route path="/ia" element={<CentroIA />} />
             <Route path="/configuracion" element={<Configuracion />} />
             <Route path="/suscripcion" element={<Suscripcion />} />
+            <Route path="/whatsapp/numero" element={<NumeroWhatsApp />} />
             <Route path="/auditoria" element={<Auditoria />} />
             <Route path="/simulador" element={<Simulador />} />
             <Route path="/soporte" element={<Soporte />} />

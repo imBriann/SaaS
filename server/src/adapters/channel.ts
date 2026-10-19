@@ -38,6 +38,21 @@ export function signMeta(rawBody: string, secret = config.whatsapp.appSecret ?? 
 const esSimulado = (phoneNumberId: string | null) => !phoneNumberId || phoneNumberId.startsWith('sim-');
 
 /**
+ * Token con que se habla con Meta por un número. Una empresa conectada con el registro integrado
+ * tiene su propio token de negocio (cifrado en la base); el resto usa el token de la plataforma.
+ */
+type ResolverToken = (phoneNumberId: string) => Promise<string | null | undefined>;
+let resolverToken: ResolverToken | null = null;
+export const setResolverToken = (r: ResolverToken | null) => { resolverToken = r; };
+async function tokenPara(phoneNumberId: string | null): Promise<string | undefined> {
+  if (phoneNumberId && !esSimulado(phoneNumberId) && resolverToken) {
+    const propio = await resolverToken(phoneNumberId).catch(() => null);
+    if (propio) return propio;
+  }
+  return config.whatsapp.accessToken;
+}
+
+/**
  * Códigos de error de la Cloud API que merecen reintento: límites de tasa
  * (4, 80007, 130429, 131056) y fallos temporales del servicio (1, 2, 131000, 133004).
  */
@@ -57,20 +72,20 @@ export class WhatsAppCloudAdapter implements ChannelAdapter {
   canal = 'WHATSAPP' as const;
   constructor(private fetcher: typeof fetch = fetch) {}
 
-  private sinConexion(phoneNumberId: string | null): SendResult | null {
-    if (esSimulado(phoneNumberId) || !config.whatsapp.accessToken) {
+  private sinConexion(phoneNumberId: string | null, accessToken: string | undefined): SendResult | null {
+    if (esSimulado(phoneNumberId) || !accessToken) {
       if (config.simuladores) return { ok: true, idExterno: `sim.${token(10)}`, simulado: true };
       return { ok: false, reintentable: false, error: esSimulado(phoneNumberId) ? 'La empresa no tiene un número de WhatsApp verificado.' : 'WhatsApp está pendiente de conectar (falta el token de acceso).' };
     }
     return null;
   }
 
-  private async post(phoneNumberId: string, body: Record<string, unknown>): Promise<SendResult> {
+  private async post(phoneNumberId: string, accessToken: string, body: Record<string, unknown>): Promise<SendResult> {
     let res: Response;
     try {
       res = await this.fetcher(`https://graph.facebook.com/${config.whatsapp.graphVersion}/${phoneNumberId}/messages`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${config.whatsapp.accessToken}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', ...body }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -85,11 +100,13 @@ export class WhatsAppCloudAdapter implements ChannelAdapter {
   }
 
   async sendText(phoneNumberId: string | null, to: string, text: string): Promise<SendResult> {
-    return this.sinConexion(phoneNumberId) ?? this.post(phoneNumberId!, { to, type: 'text', text: { preview_url: false, body: text.slice(0, 4096) } });
+    const tk = await tokenPara(phoneNumberId);
+    return this.sinConexion(phoneNumberId, tk) ?? this.post(phoneNumberId!, tk!, { to, type: 'text', text: { preview_url: false, body: text.slice(0, 4096) } });
   }
 
   async sendTemplate(phoneNumberId: string | null, to: string, p: PlantillaEnvio): Promise<SendResult> {
-    return this.sinConexion(phoneNumberId) ?? this.post(phoneNumberId!, {
+    const tk = await tokenPara(phoneNumberId);
+    return this.sinConexion(phoneNumberId, tk) ?? this.post(phoneNumberId!, tk!, {
       to, type: 'template',
       template: {
         name: p.nombre, language: { code: p.idioma },
@@ -103,10 +120,11 @@ export class WhatsAppCloudAdapter implements ChannelAdapter {
     if (esSimulado(phoneNumberId)) {
       return config.simuladores ? { ok: true, simulado: true, numero: 'Simulador', nombre: 'Número de pruebas' } : { ok: false, error: 'Los identificadores sim-… solo funcionan en demostración.' };
     }
-    if (!config.whatsapp.accessToken) return { ok: false, error: 'Falta WHATSAPP_ACCESS_TOKEN en el servidor.' };
+    const tk = await tokenPara(phoneNumberId);
+    if (!tk) return { ok: false, error: 'Falta WHATSAPP_ACCESS_TOKEN en el servidor.' };
     try {
       const res = await this.fetcher(`https://graph.facebook.com/${config.whatsapp.graphVersion}/${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name,quality_rating`, {
-        headers: { Authorization: `Bearer ${config.whatsapp.accessToken}` }, signal: AbortSignal.timeout(10_000),
+        headers: { Authorization: `Bearer ${tk}` }, signal: AbortSignal.timeout(10_000),
       });
       const d: any = await res.json().catch(() => ({}));
       if (!res.ok) return { ok: false, error: CODIGOS_LEGIBLES[Number(d?.error?.code)] ?? `Meta respondió ${res.status}: revisa el identificador del número y los permisos del token.` };
@@ -117,10 +135,11 @@ export class WhatsAppCloudAdapter implements ChannelAdapter {
   }
 
   /** Descarga de un archivo recibido: primero la URL temporal del medio y luego su contenido. */
-  async downloadMedia(mediaId: string): Promise<{ ok: boolean; data?: Buffer; mime?: string; error?: string }> {
-    if (!config.whatsapp.accessToken) return { ok: false, error: 'WhatsApp está pendiente de conectar.' };
+  async downloadMedia(mediaId: string, phoneNumberId: string | null = null): Promise<{ ok: boolean; data?: Buffer; mime?: string; error?: string }> {
+    const tk = await tokenPara(phoneNumberId);
+    if (!tk) return { ok: false, error: 'WhatsApp está pendiente de conectar.' };
     try {
-      const auth = { Authorization: `Bearer ${config.whatsapp.accessToken}` };
+      const auth = { Authorization: `Bearer ${tk}` };
       const meta: any = await (await this.fetcher(`https://graph.facebook.com/${config.whatsapp.graphVersion}/${encodeURIComponent(mediaId)}`, { headers: auth, signal: AbortSignal.timeout(10_000) })).json();
       if (!meta?.url) return { ok: false, error: 'El archivo ya no está disponible en WhatsApp.' };
       const bin = await this.fetcher(meta.url, { headers: auth, signal: AbortSignal.timeout(30_000) });

@@ -169,6 +169,49 @@ export const config = {
     /** Proveedor de prueba: carpeta donde deja cada correo (solo desarrollo; nunca en registros). */
     buzonLocal: v('EMAIL_FAKE_DIR') ?? (dev && !test ? './.buzon-dev' : undefined),
   },
+  /**
+   * Números de WhatsApp contratados desde Omnegia. El proveedor telefónico aprovisiona el número
+   * (Telnyx, con su API oficial); Meta activa WhatsApp sobre él. Sin credenciales, en producción la
+   * compra queda «pendiente de conectar» y el cliente sigue con su propio número.
+   */
+  numeros: {
+    proveedor: (v('NUMEROS_PROVEEDOR') ?? (v('TELNYX_API_KEY') ? 'telnyx' : simuladores ? 'simulado' : 'ninguno')) as 'telnyx' | 'simulado' | 'ninguno',
+    telnyx: {
+      apiKey: v('TELNYX_API_KEY'),
+      /** Llave pública Ed25519 de la cuenta (Mission Control › Keys & Credentials): firma de los webhooks. */
+      llavePublica: v('TELNYX_PUBLIC_KEY'),
+      /** Aplicación TeXML que atiende las llamadas entrantes del número (la llamada de verificación de Meta). */
+      conexionVozId: v('TELNYX_TEXML_APP_ID'),
+    },
+    /** Países ofrecidos, en orden. El lanzamiento prioriza Colombia; otros se añaden aquí sin tocar el código. */
+    paises: (v('NUMEROS_PAISES') ?? 'CO').split(',').map((p) => p.trim().toUpperCase()).filter((p) => /^[A-Z]{2}$/.test(p)),
+    comercial: {
+      /** Tasa USD→COP fija. Sin ella se usa la TRM oficial publicada en datos.gov.co. */
+      tasaUsdCop: Number(v('NUMEROS_TASA_USD_COP') ?? 0) || null,
+      /** Colchón sobre la tasa de cambio para cubrir su variación entre el cobro y la factura del proveedor. */
+      colchonCambioPct: Number(v('NUMEROS_COLCHON_CAMBIO_PCT') ?? 5),
+      /** Margen de Omnegia sobre el costo del proveedor (va incluido y se muestra en el precio final). */
+      margenPct: Number(v('NUMEROS_MARGEN_PCT') ?? 0),
+      /** Cargo único de Omnegia por gestionar la activación (pesos, sin IVA). */
+      cargoActivacionCop: Number(v('NUMEROS_CARGO_ACTIVACION_COP') ?? 0),
+      /** Los precios están confirmados por el operador: sin esto, en producción no se vende. */
+      confirmadas: v('NUMEROS_TARIFAS_CONFIRMADAS') === '1',
+    },
+    /** Días de gracia tras el vencimiento de la mensualidad antes de liberar el número. */
+    graciaDias: Number(v('NUMEROS_GRACIA_DIAS') ?? 7),
+    /** Tarifas de Meta por plantilla en Colombia (COP), solo informativas; sin ellas se enlaza la tarifa oficial. */
+    tarifasMeta: {
+      marketing: Number(v('WHATSAPP_TARIFA_MARKETING_COP') ?? 0) || null,
+      utilidad: Number(v('WHATSAPP_TARIFA_UTILIDAD_COP') ?? 0) || null,
+      autenticacion: Number(v('WHATSAPP_TARIFA_AUTENTICACION_COP') ?? 0) || null,
+    },
+  },
+  /** App de Meta para el registro integrado (Embedded Signup) como Tech Provider. */
+  meta: {
+    appId: v('META_APP_ID'),
+    /** Configuración de Facebook Login for Business (Embedded Signup v4). */
+    configId: v('META_ES_CONFIG_ID'),
+  },
   ia: {
     /** Precios del proveedor en USD por millón de tokens (para estimar el costo técnico). */
     precioEntradaMTok: Number(env.IA_PRECIO_ENTRADA_USD_MTOK ?? 0) || null,
@@ -228,7 +271,31 @@ export function validarConfiguracion(c = config): ResultadoValidacion {
   if (c.correo.proveedor === 'resend' && !c.correo.resendWebhookSecret) avisos.push('Sin RESEND_WEBHOOK_SECRET: se sabe que Resend aceptó cada correo, pero no si se entregó o rebotó.');
   if (c.whatsapp.accessToken && !c.whatsapp.appSecret) errores.push('Con WHATSAPP_ACCESS_TOKEN también se necesita WHATSAPP_APP_SECRET para verificar los webhooks.');
   if (c.whatsapp.accessToken && !c.whatsapp.verifyToken) errores.push('Con WHATSAPP_ACCESS_TOKEN también se necesita WHATSAPP_VERIFY_TOKEN para registrar el webhook.');
+  errores.push(...erroresNumeros(c));
+  if (c.numeros.proveedor === 'telnyx' && !c.numeros.comercial.confirmadas && !c.dev) avisos.push('Números de WhatsApp: falta NUMEROS_TARIFAS_CONFIRMADAS=1; la compra de números queda bloqueada hasta confirmar el modelo comercial.');
+  if (c.numeros.proveedor === 'telnyx' && (!c.meta.appId || !c.meta.configId)) avisos.push('Números de WhatsApp: sin META_APP_ID y META_ES_CONFIG_ID se pueden comprar números, pero la activación de WhatsApp no puede iniciar el registro integrado de Meta.');
   return { errores, avisos };
+}
+
+/** Reglas de la compra de números. */
+export function erroresNumeros(c = config): string[] {
+  const e: string[] = [];
+  const n = c.numeros;
+  if (!['telnyx', 'simulado', 'ninguno'].includes(n.proveedor)) return [`NUMEROS_PROVEEDOR=${n.proveedor} no es válido: usa telnyx.`];
+  if (n.proveedor === 'simulado' && !c.simuladores) e.push('NUMEROS_PROVEEDOR=simulado solo se permite en desarrollo o con SIMULADORES=1.');
+  if (n.proveedor === 'telnyx') {
+    if (!n.telnyx.apiKey) e.push('NUMEROS_PROVEEDOR=telnyx exige TELNYX_API_KEY.');
+    if (!n.telnyx.llavePublica) e.push('NUMEROS_PROVEEDOR=telnyx exige TELNYX_PUBLIC_KEY para verificar la firma de sus webhooks.');
+    if (!n.telnyx.conexionVozId) e.push('NUMEROS_PROVEEDOR=telnyx exige TELNYX_TEXML_APP_ID: la verificación de WhatsApp llega como llamada de voz al número.');
+  }
+  const k = n.comercial;
+  if (!Number.isFinite(k.margenPct) || k.margenPct < 0 || k.margenPct > 300) e.push('NUMEROS_MARGEN_PCT debe ser un porcentaje entre 0 y 300.');
+  if (!Number.isFinite(k.colchonCambioPct) || k.colchonCambioPct < 0 || k.colchonCambioPct > 50) e.push('NUMEROS_COLCHON_CAMBIO_PCT debe estar entre 0 y 50.');
+  if (!Number.isInteger(k.cargoActivacionCop) || k.cargoActivacionCop < 0) e.push('NUMEROS_CARGO_ACTIVACION_COP debe ser un entero en pesos, sin separadores.');
+  if (k.tasaUsdCop !== null && (k.tasaUsdCop < 500 || k.tasaUsdCop > 20_000)) e.push('NUMEROS_TASA_USD_COP no parece una tasa USD→COP válida.');
+  if (!Number.isInteger(n.graciaDias) || n.graciaDias < 0 || n.graciaDias > 30) e.push('NUMEROS_GRACIA_DIAS debe ser un entero entre 0 y 30.');
+  if (!n.paises.length) e.push('NUMEROS_PAISES debe tener al menos un código de país ISO (por ejemplo, CO).');
+  return e;
 }
 
 /** Prefijos que Wompi asigna a cada credencial según el ambiente. */
@@ -350,6 +417,14 @@ export function integraciones(c = config): Integracion[] {
       estado: c.whatsapp.accessToken ? 'conectado' : c.simuladores ? 'simulado' : 'pendiente',
       detalle: c.whatsapp.accessToken ? `Graph ${c.whatsapp.graphVersion}. Cada empresa vincula su identificador de número.` : c.simuladores ? 'Los envíos se simulan; usa el Simulador del panel.' : 'Falta el token de acceso: no se envían mensajes.',
       variables: ['WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_APP_SECRET', 'WHATSAPP_VERIFY_TOKEN'],
+    },
+    {
+      clave: 'numeros', nombre: 'Números de WhatsApp (Telnyx)',
+      estado: c.numeros.proveedor === 'telnyx' ? 'conectado' : c.numeros.proveedor === 'simulado' ? 'simulado' : 'pendiente',
+      detalle: c.numeros.proveedor === 'telnyx'
+        ? `Países: ${c.numeros.paises.join(', ')}.${c.numeros.comercial.confirmadas ? '' : ' Precios sin confirmar: la compra está bloqueada.'}${c.meta.configId ? ' Registro integrado de Meta configurado.' : ' Falta el registro integrado de Meta.'}`
+        : c.numeros.proveedor === 'simulado' ? 'Inventario de demostración: no se compra ningún número real.' : 'Sin proveedor: las empresas conectan su propio número.',
+      variables: ['TELNYX_API_KEY', 'TELNYX_PUBLIC_KEY', 'TELNYX_TEXML_APP_ID', 'META_APP_ID', 'META_ES_CONFIG_ID', 'NUMEROS_TARIFAS_CONFIRMADAS'],
     },
     {
       clave: 'ia', nombre: 'Modelo de lenguaje (Claude)',

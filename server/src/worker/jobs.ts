@@ -20,6 +20,7 @@ import { emitirFacturaPago, encolarCorreoFactura, encolarCorreoPago, generarDocu
 import { cop, uuidv7 } from '../lib/util.js';
 import { formatFechaLarga, utcToLocal } from '../lib/time.js';
 import { crearEspacio } from '../onboarding/creation.js';
+import * as numeros from '../numeros/servicio.js';
 
 /**
  * Proceso trabajador. Toda llamada saliente a un tercero sale de aquí, con
@@ -309,6 +310,13 @@ export const HANDLERS: Record<string, Handler> = {
     if (r === 'EN_PROCESO' && !ultimoIntento(job)) return 'reintentar';
   },
 
+  // Números de WhatsApp contratados: cada paso con terceros ocurre aquí, con turno exclusivo por contratación.
+  numero_aprovisionar: async (db, _t, p, job) => numeros.aprovisionar(db, p.contratacion_id, job.id),
+  numero_seguimiento: async (db, _t, p, job) => numeros.seguimientoOrden(db, p.contratacion_id, job.id),
+  numero_whatsapp: async (db, _t, p, job) => numeros.pasoWhatsApp(db, p.contratacion_id, job.id),
+  numero_liberar: async (db, _t, p, job) => numeros.liberar(db, p.contratacion_id, job.id),
+  ciclo_numeros: async (db, _t, _p, job) => { await numeros.ciclo(db, job.id); },
+
   /** Recuperación: checkouts de Wompi sin evento (retraso o caída) y altas pagadas sin terminar. */
   conciliar_pagos: async (db, _t, _p, job) => { await conciliarPagosPendientes(db, job.id); },
 
@@ -428,6 +436,8 @@ export async function runJobsOnce(db: Database, limite = 20): Promise<number> {
       if (agotado && j.tipo !== 'enviar_correo') {
         const clase = clasificarError(error);
         const codigo = j.tipo === 'reintentar_aprovisionamiento' ? 'APROVISIONAMIENTO_FALLIDO'
+          : j.tipo === 'numero_aprovisionar' || j.tipo === 'numero_seguimiento' ? 'NUMERO_APROVISIONAMIENTO_FALLIDO'
+          : j.tipo === 'numero_whatsapp' ? 'NUMERO_CONEXION_FALLIDA' : j.tipo === 'numero_liberar' ? 'NUMERO_LIBERACION_FALLIDA'
           : j.tipo === 'enviar_mensaje' ? (clase === 'CREDENCIAL' ? 'WHATSAPP_CREDENCIAL' : 'WHATSAPP_ENVIO_FALLIDO')
           : clase === 'CREDENCIAL' ? 'TRABAJO_CREDENCIAL' : clase === 'TIEMPO_AGOTADO' ? 'TRABAJO_TIEMPO_AGOTADO' : clase === 'LIMITE' ? 'TRABAJO_LIMITE' : 'TRABAJO_FALLIDO';
         await registrarIncidente(tx, { codigo, servicio: j.tipo, tenantId: j.tenant_id, trabajoId: j.id, detalle: { tipo_trabajo: j.tipo, intentos, clase_error: clase } });
@@ -465,6 +475,7 @@ export function startWorker(db: Database): () => Promise<void> {
           await enqueue(tx, null, 'cerrar_inactivas', {}, { claveUnica: `inactivas:${hora}` });
           await enqueue(tx, null, 'mantenimiento', {}, { claveUnica: `mant:${hora}` });
           await enqueue(tx, null, 'conciliar_pagos', {}, { claveUnica: `conciliar:${Math.floor(Date.now() / 300_000)}` });
+          await enqueue(tx, null, 'ciclo_numeros', {}, { claveUnica: `numeros:${Math.floor(Date.now() / 600_000)}` });
         });
       }
     } catch (e) {

@@ -55,6 +55,7 @@ const OPERACION: Item[] = [
 const GOBIERNO: Item[] = [
   { to: '/ia', n: 'ia', t: 'Centro de IA', permiso: 'ai:read', modulo: 'ia' },
   { to: '/configuracion', n: 'configuracion', t: 'Configuración', permiso: 'tenant:configure' },
+  { to: '/whatsapp/numero', n: 'telefono', t: 'Número de WhatsApp', permiso: 'subscription:manage' },
   { to: '/suscripcion', n: 'suscripcion', t: 'Suscripción', permiso: 'subscription:manage' },
   { to: '/auditoria', n: 'auditoria', t: 'Auditoría', permiso: 'audit:read' },
   { to: '/soporte', n: 'soporte', t: 'Soporte' },

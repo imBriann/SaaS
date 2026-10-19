@@ -245,6 +245,19 @@ export const pagoRecibido = (o: { empresa: string; monto: string; referencia: st
   boton: { texto: 'Ver la suscripción', url: o.url },
 });
 
+/** Pago de la activación o de la mensualidad de un número de WhatsApp (separado de la suscripción). */
+export const pagoNumeroRecibido = (o: { empresa: string; monto: string; referencia: string; numero: string; cargo: 'ACTIVACION' | 'MENSUALIDAD'; cubreHasta: string | null; url: string; documentos?: DocumentosCorreo | null; urlReembolso?: string }) => render({
+  tipo: 'pago_numero', asunto: `Recibimos tu pago del número de WhatsApp — ${o.empresa}`, previa: o.cargo === 'ACTIVACION' ? 'Estamos activando tu número.' : 'Tu número sigue activo.',
+  titulo: 'Pago recibido',
+  parrafos: [
+    o.cargo === 'ACTIVACION' ? 'Gracias. Ya estamos asignando tu número y preparando su conexión con WhatsApp. Te avisaremos en el panel de cada paso; el número aparecerá como conectado solo cuando Meta lo confirme.' : 'Gracias. Registramos la mensualidad de tu número de WhatsApp.',
+    'Este cargo corresponde al número; es independiente de tu plan de Omnegia y de lo que Meta cobra por mensaje.',
+    ...parrafosDocumentos(o.documentos), ...(o.urlReembolso ? [`¿Necesitas pedir un reembolso? Hazlo en ${o.urlReembolso} con la referencia de este correo.`] : []),
+  ],
+  detalles: [['Empresa', o.empresa], ['Número', o.numero], ['Concepto', o.cargo === 'ACTIVACION' ? 'Activación y primer mes' : 'Mensualidad'], ['Valor', o.monto], ['Referencia', o.referencia], ...(o.cubreHasta ? [['Cubre hasta', o.cubreHasta] as [string, string]] : [])],
+  boton: { texto: 'Ver mi número', url: o.url },
+});
+
 /** Información de los documentos del pago para el correo. Nunca incluye la contraseña. */
 export interface DocumentosCorreo { numero: string; adjunto: boolean; disponible: boolean; estadoFiscal: string; urlPanel: string }
 

@@ -88,6 +88,7 @@ Cómo funciona el envío:
 ## 4. Otras integraciones
 
 - **WhatsApp:** en Meta, registra el webhook `https://<tu-api>/api/webhooks/whatsapp` con `WHATSAPP_VERIFY_TOKEN`. Cada empresa guarda su identificador de número (Phone number ID) en Configuración › WhatsApp y pulsa «Probar conexión». Fuera de la ventana de 24 horas solo salen plantillas aprobadas en Meta.
+- **Números de WhatsApp contratados (Telnyx + Meta):** una empresa puede comprar un número desde `/whatsapp/numero` y Omnegia lo verifica y conecta. Configuración, costos, restricciones y pruebas en [docs/numeros-whatsapp](docs/numeros-whatsapp/README.md).
 - **IA:** con `ANTHROPIC_API_KEY`, el agente usa Claude. Sin ella, en producción las conversaciones pasan a una persona.
 - **Wompi:** las altas y renovaciones usan las llaves de la plataforma. URL de eventos: `https://<tu-api>/api/webhooks/wompi`. Cada comercio conecta su propia cuenta para cobrar a sus clientes. `TARIFAS_CONFIRMADAS=1` solo cuando los precios comerciales estén definidos.
 - **Facturación electrónica:** solo existe el entorno de pruebas, y sus documentos dicen «sin validez fiscal». Falta conectar un proveedor autorizado por la DIAN.

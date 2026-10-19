@@ -66,7 +66,8 @@ async function datosPago(tx: Tx, paymentId: string) {
   const doc = await asegurarDocumento(tx, paymentId);
   const t = p.tenant_id ? (await tx.query(`SELECT id, nombre, slug FROM tenant WHERE id=$1`, [p.tenant_id])).rows[0] : null;
   const periodo = (await tx.query(`SELECT periodo_fin FROM subscription_period WHERE payment_id=$1`, [paymentId])).rows[0];
-  return { p, doc, t, vigenteHasta: periodo?.periodo_fin ? new Date(periodo.periodo_fin) : null };
+  const hasta = periodo?.periodo_fin ?? p.cubre_hasta ?? null;
+  return { p, doc, t, vigenteHasta: hasta ? new Date(hasta) : null };
 }
 
 function leeme(o: { numero: string; pdf: string; xml?: { nombre: string; original: string; huella: string } | null; estadoFiscal: string; cufe?: string | null }) {
@@ -174,6 +175,13 @@ export async function encolarCorreoPago(tx: Tx, paymentId: string, conDocumentos
   const documentos = doc ? { numero: doc.numero, adjunto, disponible: doc.estado === 'LISTO', estadoFiscal: etiquetaFiscal(doc.estado_fiscal), urlPanel: `${config.publicUrl}/suscripcion` } : null;
   const periodo = (await tx.query(`SELECT periodo_fin FROM subscription_period WHERE payment_id=$1`, [paymentId])).rows[0];
   const hasta = new Date(periodo?.periodo_fin ?? t.periodo_fin).toLocaleDateString('es-CO', { timeZone: 'America/Bogota' });
+  if (p.numero_contratacion_id) {
+    const n = (await tx.query(`SELECT numero_e164 FROM numero_contratacion WHERE id=$1`, [p.numero_contratacion_id])).rows[0];
+    const cubre = p.cubre_hasta ? new Date(p.cubre_hasta).toLocaleDateString('es-CO', { timeZone: 'America/Bogota' }) : null;
+    const correoNumero = plantillas.pagoNumeroRecibido({ empresa: t.nombre, monto: cop(Number(p.monto)), referencia: p.referencia, numero: n?.numero_e164 ?? '', cargo: p.cargo_numero, cubreHasta: cubre, url: `${urlEmpresa(t.slug)}/whatsapp/numero`, documentos, urlReembolso: `${config.publicUrl}/consumidor#reembolso` });
+    await encolarCorreo(tx, { tenantId: null, para, clave: `pago:${paymentId}`, adjuntoRef: adjunto ? `docpago:${doc.id}` : null, correo: correoNumero });
+    return;
+  }
   const correo = p.draft_token
     ? plantillas.altaConfirmada({ empresa: t.nombre, modalidad: p.modalidad, monto: cop(Number(p.monto)), referencia: p.referencia, vigenteHasta: hasta, urlEmpresa: urlEmpresa(t.slug), documentos, urlReembolso: `${config.publicUrl}/consumidor#reembolso` })
     : plantillas.pagoRecibido({ empresa: t.nombre, monto: cop(Number(p.monto)), referencia: p.referencia, modalidad: p.modalidad, periodoFin: hasta, url: `${config.publicUrl}/suscripcion`, documentos, urlReembolso: `${config.publicUrl}/consumidor#reembolso` });

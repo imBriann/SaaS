@@ -7,6 +7,7 @@ import { addMessage, getOrOpenConversation } from './conversations.js';
 import type { EstadoEntrante, MensajeEntrante } from '../adapters/channel.js';
 import { config } from '../config.js';
 import { recibirEstadoPlataforma, recibirPlataforma } from './plataformaConversaciones.js';
+import { marcarPrueba } from '../numeros/servicio.js';
 
 /**
  * Entrada del canal. El tenant se resuelve por el identificador del número que
@@ -58,6 +59,8 @@ export async function receiveChannelMessages(db: Database, msgs: MensajeCanal[],
       await enqueue(tx, tenant.id, 'procesar_mensaje', { conversation_id: v.id, message_id: msg.id }, { claveUnica: `proc:${msg.id}`, maxIntentos: 3 });
       return 'aceptado';
     });
+    // El primer mensaje real a un número contratado completa su prueba de funcionamiento.
+    if (r === 'aceptado' && canal === 'WHATSAPP') await marcarPrueba(db, tenant.id, m.from);
     resultados.push({ id: m.id, estado: r });
   }
   return resultados;

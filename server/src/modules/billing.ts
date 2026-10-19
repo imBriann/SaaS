@@ -12,11 +12,13 @@ import { condicionesPeriodo, provisionDraft } from '../onboarding/provisioning.j
 import { conceptoInstitucional, type Modalidad } from '../onboarding/oferta.js';
 import { cuentaComercio, reconcilePaymentLink } from './payments.js';
 import { encolarDocumentos, recuperarDocumentos } from '../documentos/servicio.js';
+import { pagoNumeroAprobado, pagoNumeroNoAprobado } from '../numeros/servicio.js';
 
 /**
  * Pagos de la plataforma (alta de empresas y renovación de suscripciones) y
  * despacho de eventos de pago. Las dos clases de cobro no se mezclan:
  *   SUB-…  pago de una empresa a la plataforma (cuenta de la plataforma);
+ *   NUM-…  activación o mensualidad de un número de WhatsApp contratado (cuenta de la plataforma);
  *   PL-…   cobro del comercio a su cliente (cuenta propia del comercio).
  *
  * El evento se registra una sola vez (provisioning_event.event_id) y el estado del
@@ -75,6 +77,7 @@ export async function procesarEventoPago(db: Database, ev: EventoPago, correlaci
     if (pago.estado === 'ANULADO') return { ignorado: 'pago anulado', pago };
     if (ev.estado === 'PENDIENTE') {
       await tx.query(`UPDATE payment SET estado_proveedor='PENDIENTE', transaccion_id=coalesce(transaccion_id, $2), actualizado_en=now() WHERE id=$1`, [pago.id, ev.transaccionId ?? null]);
+      if (pago.numero_contratacion_id) await pagoNumeroNoAprobado(tx, pago, 'PENDIENTE', correlacion);
       return { estado: 'PENDIENTE', pago };
     }
     if (ev.estado !== 'APROBADO') {
@@ -87,7 +90,8 @@ export async function procesarEventoPago(db: Database, ev: EventoPago, correlaci
           `UPDATE onboarding_draft SET estado='BORRADOR' WHERE token=$1 AND estado='PAGO_INICIADO'
              AND NOT EXISTS (SELECT 1 FROM payment WHERE draft_token=$1 AND estado IN ('PENDIENTE','APROBADO'))`, [pago.draft_token]);
       }
-      await auditar(pago.tenant_id && !pago.draft_token ? 'suscripcion.pago_rechazado' : 'pago.rechazado', 'ERROR');
+      if (pago.numero_contratacion_id) await pagoNumeroNoAprobado(tx, pago, estado, correlacion);
+      await auditar(pago.numero_contratacion_id ? 'numero.pago_rechazado' : pago.tenant_id && !pago.draft_token ? 'suscripcion.pago_rechazado' : 'pago.rechazado', 'ERROR');
       return { estado, pago };
     }
     // APROBADO: monto exacto en centavos, misma moneda y transacción identificada.
@@ -110,7 +114,9 @@ export async function procesarEventoPago(db: Database, ev: EventoPago, correlaci
       await auditar('pago.duplicado_requiere_reembolso', 'ERROR', { otra_referencia: otroAprobado.referencia });
       await incidentePago(tx, pago.tenant_id ?? null, 'pago.duplicado', correlacion);
     }
-    if (pago.tenant_id && !pago.draft_token) await aplicarRenovacion(tx, pago, correlacion);
+    // Un número contratado tiene su propio ciclo: no extiende la suscripción de Omnegia.
+    if (pago.numero_contratacion_id) await pagoNumeroAprobado(tx, { ...pago, estado: 'APROBADO' }, correlacion);
+    else if (pago.tenant_id && !pago.draft_token) await aplicarRenovacion(tx, pago, correlacion);
     return { estado: 'APROBADO', pago };
   });
 
@@ -261,7 +267,7 @@ export async function procesarEventoComercio(db: Database, webhookToken: string,
 export async function verificarRetorno(db: Database, transaccionId: string, correlacion: string) {
   const plataforma = cuentaPlataforma();
   let ev = plataforma?.proveedor === 'wompi' ? await consultarTransaccionWompi(plataforma, transaccionId) : null;
-  if (ev && !ev.referencia.startsWith('SUB-')) ev = null;
+  if (ev && !ev.referencia.startsWith('SUB-') && !ev.referencia.startsWith('NUM-')) ev = null;
   if (!ev) {
     // Puede ser un cobro de un comercio: se consulta con el entorno de la cuenta dueña de la referencia.
     const candidatos = await db.withPlatform(async (tx) => (await tx.query(`SELECT DISTINCT entorno FROM merchant_gateway_account WHERE proveedor='wompi'`)).rows.map((r: any) => r.entorno as 'sandbox' | 'produccion'));

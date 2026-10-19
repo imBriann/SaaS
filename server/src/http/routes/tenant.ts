@@ -165,7 +165,8 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
     });
     const media = m?.metadatos?.media;
     if (!media?.id) throw notFound();
-    const d = await whatsapp.downloadMedia(String(media.id));
+    const pid = await db.withPlatform(async (tx) => (await tx.query(`SELECT whatsapp_phone_number_id FROM tenant WHERE id=$1`, [ctx.tenantId])).rows[0]?.whatsapp_phone_number_id ?? null);
+    const d = await whatsapp.downloadMedia(String(media.id), pid);
     if (!d.ok || !d.data) throw new AppError('CONFLICT', d.error ?? 'No se pudo descargar el archivo.');
     const nombre = String(media.nombreArchivo ?? `archivo-${String(req.params.mensaje).slice(-6)}`).replace(/[^\w.\- ]/g, '_');
     reply.header('content-type', d.mime ?? 'application/octet-stream').header('content-disposition', `attachment; filename="${nombre}"`).header('x-content-type-options', 'nosniff');
