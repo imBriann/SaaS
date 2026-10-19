@@ -5,6 +5,7 @@ import { Cabecera } from '../../components/Layout';
 import { Campo, Cargando, Cifra, ErrorCarga, Estado, Interruptor, Modal, Paginador, Tarjeta, useAccion, useApi, useRetardo, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import { MARCA } from '../../brand';
+import { Pulso } from '../../components/Pulso';
 
 /**
  * Panel interno del operador de Omnegia. Separado del panel de las empresas: no
@@ -141,7 +142,8 @@ export function OpResumen() {
     <>
       <Cabecera titulo="Resumen de la plataforma" sub="Cifras de Omnegia: empresas, suscripciones y salud técnica. Ningún dato de los clientes de las empresas."><SelectorPeriodo p={per.p} setP={per.setP} /></Cabecera>
       {error ? <ErrorCarga error={error} reintentar={recargar} /> : cargando && !data ? <Cargando filas={6} /> : (
-        <div className="col" style={{ gap: 16 }}>
+        <div className="col tablero-entrada" style={{ gap: 16 }}>
+          <PulsoPlataforma data={data} />
           <div className="kpis">
             <Cifra etiqueta="Empresas activas" valor={num(data.empresas.por_estado.ACTIVA)} detalle={`${num(data.empresas.total)} registradas`} />
             <Cifra etiqueta="Altas y bajas" valor={`+${data.empresas.altas_periodo} / −${data.empresas.bajas_periodo}`} detalle="en el periodo" />
@@ -795,3 +797,22 @@ export function OpAuditoria() {
 
 /** /plataforma (ruta anterior) lleva al panel nuevo. */
 export const RedirigirOperador = () => <Navigate to="/operador" replace />;
+
+/** Cabecera viva del operador: el ingreso recurrente contando, las altas dibujadas y la salud en fichas. */
+function PulsoPlataforma({ data }: { data: any }) {
+  const incidentes = Object.values(data.incidentes_abiertos as Record<string, number>).reduce((a, b) => a + b, 0);
+  const disp = data.solicitudes.disponibilidad;
+  // La serie solo trae los días con altas: se completan con cero los días del periodo sin altas.
+  const porDia = new Map<string, number>((data.serie_altas ?? []).map((d: any) => [String(d.dia).slice(0, 10), Number(d.altas)]));
+  const serie = Array.from({ length: 30 }, (_, i) => porDia.get(new Date(Date.now() - (29 - i) * 86_400_000).toISOString().slice(0, 10)) ?? 0);
+  return (
+    <Pulso etiqueta="Ingreso mensual recurrente" valor={Number(data.ingresos.mrr_estimado ?? 0)} formato={cop} serie={serie} serieEtiqueta="Altas por día"
+      pie={`${num(data.empresas.por_estado.ACTIVA ?? 0)} empresas activas · +${data.empresas.altas_periodo} altas en el periodo`}
+      fichas={[
+        { icono: 'salud', texto: disp === null || disp === undefined ? 'Sin tráfico medido' : `Disponibilidad ${pct(disp)}`, tono: disp === null || disp === undefined ? 'neutro' : disp >= 99.5 ? 'ok' : disp >= 98 ? 'aviso' : 'error', ruta: '/operador/salud' },
+        { icono: 'alerta', texto: incidentes ? `${incidentes} ${incidentes === 1 ? 'incidente abierto' : 'incidentes abiertos'}` : 'Sin incidentes abiertos', tono: data.incidentes_abiertos.CRITICA ? 'error' : incidentes ? 'aviso' : 'ok', ruta: '/operador/incidentes' },
+        { icono: 'soporte', texto: `${data.soporte_abiertos} ${data.soporte_abiertos === 1 ? 'solicitud abierta' : 'solicitudes abiertas'}`, tono: data.soporte_abiertos ? 'aviso' : 'ok', ruta: '/operador/soporte' },
+        { icono: 'reloj', texto: `${num(data.cola.pendientes)} trabajos en cola${data.cola.fallidos ? ` · ${data.cola.fallidos} fallidos` : ''}`, tono: data.cola.fallidos ? 'aviso' : 'neutro', ruta: '/operador/salud' },
+      ]} />
+  );
+}

@@ -1,0 +1,86 @@
+/*
+ * Tableros vivos (Inicio de las empresas y Resumen del operador). Movimiento con propósito: la cifra
+ * del día entra contando, la tendencia se dibuja, las barras crecen desde su base. Solo transform,
+ * opacity y stroke; todo se apaga con prefers-reduced-motion.
+ */
+
+/* ---------------------------------------------------------------- Pulso */
+.pulso-hero {
+  position: relative; isolation: isolate; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 300px); gap: 18px 28px; align-items: center;
+  padding: 26px 28px; border-radius: var(--r-tarjeta); color: #fff;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--acento) 88%, #000) 0%, color-mix(in srgb, var(--acento) 62%, #120a24) 100%);
+  box-shadow: 0 18px 40px -22px color-mix(in srgb, var(--acento) 70%, #000), inset 0 1px 0 rgba(255, 255, 255, .12);
+  animation: pulso-entra 700ms var(--ease-suave) both;
+}
+.pulso-aurora { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.pulso-aurora i { position: absolute; width: 46%; aspect-ratio: 1; border-radius: 50%; filter: blur(48px); opacity: .55; mix-blend-mode: screen; }
+.pulso-aurora i:nth-child(1) { left: -10%; top: -40%; background: color-mix(in srgb, var(--acento) 55%, #fff); animation: aurora-a 14s ease-in-out infinite alternate; }
+.pulso-aurora i:nth-child(2) { right: -8%; bottom: -55%; background: #7c5cff; opacity: .45; animation: aurora-b 18s ease-in-out infinite alternate; }
+.pulso-aurora i:nth-child(3) { left: 38%; top: 30%; width: 30%; background: #2ec5d3; opacity: .28; animation: aurora-a 22s ease-in-out infinite alternate-reverse; }
+@keyframes aurora-a { from { transform: translate(0, 0) scale(1); } to { transform: translate(18%, 22%) scale(1.25); } }
+@keyframes aurora-b { from { transform: translate(0, 0) scale(1.1); } to { transform: translate(-22%, -12%) scale(.9); } }
+@keyframes pulso-entra { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
+
+.pulso-principal { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pulso-etiqueta { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; letter-spacing: .01em; color: rgba(255, 255, 255, .82); }
+.pulso-vivo { position: relative; width: 8px; height: 8px; border-radius: 50%; background: #5dffb0; box-shadow: 0 0 0 0 rgba(93, 255, 176, .6); animation: vivo 2s ease-out infinite; }
+@keyframes vivo { 0% { box-shadow: 0 0 0 0 rgba(93, 255, 176, .6); } 80%, 100% { box-shadow: 0 0 0 10px rgba(93, 255, 176, 0); } }
+.pulso-cifra { font-size: clamp(38px, 5vw, 56px); line-height: 1.02; font-weight: 650; letter-spacing: -.035em; font-variant-numeric: tabular-nums; text-shadow: 0 2px 18px rgba(0, 0, 0, .18); }
+.pulso-tendencia { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 3px 10px 3px 8px; border-radius: var(--r-pildora); font-size: 13px; background: rgba(255, 255, 255, .14); backdrop-filter: blur(6px); animation: sube-entra 420ms 700ms var(--ease-suave) both; }
+.pulso-tendencia.sube b { color: #7dffc4; }
+.pulso-tendencia.baja b { color: #ffc2b3; }
+.pulso-pie { font-size: 13px; color: rgba(255, 255, 255, .72); }
+
+.pulso-linea { width: 100%; height: 96px; color: #fff; overflow: visible; }
+.pulso-trazo { fill: none; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; vector-effect: non-scaling-stroke; animation: trazo 1500ms 250ms var(--ease-suave) forwards; }
+.pulso-area { opacity: 0; animation: aparece 900ms 900ms ease-out forwards; }
+.pulso-fin { fill: #fff; transform-box: fill-box; transform-origin: center; opacity: 0; animation: aparece 300ms 1600ms forwards, latido 2.2s 1.9s ease-in-out infinite; }
+@keyframes trazo { to { stroke-dashoffset: 0; } }
+@keyframes latido { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.6); } }
+
+.pulso-fichas { grid-column: 1 / -1; list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.pulso-ficha { animation: sube-entra 380ms calc(400ms + var(--i, 0) * 80ms) var(--ease-suave) both; }
+.pulso-ficha > a, .pulso-ficha-txt { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px; border-radius: var(--r-pildora); font-size: 13.5px; color: #fff; background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .16); transition: background-color 160ms ease, transform 160ms var(--ease-out); }
+.pulso-ficha > a:hover { text-decoration: none; background: rgba(255, 255, 255, .22); transform: translateY(-1px); }
+.pulso-ficha.t-aviso > a, .pulso-ficha.t-aviso .pulso-ficha-txt { background: rgba(255, 196, 92, .2); border-color: rgba(255, 196, 92, .45); }
+.pulso-ficha.t-error > a, .pulso-ficha.t-error .pulso-ficha-txt { background: rgba(255, 110, 110, .22); border-color: rgba(255, 140, 140, .5); }
+.pulso-ficha.t-ok > a, .pulso-ficha.t-ok .pulso-ficha-txt { background: rgba(93, 255, 176, .14); border-color: rgba(93, 255, 176, .35); }
+
+/* ---------------------------------------------------------------- indicadores y gráficos del panel */
+.app .kpis .kpi { animation: sube-entra 460ms var(--ease-suave) both; }
+.app .kpis .kpi:nth-child(2) { animation-delay: 70ms; }
+.app .kpis .kpi:nth-child(3) { animation-delay: 140ms; }
+.app .kpis .kpi:nth-child(4) { animation-delay: 210ms; }
+.app .kpis .kpi .cifra { display: inline-block; transition: transform 200ms var(--ease-out); }
+@media (hover: hover) { .app .kpis .kpi:hover .cifra { transform: translateY(-2px); } }
+
+.barras .b i { transform-origin: bottom center; animation: crece-y 900ms var(--ease-salto) both; }
+.barras .b:nth-child(2) i { animation-delay: 60ms; } .barras .b:nth-child(3) i { animation-delay: 120ms; } .barras .b:nth-child(4) i { animation-delay: 180ms; }
+.barras .b:nth-child(5) i { animation-delay: 240ms; } .barras .b:nth-child(6) i { animation-delay: 300ms; } .barras .b:nth-child(7) i { animation-delay: 360ms; }
+.barras .b:nth-child(n+8) i { animation-delay: 420ms; }
+.barras .b.hoy i { box-shadow: 0 0 0 3px color-mix(in srgb, var(--acento) 18%, transparent); }
+@keyframes crece-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+.barra .uso { transform-origin: left center; animation: crece-x 1100ms 200ms var(--ease-suave) both; }
+.barra .proy { animation: aparece 800ms 900ms ease-out both; }
+.pasos-inicio .progreso i { transform-origin: left center; animation: crece-x 1200ms 300ms var(--ease-suave) both; }
+.ciclo .paso .punto { animation: punto-pop 420ms var(--ease-salto) both; }
+.ciclo .paso:nth-child(2) .punto { animation-delay: 140ms; } .ciclo .paso:nth-child(3) .punto { animation-delay: 280ms; } .ciclo .paso:nth-child(4) .punto { animation-delay: 420ms; }
+@keyframes punto-pop { from { transform: scale(.3); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Tarjetas del tablero: entran en cascada debajo del pulso. */
+.tablero-entrada > * { animation: sube-entra 480ms 120ms var(--ease-suave) both; }
+.tablero-entrada > :nth-child(2) { animation-delay: 200ms; } .tablero-entrada > :nth-child(3) { animation-delay: 280ms; }
+.tablero-entrada > :nth-child(4) { animation-delay: 360ms; } .tablero-entrada > :nth-child(n+5) { animation-delay: 440ms; }
+.tablero-entrada > .pulso-hero { animation-delay: 0ms; }
+
+@media (max-width: 760px) {
+  .pulso-hero { grid-template-columns: minmax(0, 1fr); padding: 20px 18px; }
+  .pulso-linea { height: 72px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulso-hero, .pulso-aurora i, .pulso-vivo, .pulso-tendencia, .pulso-trazo, .pulso-area, .pulso-fin, .pulso-ficha,
+  .app .kpis .kpi, .barras .b i, .barra .uso, .barra .proy, .pasos-inicio .progreso i, .ciclo .paso .punto, .tablero-entrada > * { animation: none !important; }
+  .pulso-trazo { stroke-dashoffset: 0; }
+  .pulso-area, .pulso-fin { opacity: 1; }
+}

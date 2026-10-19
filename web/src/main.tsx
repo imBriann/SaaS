@@ -13,6 +13,7 @@ import './cobros.css';
 import './atencion.css';
 import './movimiento.css';
 import './soporte.css';
+import './dashboard.css';
 import './asistente.css';
 import './workspace-birth.css';
 import './creation.css';

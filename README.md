@@ -4,6 +4,7 @@ Plataforma multiempresa para negocios: WhatsApp con IA y paso a una persona con 
 
 - `server/`: Fastify 5 + TypeScript, PostgreSQL (o PGlite para desarrollo), trabajador en segundo plano.
 - `web/`: React 19 + Vite. En producción el servidor sirve el panel compilado.
+- `docs/auditoria-2026-10/`: informes de la auditoría de octubre de 2026 (resumen ejecutivo, hallazgos, cambios, pruebas, permisos, integraciones y configuración).
 
 ## 1. Requisitos e instalación
 

@@ -8,6 +8,7 @@ import { AiOrb } from '../../components/AiOrb';
 import { ThinkingOrb } from 'thinking-orbs';
 import { useWorkspaceBirthReady } from '../../components/WorkspaceBirth';
 import { Contador, escalon } from '../../components/Movimiento';
+import { Pulso, type FichaPulso } from '../../components/Pulso';
 
 const TIPO: Record<string, TipoMensaje> = { CUSTOMER: 'cliente', AI: 'ia', HUMAN: 'humano' };
 
@@ -26,7 +27,8 @@ export function Inicio() {
       <Cabecera titulo={personalizacion?.titulo || `Hola, ${s.usuario.nombre.split(' ')[0]}`} sub={data ? `${fechaLarga(data.fecha)} · ${s.tenant.nombre}` : s.tenant.nombre}>
         {accesos.map(([p, to, icon, label]) => <Link key={p} className="btn" to={to}><Icon n={icon} className="" size={16} />{label}</Link>)}
       </Cabecera>
-      <div className="contenido">
+      <div className="contenido tablero-entrada">
+        {data && <PulsoDelDia data={data} puede={puede} />}
         {personalizacion?.descripcion && <section className="workspace-personalized" aria-label="Tu espacio personalizado">
           <ThinkingOrb state="breathing" size={64} theme="light" aria-label="Configuración personalizada de Omnegia" />
           <div><span className="workspace-personalized-tag"><Icon n="ia" size={14} className="" />Preparado por la IA para {s.tenant.nombre}</span><p>{personalizacion.descripcion}</p>
@@ -214,5 +216,25 @@ function CobradoHoy({ c }: { c: any }) {
         </div>
       )}
     </Tarjeta>
+  );
+}
+
+/** Cabecera viva del Inicio: lo vendido hoy contando, frente a ayer, la semana dibujada y lo que espera. */
+function PulsoDelDia({ data, puede }: { data: any; puede: (p: string) => boolean }) {
+  const c = data.cifras;
+  const serie: number[] = (data.ingresos ?? []).map((d: any) => Number(d.total));
+  const ayer = serie.length >= 2 ? serie[serie.length - 2] : 0;
+  // A primera hora no se compara contra un día completo: la tendencia aparece cuando ya hay ventas hoy.
+  const tendencia = puede('order:read') && ayer > 0 && c.ventas_hoy > 0 ? { pct: ((c.ventas_hoy - ayer) / ayer) * 100, texto: 'frente a todo ayer' } : null;
+  const errores = data.atencion.filter((a: any) => a.nivel === 'error').length;
+  const fichas: FichaPulso[] = [];
+  if (data.atencion.length) fichas.push({ icono: 'alerta', texto: `${data.atencion.length} ${data.atencion.length === 1 ? 'asunto espera' : 'asuntos esperan'} por ti`, tono: errores ? 'error' : 'aviso' });
+  if (puede('appointment:read')) fichas.push({ icono: 'agenda', texto: `${c.citas_hoy} ${c.citas_hoy === 1 ? 'cita' : 'citas'} hoy`, ruta: '/agenda' });
+  if (puede('conversation:read')) fichas.push({ icono: 'conversaciones', texto: `${c.conversaciones_abiertas} ${c.conversaciones_abiertas === 1 ? 'conversación abierta' : 'conversaciones abiertas'}${c.escaladas ? ` · ${c.escaladas} con una persona` : ''}`, tono: c.escaladas ? 'aviso' : 'neutro', ruta: '/conversaciones' });
+  if (data.cobros_hoy) fichas.push({ icono: 'caja', texto: `Cobrado hoy ${cop(data.cobros_hoy.total)}`, tono: 'ok', ruta: '/ventas?caja=1' });
+  if (puede('order:read') && c.por_cobrar > 0) fichas.push({ icono: 'reloj', texto: `Por cobrar ${cop(c.por_cobrar)}`, tono: 'aviso', ruta: '/ventas?pago=PENDIENTE' });
+  return (
+    <Pulso etiqueta="Vendido hoy" valor={c.ventas_hoy} formato={cop} tendencia={tendencia} serie={serie.length ? serie : undefined} serieEtiqueta="Ventas de los últimos 7 días"
+      pie={`${c.n_ventas_hoy} ${c.n_ventas_hoy === 1 ? 'venta' : 'ventas'} · semana ${cop(c.ventas_semana)}${!tendencia && ayer > 0 ? ` · ayer ${cop(ayer)}` : ''}`} fichas={fichas} />
   );
 }
