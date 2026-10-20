@@ -46,6 +46,25 @@ Las pruebas del WhatsApp pasaban en PGlite y fallaban en PostgreSQL (17 casos) p
 | Interacciones (enviar con Enter, Shift+Enter, nota interna, menú de acciones, panel de detalles, búsqueda, preguntas de seguimiento; en el teléfono Enter salta de línea, barras ocultas en el chat y volver a la bandeja) | 14 de 14 |
 | Recorrido de 52 páginas (empresa y operador, escritorio y 390 px) | 0 errores, 0 desbordes |
 
+### Copiloto del asesor (19 de octubre de 2026)
+
+| Comprobación | Resultado |
+|---|---|
+| `copiloto.test.ts` (6 casos): la sugerencia usa el precio real del catálogo y dice qué entendió; el modelo recibe catálogo, horarios, radicado e hilo como datos; no envía nada; «Mejorar redacción» conserva cifras y corrige abreviaturas; permisos y auditoría | 6 de 6 |
+| `npm test` completo | **478 de 478** en 35 archivos |
+| `npm run test:postgres` | **283 de 283** en 19 archivos |
+| Navegador: sugerir, usar, mejorar, deshacer, compartir con soporte desde el menú y retirar, teléfono sin desborde | Correcto. El único fallo marcado fue de la prueba (esperaba «Deshacer» con el cuadro vacío) |
+
+### Pedir ayuda a Omnegia y respuesta de soporte (19 de octubre de 2026)
+
+| Comprobación | Resultado |
+|---|---|
+| `soporte-responde.test.ts` (6 casos): solicitud automática, lectura con permiso para responder, respuesta por el canal de la empresa marcada y auditada, bloqueo de claves y de la ventana de 24 h, «solo leer» y acceso retirado, permisos de la empresa | 6 de 6 |
+| `avisos.test.ts` fallaba en GitHub por el orden de los mensajes dentro del mismo segundo; se ajustó la prueba | Corregido |
+| `npm test` completo | **484 de 484** en 36 archivos |
+| `npm run test:postgres` | **292 de 292** en 21 archivos |
+| Navegador de punta a punta (empresa pide ayuda → soporte responde → la empresa ve «Soporte de Omnegia») | 6 de 6, sin errores |
+
 ## Recorridos visuales (Playwright, servidor local aislado)
 
 | Recorrido | Comprobaciones | Resultado |

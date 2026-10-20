@@ -25,15 +25,15 @@ import { ETIQUETA_CATEGORIA, revisarContenido } from './soporte.js';
  * usuario propietario de la base de datos) conserva sus privilegios.
  */
 export type PermisoOperador = 'plataforma:ver' | 'empresas:gestionar' | 'planes:gestionar' | 'trabajos:reintentar' | 'incidentes:gestionar' | 'soporte:gestionar' | 'reembolsos:gestionar'
-  | 'conversaciones:ver' | 'conversaciones:atender' | 'conversaciones:asignar' | 'atencion:ver_empresas' | 'atencion:leer_autorizadas' | 'integraciones:verificar';
+  | 'conversaciones:ver' | 'conversaciones:atender' | 'conversaciones:asignar' | 'atencion:ver_empresas' | 'atencion:leer_autorizadas' | 'atencion:responder_autorizadas' | 'integraciones:verificar';
 /**
  * ADMIN administra la relación comercial y el equipo; SOPORTE atiende. Ninguno opera los negocios: no hay
  * permisos para tocar catálogo, precios, ventas ni inventario de una empresa.
  */
 export const PERMISOS_OPERADOR: Record<'ADMIN' | 'SOPORTE', PermisoOperador[]> = {
   ADMIN: ['plataforma:ver', 'empresas:gestionar', 'planes:gestionar', 'trabajos:reintentar', 'incidentes:gestionar', 'soporte:gestionar', 'reembolsos:gestionar',
-    'conversaciones:ver', 'conversaciones:atender', 'conversaciones:asignar', 'atencion:ver_empresas', 'atencion:leer_autorizadas', 'integraciones:verificar'],
-  SOPORTE: ['plataforma:ver', 'incidentes:gestionar', 'soporte:gestionar', 'conversaciones:ver', 'conversaciones:atender', 'atencion:ver_empresas', 'atencion:leer_autorizadas', 'integraciones:verificar'],
+    'conversaciones:ver', 'conversaciones:atender', 'conversaciones:asignar', 'atencion:ver_empresas', 'atencion:leer_autorizadas', 'atencion:responder_autorizadas', 'integraciones:verificar'],
+  SOPORTE: ['plataforma:ver', 'incidentes:gestionar', 'soporte:gestionar', 'conversaciones:ver', 'conversaciones:atender', 'atencion:ver_empresas', 'atencion:leer_autorizadas', 'atencion:responder_autorizadas', 'integraciones:verificar'],
 };
 
 export interface Operador { user: SessionUser; correlacion: string }
