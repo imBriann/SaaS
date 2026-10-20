@@ -356,12 +356,12 @@ export function OpAtencionEmpresas() {
             )}
           </Tarjeta>
           <Tarjeta titulo="Conversaciones compartidas con soporte">
-            {!data.accesos.length ? <span className="tenue peq-txt">Ninguna empresa ha compartido conversaciones. Se hace desde su panel: Conversaciones › Soporte de Omnegia › Compartir con soporte.</span> : (
+            {!data.accesos.length ? <span className="tenue peq-txt">Ninguna empresa ha compartido conversaciones. Se hace desde su panel: en una conversación, menú «⋯» › Pedir ayuda a Omnegia.</span> : (
               <ul className="lista" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                 {data.accesos.map((a: any) => (
                   <li key={a.id} className="lista-fila" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
-                    <span className="col" style={{ gap: 2, minWidth: 0 }}><b>{a.empresa}</b><span className="peq-txt sec">{a.motivo}</span><span className="tenue peq-txt">Autorizó {a.otorgado_por_nombre}{a.ticket_numero ? ` · ${a.ticket_numero}` : ''} · vence {fechaHora(a.expira_en)}</span></span>
-                    {leer && <Link className="btn peq" to={`/operador/atencion/conversaciones/${a.conversation_id}`}>Leer</Link>}
+                    <span className="col" style={{ gap: 2, minWidth: 0 }}><span className="fila envolver" style={{ gap: 8 }}><b>{a.empresa}</b>{a.puede_responder ? <Estado v="EXITO" texto="Puedes responder" /> : <Estado v="CERRADA" texto="Solo lectura" />}</span><span className="peq-txt sec">{a.motivo}</span><span className="tenue peq-txt">Autorizó {a.otorgado_por_nombre}{a.ticket_numero ? ` · ${a.ticket_numero}` : ''} · vence {fechaHora(a.expira_en)}</span></span>
+                    {leer && <Link className="btn peq" to={`/operador/atencion/conversaciones/${a.conversation_id}`}>{a.puede_responder ? 'Abrir y responder' : 'Leer'}</Link>}
                   </li>
                 ))}
               </ul>

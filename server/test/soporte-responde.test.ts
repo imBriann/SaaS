@@ -34,6 +34,15 @@ describe('Pedir ayuda a Omnegia', () => {
     expect(d).toMatchObject({ puede_responder: true, ticket_numero: r.body.ticket });
   });
 
+  it('la solicitud de soporte lleva a la conversación compartida', async () => {
+    const tickets = (await soporte.get('/soporte')).body.tickets ?? (await soporte.get('/soporte')).body;
+    const t = (Array.isArray(tickets) ? tickets : tickets.tickets).find((x: any) => /Óscar Jaimes/.test(x.asunto));
+    const d = await soporte.get(`/soporte/${t.id}`);
+    expect(d.body.compartida).toMatchObject({ conversation_id: conv, puede_responder: true });
+    const lista = (await soporte.get('/atencion-empresas')).body.accesos;
+    expect(lista.find((a: any) => a.conversation_id === conv)).toMatchObject({ puede_responder: true });
+  });
+
   it('soporte lee la conversación y sabe que puede responder', async () => {
     const r = await soporte.get(`/atencion-empresas/conversaciones/${conv}`);
     expect(r.status).toBe(200);

@@ -558,7 +558,12 @@ export async function verTicket(db: Database, op: Operador, id: string) {
        FROM soporte_ticket k LEFT JOIN tenant t ON t.id=coalesce(k.tenant_id, k.tenant_relacionado) WHERE k.id=$1`, [id])).rows[0];
     if (!k) throw notFound();
     const mensajes = (await tx.query(`SELECT id, autor_tipo, autor_nombre, cuerpo, creado_en FROM soporte_mensaje WHERE ticket_id=$1 ORDER BY creado_en`, [id])).rows;
+    // Si la empresa pidió ayuda desde una conversación, la solicitud lleva a esa conversación compartida.
+    const compartida = !k.sin_verificar && k.empresa_id ? (await tx.query(
+      `SELECT conversation_id, puede_responder, expira_en FROM acceso_soporte
+       WHERE tenant_id=$1 AND ticket_numero=$2 AND revocado_en IS NULL AND expira_en > now() ORDER BY expira_en DESC LIMIT 1`, [k.empresa_id, k.numero])).rows[0] ?? null : null;
     return {
+      compartida,
       ticket: { id: k.id, numero: k.numero, empresa_id: k.empresa_id, empresa: k.empresa, empresa_sin_verificar: k.sin_verificar && !!k.empresa, canal: k.canal, conversacion_id: k.conversacion_id,
         solicitante_telefono: k.solicitante_telefono ? enmascararTelefono(k.solicitante_telefono) : null,
         categoria: k.categoria, categoria_nombre: ETIQUETA_CATEGORIA[k.categoria], prioridad: k.prioridad, estado: k.estado, asunto: k.asunto, solicitante: k.solicitante_nombre, solicitante_email: k.solicitante_email, creado_en: k.creado_en, actualizado_en: k.actualizado_en },
