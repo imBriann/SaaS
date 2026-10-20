@@ -1,14 +1,15 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, cop, fechaLarga, hora, hoyLocal } from '../../api';
-import { Cabecera, useSesion } from '../../components/Layout';
-import { Cargando, CicloFiscal, Cifra, ErrorCarga, Estado, Medidor, Mensaje, Recibo, Tarjeta, useApi, Vacio, type TipoMensaje } from '../../components/ui';
+import { api, cop, fechaLarga, hora, hoyLocal, num } from '../../api';
+import { useSesion } from '../../components/Layout';
+import { Cargando, CicloFiscal, ErrorCarga, Estado, Mensaje, Recibo, Tarjeta, useApi, Vacio, type TipoMensaje } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import { AiOrb } from '../../components/AiOrb';
 import { ThinkingOrb } from 'thinking-orbs';
 import { useWorkspaceBirthReady } from '../../components/WorkspaceBirth';
 import { Contador, escalon } from '../../components/Movimiento';
 import { Pulso, type FichaPulso } from '../../components/Pulso';
+import { Anillo, BarrasVivas, Chispa, TarjetaCifra } from '../../components/Tablero';
 
 const TIPO: Record<string, TipoMensaje> = { CUSTOMER: 'cliente', AI: 'ia', HUMAN: 'humano' };
 
@@ -19,79 +20,101 @@ export function Inicio() {
   useWorkspaceBirthReady(!!data || !!error);
   const personalizacion = s.tenant.registro_datos?.inicio_ia;
   const accesos = ([
-    ['appointment:create', '/agenda', 'agenda', 'Agendar una cita'], ['order:create', '/ventas', 'ventas', 'Registrar una venta'],
-    ['customer:write', '/clientes', 'clientes', 'Añadir un cliente'], ['conversation:read', '/conversaciones', 'conversaciones', 'Revisar mensajes'],
+    ['appointment:create', '/agenda', 'agenda', 'Agendar cita'], ['order:create', '/ventas', 'ventas', 'Registrar venta'],
+    ['customer:write', '/clientes', 'clientes', 'Añadir cliente'], ['conversation:read', '/conversaciones', 'conversaciones', 'Mensajes'],
   ] as const).filter(([p]) => puede(p));
+  const h = new Date().getHours();
+  const saludo = personalizacion?.titulo || `${h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'}, ${s.usuario.nombre.split(' ')[0]}`;
   return (
     <>
-      <Cabecera titulo={personalizacion?.titulo || `Hola, ${s.usuario.nombre.split(' ')[0]}`} sub={data ? `${fechaLarga(data.fecha)} · ${s.tenant.nombre}` : s.tenant.nombre}>
-        {accesos.map(([p, to, icon, label]) => <Link key={p} className="btn" to={to}><Icon n={icon} className="" size={16} />{label}</Link>)}
-      </Cabecera>
+      <header className="tb-cabecera">
+        <div className="tb-cabecera-txt">
+          <span className="tb-eyebrow">{data ? fechaLarga(data.fecha) : s.tenant.nombre}</span>
+          <h1>{saludo}</h1>
+          <p>{data ? resumenDelDia(data, puede) : `Así va ${s.tenant.nombre} hoy.`}</p>
+        </div>
+        {accesos.length > 0 && <nav className="tb-accesos" aria-label="Accesos rápidos">{accesos.map(([p, to, icon, label], i) => <Link key={p} className="tb-acceso" to={to} style={{ ['--i' as any]: i }}><span><Icon n={icon} className="" size={18} /></span>{label}</Link>)}</nav>}
+      </header>
       <div className="contenido tablero-entrada">
         {data && <PulsoDelDia data={data} puede={puede} />}
-        {personalizacion?.descripcion && <section className="workspace-personalized" aria-label="Tu espacio personalizado">
-          <ThinkingOrb state="breathing" size={64} theme="light" aria-label="Configuración personalizada de Omnegia" />
-          <div><span className="workspace-personalized-tag"><Icon n="ia" size={14} className="" />Preparado por la IA para {s.tenant.nombre}</span><p>{personalizacion.descripcion}</p>
-            {Array.isArray(personalizacion.prioridades) && <ul>{personalizacion.prioridades.slice(0, 3).map((priority: any, i: number) => {
-              const destinations: Record<string, [string, string]> = { clientes: ['/clientes', 'customer:read'], catalogo: ['/inventario', 'catalog:read'], inventario: ['/inventario', 'catalog:read'], ventas: ['/ventas', 'order:read'], agenda: ['/agenda', 'appointment:read'], conversaciones: ['/conversaciones', 'conversation:read'], ia: ['/ia', 'ai:read'], facturacion: ['/facturacion', 'invoice:read'], comisiones: ['/configuracion', 'tenant:configure'], membresias: ['/configuracion', 'tenant:configure'] };
-              const destination = destinations[priority.modulo];
-              if (!destination || !puede(destination[1]) || !s.modulos.includes(priority.modulo)) return null;
-              return <li key={`${priority.modulo}-${i}`}><Link to={destination[0]}><strong>{priority.titulo}</strong><span>{priority.descripcion}</span><Icon n="flecha" size={16} className="" /></Link></li>;
-            })}</ul>}
-          </div>
-        </section>}
         {error && <ErrorCarga error={error} reintentar={recargar} />}
         {cargando && !data && <div className="tarjeta"><Cargando filas={8} /></div>}
         {data && (
           <>
-            {data.pasos && data.pasos.completos < data.pasos.total && <PrimerosPasos p={data.pasos} />}
-            {data.atencion.length === 0 ? (
-              <div className="tarjeta pad fila" style={{ gap: 10 }}>
-                <span className="estado ok"><Icon n="ok" className="" />Al día</span>
-                <span className="sec">Nada requiere tu atención: no hay facturas rechazadas, casos sin responder ni productos bajo mínimo.</span>
-              </div>
-            ) : (
-              <Tarjeta titulo={<span className="fila">Requiere tu atención <span className="estado warn">{data.atencion.length}</span></span>} nivel={data.atencion.some((a: any) => a.nivel === 'error') ? 3 : 2}>
-                <div>
-                  {data.atencion.map((a: any, i: number) => (
-                    <div key={i} className="atencion-fila">
-                      <Estado v={a.nivel === 'error' ? 'RECHAZADO' : a.nivel === 'warn' ? 'PENDIENTE' : 'ESCALADA'} texto={a.tipo === 'factura_rechazada' ? 'DIAN' : a.tipo === 'caso' ? 'Caso' : a.tipo === 'stock' ? 'Stock' : a.tipo === 'entrega' ? 'WhatsApp' : 'IA'} />
-                      <span style={{ minWidth: 0 }}><span className="lista-titulo">{a.titulo}</span><br /><span className="lista-detalle">{a.detalle}</span></span>
-                      <Link className="btn peq" to={a.accion.ruta}>{a.accion.etiqueta}<Icon n="derecha" className="" size={14} /></Link>
-                    </div>
-                  ))}
-                </div>
-              </Tarjeta>
-            )}
-
-            <div className="kpis" aria-label="Resumen de hoy">
-              <Cifra etiqueta="Ventas de hoy" valor={<Contador valor={data.cifras.ventas_hoy} formato={cop} />} detalle={`${data.cifras.n_ventas_hoy} ${data.cifras.n_ventas_hoy === 1 ? 'venta' : 'ventas'} · semana ${cop(data.cifras.ventas_semana)}`} />
-              <Cifra etiqueta="Citas de hoy" valor={data.cifras.citas_hoy} detalle={`${data.cifras.citas_hoy_ia} agendadas por el agente`} />
-              <Cifra etiqueta="Conversaciones abiertas" valor={data.cifras.conversaciones_abiertas} detalle={`${data.cifras.escaladas} con una persona`} />
-              {puede('order:read') ? <Cifra etiqueta="Por cobrar" valor={<Contador valor={data.cifras.por_cobrar} formato={cop} />} detalle={<Link to="/ventas?pago=PENDIENTE">Ver ventas sin pagar</Link>} />
-                : <Cifra etiqueta="Clientes nuevos (7 días)" valor={data.cifras.clientes_nuevos} detalle={`${data.cifras.resueltas_ia_semana} conversaciones resueltas por la IA`} />}
+            <div className="tb-bento" aria-label="Resumen de hoy">
+              {puede('order:read') && <TarjetaCifra i={0} icono="ventas" etiqueta="Ventas de hoy" valor={data.cifras.ventas_hoy} formato={cop} ruta="/ventas" tono="acento"
+                detalle={`${data.cifras.n_ventas_hoy} ${data.cifras.n_ventas_hoy === 1 ? 'venta' : 'ventas'} · semana ${cop(data.cifras.ventas_semana)}`}
+                grafica={<Chispa serie={(data.ingresos ?? []).map((d: any) => Number(d.total))} etiqueta="Ventas de los últimos 7 días" />} />}
+              {puede('appointment:read') && <TarjetaCifra i={1} icono="agenda" etiqueta="Citas de hoy" valor={data.cifras.citas_hoy} ruta="/agenda" tono="persona"
+                detalle={data.cifras.citas_hoy ? `${data.cifras.citas_hoy_ia} agendadas por la IA` : 'Ninguna por ahora'}
+                grafica={data.cifras.citas_hoy > 0 ? <Anillo valor={data.cifras.citas_hoy_ia} max={data.cifras.citas_hoy} tam={48} grosor={6} tono="ia" etiqueta={`${data.cifras.citas_hoy_ia} de ${data.cifras.citas_hoy} citas las agendó la IA`}><small>IA</small></Anillo> : undefined} />}
+              {puede('conversation:read') && <TarjetaCifra i={2} icono="conversaciones" etiqueta="Conversaciones abiertas" valor={data.cifras.conversaciones_abiertas} ruta="/conversaciones" tono={data.cifras.escaladas ? 'aviso' : 'ia'}
+                detalle={data.cifras.escaladas ? `${data.cifras.escaladas} ${data.cifras.escaladas === 1 ? 'espera' : 'esperan'} a una persona` : 'La IA las tiene al día'}
+                grafica={data.cifras.conversaciones_abiertas > 0 ? <Anillo valor={data.cifras.conversaciones_abiertas - data.cifras.escaladas} max={data.cifras.conversaciones_abiertas} tam={48} grosor={6} tono="ia" etiqueta={`${data.cifras.conversaciones_abiertas - data.cifras.escaladas} de ${data.cifras.conversaciones_abiertas} las atiende la IA`}><small>IA</small></Anillo> : undefined} />}
+              {puede('order:read') ? <TarjetaCifra i={3} icono="reloj" etiqueta="Por cobrar" valor={data.cifras.por_cobrar} formato={cop} ruta="/ventas?pago=PENDIENTE" tono={data.cifras.por_cobrar > 0 ? 'aviso' : 'ok'}
+                  detalle={data.cifras.por_cobrar > 0 ? 'Ventas con saldo pendiente' : 'Todo cobrado'} />
+                : <TarjetaCifra i={3} icono="clientes" etiqueta="Clientes nuevos · 7 días" valor={data.cifras.clientes_nuevos} tono="ok" detalle={`${data.cifras.resueltas_ia_semana} conversaciones resueltas por la IA`} />}
             </div>
 
-            <div className="grid g-main" style={{ alignItems: 'start' }}>
-              <div className="col" style={{ gap: 16 }}>
+            {data.atencion.length === 0 ? (
+              <div className="tb-al-dia"><span className="tb-al-dia-ico"><Icon n="ok" className="" size={18} /></span><div><b>Todo al día</b><span>No hay facturas rechazadas, casos sin responder ni productos bajo mínimo.</span></div></div>
+            ) : (
+              <section className="tarjeta tb-atencion" aria-labelledby="tb-atencion-t">
+                <div className="cab"><h2 className="titulo-tarjeta" id="tb-atencion-t">Requiere tu atención</h2><span className={`tb-contador ${data.atencion.some((a: any) => a.nivel === 'error') ? 'error' : ''}`}>{data.atencion.length}</span></div>
+                <ul className="tb-atencion-lista">
+                  {data.atencion.map((a: any, i: number) => (
+                    <li key={i} className={`n-${a.nivel}`} style={{ ['--i' as any]: i }}>
+                      <span className="tb-atencion-ico"><Icon n={a.tipo === 'factura_rechazada' ? 'facturacion' : a.tipo === 'caso' ? 'conversaciones' : a.tipo === 'stock' ? 'inventario' : a.tipo === 'entrega' ? 'alerta' : a.tipo === 'pago_excedente' ? 'efectivo' : 'ia'} className="" size={16} /></span>
+                      <span className="tb-atencion-txt"><b>{a.titulo}</b><span>{a.detalle}</span></span>
+                      <Link className="btn peq" to={a.accion.ruta}>{a.accion.etiqueta}<Icon n="derecha" className="" size={14} /></Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {data.pasos && data.pasos.completos < data.pasos.total && <PrimerosPasos p={data.pasos} />}
+
+            {personalizacion?.descripcion && <section className="workspace-personalized" aria-label="Tu espacio personalizado">
+              <ThinkingOrb state="breathing" size={64} theme="light" aria-label="Configuración personalizada de Omnegia" />
+              <div><span className="workspace-personalized-tag"><Icon n="ia" size={14} className="" />Preparado por la IA para {s.tenant.nombre}</span><p>{personalizacion.descripcion}</p>
+                {Array.isArray(personalizacion.prioridades) && <ul>{personalizacion.prioridades.slice(0, 3).map((priority: any, i: number) => {
+                  const destinations: Record<string, [string, string]> = { clientes: ['/clientes', 'customer:read'], catalogo: ['/inventario', 'catalog:read'], inventario: ['/inventario', 'catalog:read'], ventas: ['/ventas', 'order:read'], agenda: ['/agenda', 'appointment:read'], conversaciones: ['/conversaciones', 'conversation:read'], ia: ['/ia', 'ai:read'], facturacion: ['/facturacion', 'invoice:read'], comisiones: ['/configuracion', 'tenant:configure'], membresias: ['/configuracion', 'tenant:configure'] };
+                  const destination = destinations[priority.modulo];
+                  if (!destination || !puede(destination[1]) || !s.modulos.includes(priority.modulo)) return null;
+                  return <li key={`${priority.modulo}-${i}`}><Link to={destination[0]}><strong>{priority.titulo}</strong><span>{priority.descripcion}</span><Icon n="flecha" size={16} className="" /></Link></li>;
+                })}</ul>}
+              </div>
+            </section>}
+
+            <div className="tb-rejilla">
+              <div className="tb-columna">
+                {data.ingresos.length > 0 && (
+                  <Tarjeta titulo="Ingresos de los últimos 7 días" acciones={<Link to="/ventas" className="btn sutil peq">Ventas</Link>}>
+                    {data.ingresos.some((d: any) => d.total > 0) ? (
+                      <BarrasVivas etiqueta="Ingresos por día" formato={cop} datos={data.ingresos.map((d: any) => ({ clave: d.dia, valor: Number(d.total), destacado: d.dia === hoyLocal(), corto: d.dia === hoyLocal() ? 'Hoy' : new Date(d.dia + 'T12:00:00Z').toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', timeZone: 'UTC' }).replace('.', '') }))} />
+                    ) : <Vacio titulo="Sin ventas esta semana">Cuando registres ventas, aquí verás cuánto entra cada día.</Vacio>}
+                  </Tarjeta>
+                )}
                 {puede('appointment:read') && (
                   <Tarjeta titulo="Agenda de hoy" acciones={<Link to="/agenda" className="btn sutil peq">Abrir agenda</Link>}>
                     {data.agenda.length === 0 ? <Vacio titulo="Sin citas hoy">Las citas que agende el equipo o el agente aparecerán aquí.</Vacio> : (
-                      <div>
-                        {data.agenda.map((a: any) => (
-                          <div key={a.id} className="cita-fila">
-                            <span className="h">{a.hora}</span>
-                            <span style={{ minWidth: 0 }}><span className="lista-titulo cortar" style={{ display: 'block' }}>{a.cliente}</span><span className="lista-detalle">{a.servicio} · {a.recurso}</span></span>
+                      <ol className="tb-agenda">
+                        {data.agenda.map((a: any, i: number) => (
+                          <li key={a.id} className={`e-${String(a.estado).toLowerCase()}`} style={{ ['--i' as any]: i }}>
+                            <span className="tb-agenda-hora">{a.hora}</span>
+                            <span className="tb-agenda-punto" aria-hidden="true" />
+                            <span className="tb-agenda-txt"><b className="cortar">{a.cliente}</b><span className="cortar">{a.servicio} · {a.recurso}</span></span>
                             <span className="fila" style={{ gap: 6 }}>{a.origen === 'AGENTE' && <Estado v="AGENTE" texto="IA" />}<Estado v={a.estado} /></span>
-                          </div>
+                          </li>
                         ))}
-                      </div>
+                      </ol>
                     )}
-                    {data.ocupacion.length > 0 && <div className="fila envolver" style={{ marginTop: 12, gap: 6 }} aria-label="Citas por persona">{data.ocupacion.map((o: any) => <span key={o.nombre} className="chip">{o.nombre} <b>{o.citas}</b></span>)}</div>}
+                    {data.ocupacion.length > 0 && <div className="fila envolver" style={{ marginTop: 14, gap: 6 }} aria-label="Citas por persona">{data.ocupacion.map((o: any) => <span key={o.nombre} className="chip">{o.nombre} <b>{o.citas}</b></span>)}</div>}
                   </Tarjeta>
                 )}
                 {puede('conversation:read') && (
-                  <Tarjeta titulo="Hilo en vivo" acciones={<Link to="/conversaciones" className="btn sutil peq">Ver bandeja</Link>}>
+                  <Tarjeta titulo={<span className="fila" style={{ gap: 8 }}><span className="tb-en-vivo" aria-hidden="true" />Hilo en vivo</span>} acciones={<Link to="/conversaciones" className="btn sutil peq">Ver bandeja</Link>}>
                     {data.hilo.length === 0 ? <Vacio titulo="Sin conversaciones todavía">Cuando tus clientes escriban por WhatsApp, verás aquí lo que responde y ejecuta la IA.</Vacio> : (
                       <div className="hilo dashboard-feed">
                         {data.hilo.map((h: any) => h.kind === 'recibo'
@@ -103,18 +126,24 @@ export function Inicio() {
                     )}
                   </Tarjeta>
                 )}
-                <AccesoAsistente />
               </div>
-              <div className="col" style={{ gap: 16 }}>
+              <div className="tb-columna">
+                <AccesoAsistente />
                 {data.cobros_hoy && <CobradoHoy c={data.cobros_hoy} />}
                 {data.fiscal && <Tarjeta titulo="Ciclo fiscal de hoy" acciones={<Link to="/facturacion" className="btn sutil peq">Facturación</Link>}><CicloFiscal conteos={data.fiscal} /></Tarjeta>}
-                {data.ingresos.length > 0 && <Tarjeta titulo="Ingresos de los últimos 7 días">{data.ingresos.some((d: any) => d.total > 0) ? <Barras datos={data.ingresos} /> : <Vacio titulo="Sin ventas esta semana">Cuando registres ventas, aquí verás cuánto entra cada día.</Vacio>}</Tarjeta>}
                 {data.consumo && (
                   <Tarjeta titulo="Consumo del plan" acciones={<Link to="/suscripcion" className="btn sutil peq">Detalle</Link>}>
-                    <div className="col" style={{ gap: 14 }}>
-                      <Medidor c={data.consumo.tokens_ia} etiqueta="IA" />
-                      <Medidor c={data.consumo.mensajes} etiqueta="Mensajes" />
-                      <Medidor c={data.consumo.documentos} etiqueta="Documentos fiscales" />
+                    <div className="tb-consumo">
+                      {([['IA', data.consumo.tokens_ia, 'ia'], ['Mensajes', data.consumo.mensajes, 'persona'], ['Documentos', data.consumo.documentos, 'ok']] as const).filter(([, c]) => c).map(([t, c, tono]) => {
+                        const pct = Math.round(c.porcentaje ?? 0);
+                        return (
+                          <div key={t} className="tb-consumo-item" title={c.cuota ? `${num(c.usado)} de ${num(c.cuota)} · proyección al cierre ${Math.round(c.proyeccionPorcentaje ?? 0)} %` : 'Sin cuota en tu plan'}>
+                            <Anillo valor={c.cuota ? Math.min(pct, 100) : 0} tam={68} grosor={7} tono={pct >= 100 ? 'error' : (c.proyeccionPorcentaje ?? 0) >= 90 ? 'aviso' : tono} etiqueta={c.cuota ? `${t}: ${pct} % del plan` : `${t}: sin cuota`}><b>{c.cuota ? `${pct}%` : '∞'}</b></Anillo>
+                            <span>{t}</span>
+                            <small>{c.cuota ? `${num(c.usado)} de ${num(c.cuota)}` : num(c.usado)}</small>
+                          </div>
+                        );
+                      })}
                     </div>
                   </Tarjeta>
                 )}
@@ -125,6 +154,18 @@ export function Inicio() {
       </div>
     </>
   );
+}
+
+/** Una línea que resume el día en lenguaje natural, con lo que el servidor contó. */
+function resumenDelDia(data: any, puede: (p: string) => boolean): string {
+  const c = data.cifras;
+  const partes: string[] = [];
+  if (puede('order:read')) partes.push(c.n_ventas_hoy ? `${c.n_ventas_hoy} ${c.n_ventas_hoy === 1 ? 'venta' : 'ventas'} por ${cop(c.ventas_hoy)}` : 'todavía sin ventas');
+  if (puede('appointment:read')) partes.push(`${c.citas_hoy} ${c.citas_hoy === 1 ? 'cita' : 'citas'}`);
+  if (puede('conversation:read') && c.escaladas) partes.push(`${c.escaladas} ${c.escaladas === 1 ? 'cliente espera' : 'clientes esperan'} respuesta`);
+  if (!partes.length) return 'Así va tu negocio hoy.';
+  const t = partes.join(', ');
+  return `Hoy llevas ${t}.`;
 }
 
 /** Configuración inicial: cada paso se marca solo cuando el dato existe en el servidor. */
@@ -150,25 +191,6 @@ function PrimerosPasos({ p }: { p: { pasos: { clave: string; titulo: string; hec
   );
 }
 
-function Barras({ datos }: { datos: { dia: string; total: number }[] }) {
-  const max = Math.max(...datos.map((d) => d.total), 1);
-  const hoy = hoyLocal();
-  return (
-    <>
-      <div className="barras" role="img" aria-label={`Ingresos por día: ${datos.map((d) => `${d.dia} ${cop(d.total)}`).join(', ')}`}>
-        {datos.map((d) => (
-          <div key={d.dia} className={`b ${d.dia === hoy ? 'hoy' : ''}`} title={`${d.dia}: ${cop(d.total)}`}>
-            <span>{d.total ? `${Math.round(d.total / 1000)}k` : '0'}</span>
-            <i style={{ height: `${(d.total / max) * 70}%` }} />
-            <span>{d.dia === hoy ? 'hoy' : new Date(d.dia + 'T12:00:00Z').toLocaleDateString('es-CO', { weekday: 'short', timeZone: 'UTC' })}</span>
-          </div>
-        ))}
-      </div>
-      <p className="tenue peq-txt" style={{ marginTop: 8 }}>Miles de pesos, IVA incluido.</p>
-    </>
-  );
-}
-
 /** El asistente tiene su propia sección (conserva la conversación); desde Inicio solo se abre con una pregunta. */
 function AccesoAsistente() {
   const { puede, s } = useSesion();
@@ -177,21 +199,24 @@ function AccesoAsistente() {
   if (!puede('ai:assist') || !s.modulos.includes('ia')) return null;
   const abrir = (texto: string) => { if (texto.trim()) nav(`/asistente?q=${encodeURIComponent(texto.trim())}`); };
   return (
-    <Tarjeta titulo={<span className="fila"><AiOrb state="breathing" size={20} theme="light" label="Asistente" /> Pregúntale a tu negocio</span>} acciones={<Link to="/asistente" className="btn sutil peq">Abrir el asistente</Link>}>
-      <div className="col" style={{ gap: 8 }}>
-        <span className="tenue peq-txt">El asistente conoce tu negocio, recuerda la conversación y consulta tus datos con tus permisos. Sus consultas dejan recibo.</span>
-        <div className="fila envolver" style={{ gap: 6 }}>{[
-          { texto: '¿Cuánto vendimos esta semana?', permiso: 'order:read', modulo: 'ventas' },
-          { texto: '¿Qué citas hay hoy?', permiso: 'appointment:read', modulo: 'agenda' },
-          { texto: '¿Qué productos están bajo mínimo?', permiso: 'catalog:read', modulo: 'inventario' },
-          { texto: '¿Cómo va el consumo del plan?', permiso: 'subscription:manage', modulo: 'ia' },
-        ].filter(p => puede(p.permiso) && s.modulos.includes(p.modulo)).map(p => <button key={p.texto} type="button" className="chip" onClick={() => abrir(p.texto)}>{p.texto}</button>)}</div>
+    <section className="tb-ia" aria-label="Pregúntale a tu negocio">
+      <span className="tb-ia-brillo" aria-hidden="true" />
+      <div className="tb-ia-cab">
+        <span className="tb-ia-orbe"><AiOrb state="breathing" size={20} theme="dark" label="Asistente" /></span>
+        <div><b>Pregúntale a tu negocio</b><span>Conoce tus ventas, citas e inventario y te muestra de dónde sale cada dato.</span></div>
       </div>
-      <form className="fila" style={{ marginTop: 12 }} onSubmit={(e: FormEvent) => { e.preventDefault(); abrir(q); }}>
-        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ej.: ¿qué citas tengo mañana?" aria-label="Pregunta al asistente" />
-        <button className="btn primario" disabled={!q.trim()}>Preguntar</button>
+      <form className="tb-ia-form" onSubmit={(e: FormEvent) => { e.preventDefault(); abrir(q); }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="¿Qué citas tengo mañana?" aria-label="Pregunta al asistente" />
+        <button disabled={!q.trim()} aria-label="Preguntar"><Icon n="enviar" className="" size={16} /></button>
       </form>
-    </Tarjeta>
+      <div className="tb-ia-sugerencias">{[
+        { texto: '¿Cuánto vendimos esta semana?', permiso: 'order:read', modulo: 'ventas' },
+        { texto: '¿Qué citas hay hoy?', permiso: 'appointment:read', modulo: 'agenda' },
+        { texto: '¿Qué productos están bajo mínimo?', permiso: 'catalog:read', modulo: 'inventario' },
+        { texto: '¿Cómo va el consumo del plan?', permiso: 'subscription:manage', modulo: 'ia' },
+      ].filter((p) => puede(p.permiso) && s.modulos.includes(p.modulo)).slice(0, 3).map((p) => <button key={p.texto} type="button" onClick={() => abrir(p.texto)}>{p.texto}</button>)}</div>
+      <Link to="/asistente" className="tb-ia-abrir">Abrir el asistente<Icon n="derecha" className="" size={14} /></Link>
+    </section>
   );
 }
 

@@ -1,16 +1,30 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, cop, descargar, fecha, fechaHora, hace, hora } from '../../api';
-import { Escritura, Cabecera, useSesion } from '../../components/Layout';
-import { Campo, Cargando, Confirmar, ErrorCarga, Estado, Mensaje, Modal, Recibo, Tarjeta, useAccion, useApi, useRetardo, Vacio, type TipoMensaje } from '../../components/ui';
+import { api, cop, descargar, fecha, fechaHora, guardar, hace, hora, leer } from '../../api';
+import { Escritura, Menu, useSesion } from '../../components/Layout';
+import { Campo, Cargando, Confirmar, ErrorCarga, Estado, Modal, Recibo, Tarjeta, useAccion, useApi, useRetardo, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import { TextoWhatsApp } from '../../components/Markdown';
 
-const FILTROS: [string, string][] = [['todas', 'Todas'], ['escaladas', 'Con una persona'], ['cola', 'En cola'], ['mias', 'Asignadas a mí'], ['ia', 'Atendiendo la IA'], ['cerradas', 'Cerradas']];
+const FILTROS: [string, string][] = [['todas', 'Todas'], ['escaladas', 'Con una persona'], ['cola', 'En cola'], ['mias', 'Mías'], ['ia', 'IA al frente'], ['cerradas', 'Cerradas']];
 const PRIORIDADES = ['BAJA', 'MEDIA', 'ALTA', 'URGENTE'];
-const ENTREGA: Record<string, string> = { PENDIENTE: 'enviando…', ENVIADO: 'enviado', ENTREGADO: 'entregado', LEIDO: 'leído', SIMULADO: 'simulado (no sale a WhatsApp)', FALLIDO: 'no entregado' };
+const ENTREGA: Record<string, string> = { PENDIENTE: 'enviando…', ENVIADO: 'enviado', ENTREGADO: 'entregado', LEIDO: 'leído', SIMULADO: 'simulado', FALLIDO: 'no entregado' };
+const MARCA_ENTREGA: Record<string, string> = { ENVIADO: '✓', ENTREGADO: '✓✓', LEIDO: '✓✓' };
+/** En pantallas táctiles Enter salta de línea (el teclado no tiene Shift a mano); con teclado físico, envía. */
+const tactil = () => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
 
-/** Bandeja y radicados. */
+/** Color estable por persona (tono derivado del nombre): ayuda a reconocer a cada cliente en la bandeja. */
+const tono = (s: string) => { let h = 7; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+export function Avatar({ nombre, grande }: { nombre: string; grande?: boolean }) {
+  const ini = nombre.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  return <span className={`cv-avatar ${grande ? 'grande' : ''}`} style={{ ['--h' as any]: tono(nombre) }} aria-hidden="true">{ini || '?'}</span>;
+}
+
+/**
+ * Bandeja de conversaciones: espacio de trabajo a pantalla completa. Lista a la izquierda, el chat al
+ * centro (lo más grande) y los detalles del cliente y del radicado en un panel que se pliega. En el
+ * teléfono, la lista y el chat ocupan cada uno la pantalla entera.
+ */
 export function Conversaciones() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -18,86 +32,102 @@ export function Conversaciones() {
   const [q, setQ] = useState('');
   const qr = useRetardo(q);
   const { data, error, recargar } = useApi<any>(() => api.get(`/api/t/conversaciones?filtro=${filtro}${qr ? `&q=${encodeURIComponent(qr)}` : ''}`), [filtro, qr], { cada: 6000 });
-  const vacio = <Vacio titulo={qr ? 'Nada coincide con la búsqueda' : 'No hay conversaciones en esta vista'}>{qr ? 'Busca por nombre, teléfono o radicado.' : filtro === 'todas' ? 'Cuando un cliente escriba por WhatsApp, su conversación aparecerá aquí.' : 'Prueba con otro filtro.'}</Vacio>;
-  const buscador = <label className="buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Nombre, teléfono o radicado" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar conversaciones" /></label>;
+  const [detalles, setDetalles] = useState(() => leer('cv-detalles') !== '0');
+  const alternar = () => setDetalles((v) => { guardar('cv-detalles', v ? '0' : '1'); return !v; });
+  const lista: any[] = data?.conversaciones ?? [];
+  const cont = data?.contadores ?? {};
   return (
-    <>
-      {!id && <Cabecera titulo="Conversaciones" sub="Lee los mensajes de tus clientes y responde desde aquí.">{buscador}</Cabecera>}
-      <div className="contenido">
-        {error && <ErrorCarga error={error} reintentar={recargar} />}
-        {!id ? (
-          <section className="tarjeta" hidden={!!error}>
-            <div className="filtros">
-              <div className="tabs" role="group" aria-label="Filtrar conversaciones">
-                {FILTROS.map(([k, v]) => <button key={k} className={filtro === k ? 'on' : ''} aria-pressed={filtro === k} onClick={() => setFiltro(k)}>{v}{data?.contadores?.[k] !== undefined && <span className="tenue"> {data.contadores[k]}</span>}</button>)}
-              </div>
-            </div>
-            {!data ? <Cargando /> : data.conversaciones.length === 0 ? vacio : (
-              <ul className="lista-conv" aria-label="Conversaciones">
-                {data.conversaciones.map((c: any) => (
-                  <li key={c.id}>
-                    <Link to={`/conversaciones/${c.id}`} className={`conv-fila ${c.sin_leer ? 'sin-leer' : ''}`}>
-                      <span className="conv-quien"><b className="cortar">{c.sin_leer && <span className="conv-nuevo" aria-label="Sin leer" />}{c.cliente}</b><span className="tenue peq-txt">{hace(c.actualizado_en)}</span></span>
-                      <span className="conv-ultimo cortar">{c.ultimo}</span>
-                      <span className="conv-estado">
-                        {c.radicado && c.estado_caso !== 'CERRADO' ? <Estado v={c.estado_caso} /> : <Estado v={c.estado} />}
-                        {c.control === 'AI' && c.estado !== 'CERRADA' ? <Estado v="AGENTE" texto="IA al frente" /> : c.asignado ? <span className="estado info"><Icon n="persona" className="" />{c.asignado}</span> : null}
+    <div className={`cv-ventana ${id ? 'con-chat' : ''} ${detalles ? 'con-detalles' : ''}`}>
+      <aside className="cv-lista" aria-label="Bandeja de conversaciones">
+        <header className="cv-lista-cab">
+          <div className="cv-lista-titulo">
+            <h1>Conversaciones</h1>
+            {cont.escaladas > 0 && <span className="cv-alerta" title="Esperan a una persona"><i />{cont.escaladas}</span>}
+          </div>
+          <label className="cv-buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Buscar nombre, teléfono o radicado" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar conversaciones" /></label>
+          <div className="cv-filtros" role="group" aria-label="Filtrar conversaciones">
+            {FILTROS.map(([k, v]) => (
+              <button key={k} type="button" className={filtro === k ? 'on' : ''} aria-pressed={filtro === k} onClick={() => setFiltro(k)}>
+                {v}{cont[k] !== undefined && <span className="n">{cont[k]}</span>}
+              </button>
+            ))}
+          </div>
+        </header>
+        <div className="cv-filas-wrap">
+          {error ? <div className="cv-pad"><ErrorCarga error={error} reintentar={recargar} /></div> : !data ? <Cargando filas={7} /> : lista.length === 0 ? (
+            <div className="cv-pad"><Vacio titulo={qr ? 'Nada coincide con la búsqueda' : 'No hay conversaciones en esta vista'}>{qr ? 'Busca por nombre, teléfono o radicado.' : filtro === 'todas' ? 'Cuando un cliente escriba por WhatsApp, su conversación aparecerá aquí.' : 'Prueba con otro filtro.'}</Vacio></div>
+          ) : (
+            <ul className="cv-filas">
+              {lista.map((c, i) => {
+                const sel = c.id === id;
+                const nuevo = c.sin_leer && !sel;
+                return (
+                  <li key={c.id} style={{ ['--i' as any]: Math.min(i, 14) }}>
+                    <Link to={`/conversaciones/${c.id}`} className={`cv-fila ${sel ? 'sel' : ''} ${nuevo ? 'sin-leer' : ''} ${c.estado === 'ESCALADA' ? 'escalada' : ''}`} aria-current={sel ? 'page' : undefined}>
+                      <span className="cv-fila-av"><Avatar nombre={c.cliente} />{c.control === 'AI' && c.estado !== 'CERRADA' && <span className="cv-av-ia" title="La IA está al frente"><Icon n="ia" className="" size={10} /></span>}</span>
+                      <span className="cv-fila-txt">
+                        <span className="cv-fila-l1"><b className="cortar">{c.cliente}</b><time dateTime={c.actualizado_en}>{hace(c.actualizado_en)}</time></span>
+                        <span className="cv-fila-l2"><span className="cortar">{c.ultimo ?? 'Sin mensajes'}</span>{nuevo && <i className="cv-punto" aria-label="Sin leer" />}</span>
+                        <span className="cv-fila-l3">
+                          {c.estado === 'CERRADA' ? <span className="cv-chip gris">Cerrada</span> : c.control === 'AI' ? <span className="cv-chip ia"><Icon n="ia" className="" size={11} />IA</span> : <span className="cv-chip persona"><Icon n="persona" className="" size={11} />{c.asignado ?? 'Sin asignar'}</span>}
+                          {c.radicado && c.estado_caso !== 'CERRADO' && <span className="cv-chip mono">{c.radicado}</span>}
+                          <Sla c={c} mini />
+                        </span>
                       </span>
-                      <span className="conv-caso">{c.radicado ? <span className="id">{c.radicado}</span> : null}<Sla c={c} /></span>
                     </Link>
                   </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        ) : (
-          <div className="bandeja-detalle con-detalle" hidden={!!error}>
-            <section className="tarjeta bandeja-lista" aria-label="Bandeja">
-              <div className="filtros">
-                <select className="input" value={filtro} onChange={(e) => setFiltro(e.target.value)} aria-label="Filtrar conversaciones">
-                  {FILTROS.map(([k, v]) => <option key={k} value={k}>{v}{data?.contadores?.[k] !== undefined ? ` (${data.contadores[k]})` : ''}</option>)}
-                </select>
-              </div>
-              {!data ? <Cargando /> : data.conversaciones.length === 0 ? vacio : (
-                <ul className="lista-conv compacta">
-                  {data.conversaciones.map((c: any) => (
-                    <li key={c.id}>
-                      <Link to={`/conversaciones/${c.id}`} className={`conv-fila ${c.id === id ? 'sel' : ''} ${c.sin_leer && c.id !== id ? 'sin-leer' : ''}`} aria-current={c.id === id ? 'page' : undefined}>
-                        <span className="conv-quien"><b className="cortar">{c.sin_leer && c.id !== id && <span className="conv-nuevo" aria-label="Sin leer" />}{c.cliente}</b><span className="tenue peq-txt">{hace(c.actualizado_en)}</span></span>
-                        <span className="conv-ultimo cortar">{c.ultimo}</span>
-                        <span className="conv-estado">{c.radicado && c.estado_caso !== 'CERRADO' ? <Estado v={c.estado_caso} /> : <Estado v={c.estado} />}<Sla c={c} /></span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-            <Detalle id={id} onCambio={recargar} volver={() => nav('/conversaciones')} />
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </aside>
+
+      {id ? <Detalle key={id} id={id} onCambio={recargar} volver={() => nav('/conversaciones')} detalles={detalles} alternarDetalles={alternar} /> : (
+        <section className="cv-chat cv-sin-chat" aria-label="Ninguna conversación abierta">
+          <div className="cv-elige">
+            <span className="cv-elige-ico" aria-hidden="true"><i /><i /><Icon n="conversaciones" className="" size={30} /></span>
+            <h2>Elige una conversación</h2>
+            <p>Lee el hilo completo, responde por WhatsApp y deja notas para tu equipo, todo desde aquí.</p>
+            {data && <div className="cv-elige-cifras">
+              <span><b>{cont.todas ?? 0}</b>en total</span>
+              <span className={cont.escaladas ? 'urgente' : ''}><b>{cont.escaladas ?? 0}</b>esperan a una persona</span>
+              <span><b>{cont.ia ?? 0}</b>las atiende la IA</span>
+            </div>}
           </div>
-        )}
-      </div>
-    </>
+        </section>
+      )}
+    </div>
   );
 }
 
-function Sla({ c }: { c: any }) {
+function Sla({ c, mini }: { c: any; mini?: boolean }) {
   const caso = c.caso ?? c;
   const estado = caso.estado_caso ?? caso.estado;
   if (!caso.sla_vence_en || estado === 'CERRADO') return null;
-  if (caso.primera_respuesta_en) return <Estado v="EXITO" texto="Respondido" />;
+  if (caso.primera_respuesta_en) return mini ? null : <Estado v="EXITO" texto="Respondido" />;
   const min = Math.round((new Date(caso.sla_vence_en).getTime() - Date.now()) / 60000);
+  if (mini) return <span className={`cv-chip ${min < 0 ? 'vencido' : 'reloj'}`}><Icon n="reloj" className="" size={11} />{min < 0 ? `−${-min} min` : `${min} min`}</span>;
   return min < 0 ? <Estado v="RECHAZADO" texto={`Sin respuesta hace ${-min} min`} /> : <Estado v="PENDIENTE" texto={`Responder en ${min} min`} />;
 }
 
-function tipoDe(m: any): TipoMensaje {
+const ACCION_CASO: Record<string, string> = { crear: 'Se creó el radicado', tomar: 'Lo tomó', reasignar: 'Se reasignó', prioridad: 'Cambió la prioridad', responder: 'Primera respuesta', cerrar: 'Se cerró', reabrir: 'Se reabrió', devolver_ia: 'Se devolvió a la IA' };
+const ROL_BURBUJA: Record<string, [string, string]> = { cliente: ['Cliente', 'persona'], ia: ['Agente IA', 'ia'], humano: ['Equipo', 'persona'], nota: ['Nota interna', 'nota'], sistema: ['Sistema', 'info'] };
+
+function tipoDe(m: any): string {
   if (m.tipo === 'NOTA_INTERNA') return 'nota';
   return m.remitente === 'CUSTOMER' ? 'cliente' : m.remitente === 'AI' ? 'ia' : m.remitente === 'HUMAN' ? 'humano' : 'sistema';
 }
-
-const ACCION_CASO: Record<string, string> = { crear: 'Se creó el radicado', tomar: 'Lo tomó', reasignar: 'Se reasignó', prioridad: 'Cambió la prioridad', responder: 'Primera respuesta', cerrar: 'Se cerró', reabrir: 'Se reabrió', devolver_ia: 'Se devolvió a la IA' };
+const diaDe = (iso: string) => new Date(iso).toLocaleDateString('en-CA');
+function etiquetaDia(iso: string) {
+  const d = diaDe(iso);
+  const hoy = new Date().toLocaleDateString('en-CA');
+  const ayer = new Date(Date.now() - 86_400_000).toLocaleDateString('en-CA');
+  return d === hoy ? 'Hoy' : d === ayer ? 'Ayer' : fecha(iso);
+}
 
 /** Detalle: el asesor entra al mismo hilo; la IA pasa a asistirlo. */
-function Detalle({ id, onCambio, volver }: { id: string; onCambio: () => void; volver: () => void }) {
+function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: string; onCambio: () => void; volver: () => void; detalles: boolean; alternarDetalles: () => void }) {
   const { puede, s } = useSesion();
   const { data, error, recargar } = useApi<any>(() => api.get(`/api/t/conversaciones/${id}`), [id], { cada: 4000 });
   const [texto, setTexto] = useState('');
@@ -107,12 +137,39 @@ function Detalle({ id, onCambio, volver }: { id: string; onCambio: () => void; v
   const [reasignar, setReasignar] = useState(false);
   const [plantilla, setPlantilla] = useState<any>(null);
   const [compartir, setCompartir] = useState(false);
+  const [panelMovil, setPanelMovil] = useState(false);
+  const [nuevos, setNuevos] = useState(false);
   const { run, ocupado } = useAccion();
-  const fin = useRef<HTMLDivElement>(null);
-  useEffect(() => { fin.current?.scrollIntoView({ block: 'end' }); }, [data?.mensajes?.length]);
-  useEffect(() => { setTexto(''); setNota(false); }, [id]);
-  if (error) return <div className="col"><button className="btn sutil solo-movil" onClick={volver}><Icon n="atras" className="" size={16} />Bandeja</button><ErrorCarga error={error} reintentar={recargar} /></div>;
-  if (!data) return <section className="tarjeta"><Cargando filas={8} /></section>;
+  const scroll = useRef<HTMLDivElement>(null);
+  const campo = useRef<HTMLTextAreaElement>(null);
+  const pegado = useRef(true);
+  const vistos = useRef(0);
+  const total = (data?.mensajes?.length ?? 0) + (data?.ejecuciones?.length ?? 0);
+
+  // El hilo baja solo si la persona estaba al final; si está leyendo arriba, aparece «Mensajes nuevos».
+  useLayoutEffect(() => {
+    const el = scroll.current;
+    if (!el || !total) return;
+    if (pegado.current || vistos.current === 0) el.scrollTop = el.scrollHeight;
+    else if (total > vistos.current) setNuevos(true);
+    vistos.current = total;
+  }, [total]);
+  const alDesplazar = () => {
+    const el = scroll.current;
+    if (!el) return;
+    pegado.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+    if (pegado.current) setNuevos(false);
+  };
+  const alFinal = () => { const el = scroll.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); pegado.current = true; setNuevos(false); };
+  useEffect(() => {
+    const el = campo.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+  }, [texto]);
+
+  if (error) return <section className="cv-chat"><div className="cv-pad"><button className="btn sutil solo-movil" onClick={volver}><Icon n="atras" className="" size={16} />Bandeja</button><ErrorCarga error={error} reintentar={recargar} /></div></section>;
+  if (!data) return <section className="cv-chat"><div className="cv-pad"><Cargando filas={8} /></div></section>;
 
   const eventos = [
     ...data.mensajes.map((m: any) => ({ t: 'm', at: m.creado_en, m })),
@@ -123,105 +180,149 @@ function Detalle({ id, onCambio, volver }: { id: string; onCambio: () => void; v
   const nombre = data.cliente.split(' ')[0];
   const accion = async (fn: () => Promise<any>, ok: string) => { const r = await run(fn, ok); if (r) { recargar(); onCambio(); } return r; };
   const enviar = async () => {
-    if (!texto.trim()) return;
+    if (!texto.trim() || ocupado) return;
     const r = await accion(() => api.post(`/api/t/conversaciones/${id}/${nota ? 'nota' : 'responder'}`, { texto }), nota ? 'Nota interna guardada' : 'Mensaje enviado');
-    if (r) setTexto('');
+    if (r) { setTexto(''); pegado.current = true; }
   };
-  const sugerir = async () => { const r = await run(() => api.post(`/api/t/conversaciones/${id}/sugerencia`)); if (r?.sugerencia) setTexto(r.sugerencia); };
+  const teclas = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+    if (e.ctrlKey || e.metaKey || (!e.shiftKey && !tactil())) { e.preventDefault(); enviar(); }
+  };
+  const sugerir = async () => { const r = await run(() => api.post(`/api/t/conversaciones/${id}/sugerencia`)); if (r?.sugerencia) { setTexto(r.sugerencia); if (!tactil()) campo.current?.focus(); } };
   const puedeResponder = puede('conversation:reply') && !s.solo_lectura;
   const ventanaCerrada = data.canal === 'WHATSAPP' && !data.ventana_abierta;
 
+  // Acción principal visible; las demás en el menú «Más acciones».
+  const tomar = casoAbierto && (!caso.asignado_a || caso.asignado_a === s.usuario.id) && !caso.tomado_en && puede('case:manage');
+  const pasar = data.control === 'AI' && data.estado !== 'CERRADA' && puede('case:create');
+  const secundarias: { t: string; i: string; f: () => void; peligro?: boolean }[] = [];
+  if (casoAbierto && puede('case:supervise')) secundarias.push({ t: 'Reasignar o cambiar prioridad', i: 'persona', f: () => setReasignar(true) });
+  if (data.control === 'HUMANO' && data.estado !== 'CERRADA' && puede('case:manage')) secundarias.push({ t: 'Devolver a la IA', i: 'ia', f: () => accion(() => api.post(`/api/t/conversaciones/${id}/devolver-ia`), 'La IA vuelve a atender') });
+  if (data.puede_reabrir && !casoAbierto && puede('case:manage')) secundarias.push({ t: 'Reabrir radicado', i: 'reloj', f: () => setReabrir(true) });
+  if (data.estado !== 'CERRADA' && puede('case:manage')) secundarias.push({ t: 'Cerrar conversación', i: 'ok', f: () => setCerrar(true), peligro: true });
+
+  let diaPrevio = '';
+  const estadoTxt = data.estado === 'CERRADA' ? 'Cerrada' : data.control === 'AI' ? 'La IA está al frente' : caso?.asignado ? `Atiende ${caso.asignado}` : 'Espera a una persona';
+
   return (
-    <div className="detalle-conv">
-      <section className="tarjeta panel-hilo" aria-label={`Conversación con ${data.cliente}`}>
-        <div className="cab">
-          <button className="btn sutil peq icono solo-movil" onClick={volver} aria-label="Volver a la bandeja"><Icon n="atras" className="" size={18} /></button>
-          <div className="conv-cab-txt">
-            <h1 className="titulo-tarjeta" style={{ fontSize: 17 }}>{data.cliente}</h1>
-            <span className="tenue"><span className="mono">{data.telefono}</span> · {data.canal === 'WHATSAPP' ? 'WhatsApp' : 'Web'}</span>
+    <>
+      <section className="cv-chat" aria-label={`Conversación con ${data.cliente}`}>
+        <header className="cv-chat-cab">
+          <button className="cv-icono solo-movil" onClick={volver} aria-label="Volver a la bandeja"><Icon n="atras" className="" size={20} /></button>
+          <Avatar nombre={data.cliente} grande />
+          <div className="cv-chat-quien">
+            <h2 className="cortar">{data.cliente}</h2>
+            <span className="cv-chat-sub"><i className={`cv-estado-punto ${data.estado === 'CERRADA' ? 'gris' : data.control === 'AI' ? 'ia' : 'persona'}`} />{estadoTxt}<span className="cv-sep">·</span><span className="mono">{data.telefono}</span></span>
           </div>
-          <span className="fila envolver" style={{ marginLeft: 'auto', gap: 6 }}>
-            {data.estado === 'CERRADA' ? <Estado v="CERRADA" /> : data.control === 'AI' ? <Estado v="AGENTE" texto="La IA está al frente" /> : <Estado v="PERSONA" texto={caso?.asignado ? `Atiende ${caso.asignado}` : 'Espera a una persona'} />}
-          </span>
-          {/* El radicado se ve siempre, también en móvil, encima del hilo. */}
-          {caso && (
-            <div className="caso-franja" aria-label="Radicado">
-              <span className="id">{caso.radicado}</span><Estado v={caso.estado} />
-              <span className="peq-txt">Prioridad {caso.prioridad.toLowerCase()}</span>
-              <span className="peq-txt">{caso.asignado ? `Responsable: ${caso.asignado}` : 'Sin responsable'}</span>
-              <Sla c={{ caso }} />
-            </div>
-          )}
-          <div className="fila envolver acciones-conv">
-            {casoAbierto && (!caso.asignado_a || caso.asignado_a === s.usuario.id) && !caso.tomado_en && <Escritura permiso="case:manage" modulo="conversaciones"><button className="btn peq primario" disabled={ocupado} onClick={() => accion(() => api.post(`/api/t/casos/${caso.id}/tomar`), 'Radicado asignado a ti')}><Icon n="persona" className="" size={14} />{caso.asignado_a ? 'Aceptar radicado' : 'Tomar radicado'}</button></Escritura>}
-            {data.control === 'AI' && data.estado !== 'CERRADA' && <Escritura permiso="case:create" modulo="conversaciones"><button className="btn peq" disabled={ocupado} onClick={() => accion(() => api.post(`/api/t/conversaciones/${id}/escalar`, { motivo: 'Intervención manual desde el panel', prioridad: 'MEDIA' }), 'La conversación pasó a una persona')}><Icon n="persona" className="" size={14} />Pasar a una persona</button></Escritura>}
-            {casoAbierto && <Escritura permiso="case:supervise" modulo="conversaciones"><button className="btn peq" disabled={ocupado} onClick={() => setReasignar(true)}>Reasignar o prioridad</button></Escritura>}
-            {data.control === 'HUMANO' && data.estado !== 'CERRADA' && <Escritura permiso="case:manage" modulo="conversaciones"><button className="btn peq" disabled={ocupado} onClick={() => accion(() => api.post(`/api/t/conversaciones/${id}/devolver-ia`), 'La IA vuelve a atender')}><Icon n="ia" className="" size={14} />Devolver a la IA</button></Escritura>}
-            {data.estado !== 'CERRADA' && <Escritura permiso="case:manage" modulo="conversaciones"><button className="btn peq sutil" onClick={() => setCerrar(true)}>Cerrar</button></Escritura>}
-            {data.puede_reabrir && !casoAbierto && <Escritura permiso="case:manage" modulo="conversaciones"><button className="btn peq" onClick={() => setReabrir(true)}>Reabrir radicado</button></Escritura>}
+          <div className="cv-chat-acciones">
+            {tomar && <button className="btn peq primario" disabled={ocupado || s.solo_lectura} onClick={() => accion(() => api.post(`/api/t/casos/${caso.id}/tomar`), 'Radicado asignado a ti')}><Icon n="persona" className="" size={14} /><span className="cv-ocultable">{caso.asignado_a ? 'Aceptar' : 'Tomar'}</span></button>}
+            {!tomar && pasar && <button className="btn peq" disabled={ocupado || s.solo_lectura} onClick={() => accion(() => api.post(`/api/t/conversaciones/${id}/escalar`, { motivo: 'Intervención manual desde el panel', prioridad: 'MEDIA' }), 'La conversación pasó a una persona')}><Icon n="persona" className="" size={14} /><span className="cv-ocultable">Pasar a una persona</span></button>}
+            {secundarias.length > 0 && !s.solo_lectura && (
+              <Menu boton={(abrir, abierto) => <button className="cv-icono" onClick={abrir} aria-expanded={abierto} aria-haspopup="menu" aria-label="Más acciones"><Icon n="puntos" className="" size={20} /></button>}>
+                {(cerrarMenu) => <>{tomar && pasar && <button className="opcion" role="menuitem" onClick={() => { cerrarMenu(); accion(() => api.post(`/api/t/conversaciones/${id}/escalar`, { motivo: 'Intervención manual desde el panel', prioridad: 'MEDIA' }), 'La conversación pasó a una persona'); }}><Icon n="persona" className="" size={16} />Pasar a una persona</button>}
+                  {secundarias.map((a) => <button key={a.t} className={`opcion ${a.peligro ? 'peligro' : ''}`} role="menuitem" onClick={() => { cerrarMenu(); a.f(); }}><Icon n={a.i} className="" size={16} />{a.t}</button>)}</>}
+              </Menu>
+            )}
+            <button className={`cv-icono cv-btn-detalles ${detalles ? 'on' : ''}`} onClick={() => { if (window.matchMedia('(max-width: 1280px)').matches) setPanelMovil(true); else alternarDetalles(); }} aria-label={detalles ? 'Ocultar detalles' : 'Ver detalles'} aria-pressed={detalles}><Icon n="info" className="" size={18} /></button>
           </div>
-        </div>
-        <div className="hilo-scroll">
-          <div className="hilo" aria-live="polite" aria-relevant="additions">
+        </header>
+
+        {caso && (
+          <div className={`cv-franja ${casoAbierto ? '' : 'cerrada'}`} aria-label="Radicado">
+            <span className="mono">{caso.radicado}</span>
+            <Estado v={caso.estado} />
+            <span className={`cv-prioridad p-${caso.prioridad.toLowerCase()}`}>Prioridad {caso.prioridad.toLowerCase()}</span>
+            <span className="cv-franja-quien">{caso.asignado ? <><Icon n="persona" className="" size={12} />{caso.asignado}</> : 'Sin responsable'}</span>
+            <Sla c={{ caso }} />
+          </div>
+        )}
+
+        <div className="cv-hilo-scroll" ref={scroll} onScroll={alDesplazar}>
+          <div className="cv-hilo" aria-live="polite" aria-relevant="additions">
             {eventos.map((ev: any) => {
-              if (ev.t === 'e') return <Recibo key={ev.e.id} e={ev.e} compacto />;
+              const dia = diaDe(ev.at);
+              const separador = dia !== diaPrevio ? <div className="cv-dia" key={`d-${dia}`}><span>{etiquetaDia(ev.at)}</span></div> : null;
+              diaPrevio = dia;
+              if (ev.t === 'e') return <Fragment key={ev.e.id}>{separador}<div className="cv-recibo"><Recibo e={ev.e} compacto /></div></Fragment>;
               const m = ev.m;
-              if (m.remitente === 'SYSTEM' && m.tipo === 'NOTA_INTERNA') return <div key={m.id} className="evento-sistema"><Icon n="info" className="" size={13} /> {m.contenido} · {hora(m.creado_en)}</div>;
+              if (m.remitente === 'SYSTEM' && m.tipo === 'NOTA_INTERNA') return <Fragment key={m.id}>{separador}<div className="cv-evento"><Icon n="info" className="" size={13} />{m.contenido}<span>{hora(m.creado_en)}</span></div></Fragment>;
               const tipo = tipoDe(m);
-              const quien = tipo === 'nota' ? m.autor : tipo === 'cliente' ? data.cliente : tipo === 'humano' ? m.autor : undefined;
-              const rol = m.tipo === 'PLANTILLA' ? 'Plantilla' : undefined;
-              const entrega = m.estado_entrega !== 'N/A' ? (
-                <span className={m.estado_entrega === 'FALLIDO' ? 'entrega-fallo' : ''}>{ENTREGA[m.estado_entrega] ?? m.estado_entrega}{m.estado_entrega === 'FALLIDO' && m.error_entrega ? `: ${m.error_entrega}` : ''}</span>
-              ) : tipo === 'nota' ? 'Solo la ve el equipo' : undefined;
+              const [rolTxt, rolIco] = ROL_BURBUJA[tipo];
+              const autor = tipo === 'humano' || tipo === 'nota' ? m.autor : tipo === 'ia' ? 'Agente IA' : null;
+              const fallo = m.estado_entrega === 'FALLIDO';
               return (
-                <Mensaje key={m.id} tipo={tipo} quien={quien} rol={rol} hora={`${fecha(m.creado_en)} ${hora(m.creado_en)}`} meta={entrega}>
-                  {m.tipo === 'MEDIA' ? <Archivo m={m} conv={id} /> : <TextoWhatsApp texto={m.contenido ?? ''} />}
-                </Mensaje>
+                <Fragment key={m.id}>
+                  {separador}
+                  <div className={`cv-msg ${tipo} ${fallo ? 'fallo' : ''}`}>
+                    {(autor || m.tipo === 'PLANTILLA' || tipo === 'sistema') && <span className="cv-msg-autor"><Icon n={rolIco} className="" size={11} />{m.tipo === 'PLANTILLA' ? 'Plantilla' : autor ?? rolTxt}</span>}
+                    <div className="cv-burbuja">
+                      {m.tipo === 'MEDIA' ? <Archivo m={m} conv={id} /> : <TextoWhatsApp texto={m.contenido ?? ''} />}
+                      <span className="cv-msg-meta">
+                        {hora(m.creado_en)}
+                        {m.estado_entrega !== 'N/A' && tipo !== 'cliente' && <span className={`cv-entrega e-${String(m.estado_entrega).toLowerCase()}`} title={ENTREGA[m.estado_entrega] ?? m.estado_entrega}>{MARCA_ENTREGA[m.estado_entrega] ?? (fallo ? '!' : m.estado_entrega === 'SIMULADO' ? '◦' : '…')}</span>}
+                      </span>
+                    </div>
+                    {fallo && <span className="cv-msg-error">No se entregó{m.error_entrega ? `: ${m.error_entrega}` : ''}</span>}
+                    {tipo === 'nota' && <span className="cv-msg-nota-pie">Solo la ve el equipo</span>}
+                  </div>
+                </Fragment>
               );
             })}
-            {data.pendientes.map((p: any) => <div key={p.id} className="recibo pendiente"><span className="ic"><Icon n="reloj" className="" size={14} /></span><span className="que">Esperando que el cliente confirme: <b>{p.resumen}</b></span><Estado v="PENDIENTE_CONFIRMACION" /></div>)}
-            <div ref={fin} />
+            {data.pendientes.map((p: any) => <div key={p.id} className="cv-recibo"><div className="recibo pendiente"><span className="ic"><Icon n="reloj" className="" size={14} /></span><span className="que">Esperando que el cliente confirme: <b>{p.resumen}</b></span><Estado v="PENDIENTE_CONFIRMACION" /></div></div>)}
           </div>
         </div>
+        {nuevos && <button type="button" className="cv-nuevos" onClick={alFinal}><Icon n="abajo" className="" size={14} />Mensajes nuevos</button>}
+
         {data.estado === 'CERRADA' ? (
-          <div className="composer"><span className="tenue peq-txt fila"><Icon n="ok" className="" size={14} />Conversación cerrada. Si el cliente vuelve a escribir, la IA retoma este mismo hilo.</span></div>
+          <div className="cv-composer cv-composer-info"><Icon n="ok" className="" size={15} />Conversación cerrada. Si el cliente vuelve a escribir, la IA retoma este mismo hilo.</div>
         ) : !puedeResponder ? (
-          <div className="composer"><span className="tenue peq-txt fila"><Icon n="candado" className="" size={14} />{s.solo_lectura ? 'Suscripción suspendida: puedes leer el hilo, pero no responder.' : 'Tu rol puede leer esta conversación, pero no responder.'}</span></div>
+          <div className="cv-composer cv-composer-info"><Icon n="candado" className="" size={15} />{s.solo_lectura ? 'Suscripción suspendida: puedes leer el hilo, pero no responder.' : 'Tu rol puede leer esta conversación, pero no responder.'}</div>
         ) : (
-          <div className={`composer ${nota ? 'nota' : ''}`}>
-            <div className="fila entre envolver" style={{ gap: 8 }}>
-              <div className="tabs" role="group" aria-label="Tipo de mensaje">
-                <button type="button" className={!nota ? 'on' : ''} aria-pressed={!nota} onClick={() => setNota(false)}>Responder a {nombre}</button>
-                <button type="button" className={nota ? 'on' : ''} aria-pressed={nota} onClick={() => setNota(true)}><Icon n="nota" className="" size={13} /> Nota interna</button>
-              </div>
-              {puede('ai:assist') && !nota && !ventanaCerrada && <button className="btn peq sutil" disabled={ocupado} onClick={sugerir}><Icon n="ia" className="" size={14} /> Sugerir respuesta</button>}
+          <div className={`cv-composer ${nota ? 'nota' : ''}`}>
+            <div className="cv-modos" role="group" aria-label="Tipo de mensaje">
+              <button type="button" className={!nota ? 'on' : ''} aria-pressed={!nota} onClick={() => setNota(false)}><Icon n="enviar" className="" size={13} />Responder a {nombre}</button>
+              <button type="button" className={nota ? 'on' : ''} aria-pressed={nota} onClick={() => setNota(true)}><Icon n="nota" className="" size={13} />Nota interna</button>
+              {puede('ai:assist') && !nota && !ventanaCerrada && <button type="button" className="cv-sugerir" disabled={ocupado} onClick={sugerir}><Icon n="ia" className="" size={13} />Sugerir con IA</button>}
             </div>
             {ventanaCerrada && !nota ? (
-              <div className="col" style={{ gap: 8 }}>
-                <div className="aviso peq-txt"><Icon n="reloj" className="" size={14} /><span>Pasaron más de 24 horas desde el último mensaje de {nombre}. WhatsApp solo permite escribirle con una plantilla aprobada.</span></div>
-                <div className="fila envolver" style={{ gap: 6 }}>
-                  {data.plantillas.map((p: any) => <button key={p.clave} type="button" className="chip" onClick={() => setPlantilla(p)}>{p.clave.replace(/_/g, ' ')}{p.estado_aprobacion !== 'APROBADA' && ' · sin aprobar'}</button>)}
-                </div>
+              <div className="cv-ventana-24">
+                <p><Icon n="reloj" className="" size={14} />Pasaron más de 24 horas desde el último mensaje de {nombre}. WhatsApp solo permite escribirle con una plantilla aprobada.</p>
+                <div className="cv-plantillas">{data.plantillas.map((p: any) => <button key={p.clave} type="button" className="chip" onClick={() => setPlantilla(p)}>{p.clave.replace(/_/g, ' ')}{p.estado_aprobacion !== 'APROBADA' && ' · sin aprobar'}</button>)}</div>
               </div>
             ) : (
-              <>
-                <textarea className="input" value={texto} maxLength={4000} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (!ocupado) enviar(); } }}
-                  placeholder={nota ? 'Nota visible solo para el equipo' : `Escribe a ${nombre}. Sale por ${data.canal === 'WHATSAPP' ? 'WhatsApp' : 'el canal web'} desde este hilo.`} aria-label={nota ? 'Nota interna' : `Respuesta a ${data.cliente}`} />
-                <div className="fila entre envolver" style={{ gap: 8 }}>
-                  <span className="tenue peq-txt ayuda-composer" style={{ maxWidth: '60ch' }}>{nota ? 'El cliente no recibe la nota.' : data.control === 'AI' ? 'Al responder, tomas la conversación: la IA deja de contestar y queda un radicado a tu nombre.' : 'Responde siempre desde aquí: así el hilo y el tiempo de respuesta quedan registrados.'}</span>
-                  <button className="btn primario" style={{ marginLeft: 'auto' }} disabled={ocupado || !texto.trim()} onClick={enviar}><Icon n={nota ? 'nota' : 'enviar'} className="" size={14} /> {nota ? 'Guardar nota' : 'Enviar'}</button>
-                </div>
-              </>
+              <div className="cv-caja">
+                <textarea ref={campo} rows={1} value={texto} maxLength={4000} onChange={(e) => setTexto(e.target.value)} onKeyDown={teclas}
+                  placeholder={nota ? 'Nota visible solo para el equipo…' : `Escribe a ${nombre}…`} aria-label={nota ? 'Nota interna' : `Respuesta a ${data.cliente}`} />
+                <button type="button" className="cv-enviar" disabled={ocupado || !texto.trim()} onClick={enviar} aria-label={nota ? 'Guardar nota' : 'Enviar'}><Icon n={nota ? 'nota' : 'enviar'} className="" size={18} /></button>
+              </div>
             )}
+            <span className="cv-composer-pie">{nota ? 'El cliente no recibe la nota.' : data.control === 'AI' ? 'Al responder, tomas la conversación: la IA deja de contestar y queda un radicado a tu nombre.' : `Sale por ${data.canal === 'WHATSAPP' ? 'WhatsApp' : 'el canal web'} desde este hilo.`}{!tactil() && <span className="cv-teclas"> · Enter envía · Shift + Enter salta de línea</span>}</span>
           </div>
         )}
       </section>
 
-      <div className="col contexto-conv" style={{ gap: 16 }}>
-        {caso && (
-          <Tarjeta titulo={<span className="id">{caso.radicado}</span>} acciones={<Estado v={caso.estado} />} nivel={caso.estado === 'EN_COLA' ? 3 : 2}>
-            <div className="col" style={{ gap: 12 }}>
-              <dl className="datos-def">
+      <aside className={`cv-detalles ${panelMovil ? 'abierto' : ''}`} aria-label="Detalles de la conversación">
+        <header className="cv-detalles-cab">
+          <b>Detalles</b>
+          <button className="cv-icono" onClick={() => { setPanelMovil(false); if (!window.matchMedia('(max-width: 1280px)').matches) alternarDetalles(); }} aria-label="Cerrar detalles"><Icon n="x" className="" size={18} /></button>
+        </header>
+        <div className="cv-detalles-cuerpo">
+          <div className="cv-perfil">
+            <Avatar nombre={data.cliente} grande />
+            <b>{data.cliente}</b>
+            <span className="mono tenue">{data.telefono}</span>
+            <span>{data.consentimiento_en ? <Estado v="EXITO" texto="Autorizó el tratamiento de datos" /> : <Estado v="PENDIENTE" texto="Sin autorización de datos" />}</span>
+            <Link to={`/clientes?id=${data.customer_id}`} className="btn peq">Ver ficha del cliente</Link>
+          </div>
+          <dl className="cv-datos">
+            <dt>Correo</dt><dd>{data.email ?? <span className="tenue">Sin correo</span>}</dd>
+            <dt>Documento</dt><dd>{data.numero_documento ? <span className="mono">{data.tipo_documento} {data.numero_documento}</span> : 'Consumidor final'}</dd>
+            <dt>Canal</dt><dd>{data.canal === 'WHATSAPP' ? 'WhatsApp' : 'Web'}</dd>
+          </dl>
+          {caso && (
+            <section className="cv-bloque">
+              <h3><span className="mono">{caso.radicado}</span><Estado v={caso.estado} /></h3>
+              <dl className="cv-datos">
                 <dt>Motivo</dt><dd>{caso.motivo}</dd>
                 <dt>Prioridad</dt><dd>{caso.prioridad.toLowerCase()}</dd>
                 <dt>Responder antes</dt><dd>{fecha(caso.sla_vence_en)} {hora(caso.sla_vence_en)}</dd>
@@ -235,31 +336,24 @@ function Detalle({ id, onCambio, volver }: { id: string; onCambio: () => void; v
                   <ol>{data.historial.map((h: any, i: number) => <li key={i}><span className="peq-txt"><b>{ACCION_CASO[h.accion] ?? h.accion}</b>{h.asignado && h.accion !== 'prioridad' ? ` · ${h.asignado}` : ''}{h.detalle?.a && h.accion === 'prioridad' ? ` · ${String(h.detalle.a).toLowerCase()}` : ''}</span><span className="tenue peq-txt">{h.actor_nombre} · {fecha(h.creado_en)} {hora(h.creado_en)}</span></li>)}</ol>
                 </details>
               )}
-            </div>
-          </Tarjeta>
-        )}
-        <Tarjeta titulo="Cliente" acciones={<Link to={`/clientes?id=${data.customer_id}`} className="btn sutil peq">Ver ficha</Link>}>
-          <div className="col" style={{ gap: 8 }}>
-            <dl className="datos-def">
-              <dt>Nombre</dt><dd>{data.cliente}</dd>
-              <dt>Correo</dt><dd>{data.email ?? <span className="tenue">Sin correo</span>}</dd>
-              <dt>Documento</dt><dd>{data.numero_documento ? <span className="mono">{data.tipo_documento} {data.numero_documento}</span> : 'Consumidor final'}</dd>
-            </dl>
-            <span>{data.consentimiento_en ? <Estado v="EXITO" texto="Autorizó el tratamiento de datos" /> : <Estado v="PENDIENTE" texto="Sin autorización de datos" />}</span>
-          </div>
-        </Tarjeta>
-        {data.soporte && <SoporteOmnegia soporte={data.soporte} onCompartir={() => setCompartir(true)} onRetirar={() => accion(() => api.post(`/api/t/conversaciones/${id}/acceso-soporte/revocar`), 'Acceso retirado: soporte ya no puede leerla')} ocupado={ocupado} />}
-        {data.ventas.length > 0 && (
-          <Tarjeta titulo="Compras recientes">
-            <div className="lista">{data.ventas.map((v: any) => <Link key={v.id} to={`/ventas/${v.id}`} className="lista-fila"><span className="mono">#{v.numero}</span><span className="num">{cop(v.total)}</span><Estado v={v.estado_fiscal} /></Link>)}</div>
-          </Tarjeta>
-        )}
-        {data.citas.length > 0 && (
-          <Tarjeta titulo="Citas">
-            <div className="lista">{data.citas.map((c: any) => <div key={c.id} className="lista-fila"><span className="peq-txt" style={{ whiteSpace: 'nowrap' }}>{fecha(c.inicio)} {hora(c.inicio)}</span><span className="tenue cortar">{c.servicio}</span><Estado v={c.estado} /></div>)}</div>
-          </Tarjeta>
-        )}
-      </div>
+            </section>
+          )}
+          {data.ventas.length > 0 && (
+            <section className="cv-bloque">
+              <h3>Compras recientes</h3>
+              <div className="lista">{data.ventas.map((v: any) => <Link key={v.id} to={`/ventas/${v.id}`} className="lista-fila"><span className="mono">#{v.numero}</span><span className="num">{cop(v.total)}</span><Estado v={v.estado_fiscal} /></Link>)}</div>
+            </section>
+          )}
+          {data.citas.length > 0 && (
+            <section className="cv-bloque">
+              <h3>Citas</h3>
+              <div className="lista">{data.citas.map((c: any) => <div key={c.id} className="lista-fila"><span className="peq-txt" style={{ whiteSpace: 'nowrap' }}>{fecha(c.inicio)} {hora(c.inicio)}</span><span className="tenue cortar">{c.servicio}</span><Estado v={c.estado} /></div>)}</div>
+            </section>
+          )}
+          {data.soporte && <SoporteOmnegia soporte={data.soporte} onCompartir={() => setCompartir(true)} onRetirar={() => accion(() => api.post(`/api/t/conversaciones/${id}/acceso-soporte/revocar`), 'Acceso retirado: soporte ya no puede leerla')} ocupado={ocupado} />}
+        </div>
+      </aside>
+      {panelMovil && <div className="cv-velo" onClick={() => setPanelMovil(false)} aria-hidden="true" />}
 
       {cerrar && <Confirmar titulo="Cerrar conversación" riesgo="confirmable" pedirMotivo efecto={<>Se cerrará {caso && casoAbierto ? <>el radicado <span className="id">{caso.radicado}</span> y </> : ''}la conversación. Si el cliente vuelve a escribir, la IA retoma el mismo hilo.</>}
         textoBoton="Cerrar conversación" onCerrar={() => setCerrar(false)} onConfirmar={async (motivo) => { setCerrar(false); await accion(() => api.post(`/api/t/conversaciones/${id}/cerrar`, { motivo }), 'Conversación cerrada'); }} />}
@@ -268,7 +362,7 @@ function Detalle({ id, onCambio, volver }: { id: string; onCambio: () => void; v
       {reasignar && caso && <Reasignar caso={caso} onCerrar={() => setReasignar(false)} onHecho={() => { setReasignar(false); recargar(); onCambio(); }} />}
       {plantilla && <EnviarPlantilla conv={id} p={plantilla} cliente={nombre} onCerrar={() => setPlantilla(null)} onHecho={() => { setPlantilla(null); recargar(); }} />}
       {compartir && <CompartirConSoporte conv={id} cliente={data.cliente} onCerrar={() => setCompartir(false)} onHecho={() => { setCompartir(false); recargar(); }} />}
-    </div>
+    </>
   );
 }
 

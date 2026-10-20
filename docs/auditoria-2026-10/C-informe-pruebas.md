@@ -38,6 +38,14 @@ Las pruebas del WhatsApp pasaban en PGlite y fallaban en PostgreSQL (17 casos) p
 | `propietario.test.ts` (9 casos) | Varias empresas por cuenta, permisos completos del propietario, protección frente a otro administrador, cesión con contraseña y reinicio (simulacro, negativas y aplicado) |
 | Recorrido visual del selector, la cortina de cambio, Configuración y teléfono | 9 de 9, sin errores de consola |
 
+### Rediseño del asistente, conversaciones y tableros (19 de octubre de 2026)
+
+| Comprobación | Resultado |
+|---|---|
+| Foco tras la respuesta del asistente | Teléfono: ya no vuelve al cuadro de texto (no abre el teclado). Portátil: sigue enfocado |
+| Interacciones (enviar con Enter, Shift+Enter, nota interna, menú de acciones, panel de detalles, búsqueda, preguntas de seguimiento; en el teléfono Enter salta de línea, barras ocultas en el chat y volver a la bandeja) | 14 de 14 |
+| Recorrido de 52 páginas (empresa y operador, escritorio y 390 px) | 0 errores, 0 desbordes |
+
 ## Recorridos visuales (Playwright, servidor local aislado)
 
 | Recorrido | Comprobaciones | Resultado |

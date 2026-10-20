@@ -232,8 +232,10 @@ export function PanelLayout() {
   const urgente = (av?.por_atender ?? 0) > 0;
   const textoAviso = av ? [av.sin_leer ? `${av.sin_leer} sin leer` : null, av.por_atender ? `${av.por_atender} ${av.por_atender === 1 ? 'espera' : 'esperan'} a una persona` : null].filter(Boolean).join(' · ') : '';
   const gobierno = GOBIERNO.filter(visible);
-  // El asistente usa toda la ventana (menos el menú): es una conversación, no una página con título.
-  const completa = loc.pathname.startsWith('/asistente');
+  // El asistente y la bandeja usan toda la ventana (menos el menú): son conversaciones, no páginas con título.
+  const completa = loc.pathname.startsWith('/asistente') || loc.pathname.startsWith('/conversaciones');
+  // Dentro de un chat, en el teléfono, el hilo ocupa toda la pantalla (como en WhatsApp): sin barras.
+  const enChat = /^\/conversaciones\/[^/]+/.test(loc.pathname);
   const piloto = puede('conversation:read') && data.simuladores;
   const iniciales = data.usuario.nombre.split(' ').map((w) => w[0]).slice(0, 2).join('');
   const salir = async (todas = false) => { await api.post(todas ? '/api/auth/logout-todas' : '/api/auth/logout').catch(() => {}); guardar('empresa', null); window.location.href = '/entrar'; };
@@ -248,7 +250,7 @@ export function PanelLayout() {
   return (
     <SesionCtx.Provider value={{ s: data, puede, recargar }}>
       <WorkspaceBirth nombre={t.nombre}>
-      <div className={`app ${navAbierta ? 'nav-abierta' : ''} ${completa ? 'app-completa' : ''}`}>
+      <div className={`app ${navAbierta ? 'nav-abierta' : ''} ${completa ? 'app-completa' : ''} ${enChat ? 'app-chat' : ''}`}>
         <a className="saltar" href="#contenido">Saltar al contenido</a>
         <header className="barra-movil">
           <Link to="/" className="contexto" aria-label={`${t.nombre}, inicio`}>{marca}<span className="contexto-txt"><b>{t.nombre}</b><span>{data.usuario.rol_nombre}</span></span></Link>
