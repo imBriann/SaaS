@@ -306,6 +306,7 @@ export class MockLlm implements LlmClient {
     if (input.tarea === 'mapear_columnas') raw = mapColumnsHeuristic(input.datos as any);
     if (input.tarea === 'resumir_caso') raw = summarizeHeuristic(input.datos as any);
     if (input.tarea === 'sugerir_respuesta') raw = suggestHeuristic(input.datos as any);
+    if (input.tarea === 'mejorar_redaccion') raw = mejorarHeuristic(input.datos as any);
     if (input.tarea === 'atender_soporte') raw = soporteHeuristic(input.datos as any);
     if (input.tarea === 'resumir_hilo') {
       const d = input.datos as { previo: string | null; mensajes: { rol: string; contenido: string }[] };
@@ -417,14 +418,68 @@ function summarizeHeuristic(d: { mensajes: { remitente: string; contenido: strin
   };
 }
 
-function suggestHeuristic(d: { mensajes: { remitente: string; contenido: string }[]; cliente: string }) {
-  const ultimo = [...(d?.mensajes ?? [])].reverse().find((m) => m.remitente === 'CUSTOMER')?.contenido ?? '';
+/**
+ * Simulador del copiloto: responde al último mensaje del cliente con los datos que recibe (catálogo,
+ * horarios, radicado). Nunca inventa precios: si no reconoce el servicio, ofrece confirmarlo.
+ */
+function suggestHeuristic(d: any) {
+  const mensajes: { remitente: string; contenido: string }[] = d?.mensajes ?? [];
+  const ultimo: string = d?.ultimo_cliente ?? [...mensajes].reverse().find((m) => m.remitente === 'CUSTOMER' || m.remitente === 'Cliente')?.contenido ?? '';
   const t = normalizeText(ultimo);
-  const nombre = (d?.cliente ?? '').split(' ')[0];
-  let sugerencia = `Hola ${nombre}, soy del equipo. Ya revisé tu caso y te ayudo con gusto.`;
-  if (/reembolso|devolu|cobr/.test(t)) sugerencia = `Hola ${nombre}, lamento lo ocurrido. Revisé tu compra y vamos a gestionar la devolución. ¿Me confirmas el medio de pago que usaste?`;
-  else if (/reclamo|queja|mal/.test(t)) sugerencia = `Hola ${nombre}, gracias por avisarnos y disculpa la experiencia. ¿Me cuentas qué pasó para solucionarlo hoy mismo?`;
-  return { sugerencia };
+  const nombre = String(d?.cliente ?? '').split(' ')[0];
+  const usted = /\busted\b|\bud\b|\bsenor|\bsenora/.test(t);
+  const te = usted ? 'le' : 'te';
+  const catalogo: { nombre: string; precio: number; duracion_min: number | null; disponible: boolean }[] = d?.catalogo ?? [];
+  // El ítem del catálogo que más palabras comparte con el mensaje del cliente.
+  const palabras = (x: string) => normalizeText(x).split(/[^a-z0-9]+/).filter((w) => w.length > 3);
+  const enMensaje = new Set(palabras(ultimo));
+  const item = catalogo.map((p) => ({ p, n: palabras(p.nombre).filter((w) => enMensaje.has(w)).length })).filter((x) => x.n > 0).sort((x, y) => y.n - x.n)[0]?.p;
+  const precio = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
+  const horario: string | undefined = d?.horarios?.[0]?.split(': ')[1];
+  const datos: string[] = [];
+  let intencion = 'Conversar con el equipo';
+  let sugerencia = `Hola ${nombre}, ${usted ? 'gracias por escribirnos' : '¡gracias por escribirnos!'}. Ya leí tu mensaje y ${te} ayudo con gusto. ¿Me ${usted ? 'cuenta' : 'cuentas'} un poco más de lo que necesitas?`;
+  if (/reembolso|devolu|cobr|reclamo|queja|mal servicio|molest/.test(t)) {
+    intencion = 'Presentar un reclamo y que le solucionen';
+    sugerencia = `Hola ${nombre}, lamento mucho lo que pasó y gracias por avisarnos. Ya estoy revisando tu caso${d?.caso?.radicado ? ` (${d.caso.radicado})` : ''} para darte una solución hoy mismo. ¿Me ${usted ? 'confirma' : 'confirmas'} la fecha de la compra y el medio de pago que usaste?`;
+    if (d?.caso?.radicado) datos.push(`Radicado ${d.caso.radicado}`);
+  } else if (item && /precio|cuanto|vale|cuesta|valor|costo/.test(t)) {
+    intencion = `Saber el precio de ${item.nombre}`;
+    sugerencia = `Hola ${nombre}, ${item.nombre.toLowerCase()} ${item.disponible ? `cuesta ${precio(item.precio)}` : `cuesta ${precio(item.precio)}, aunque en este momento está agotado`}${item.duracion_min ? ` y dura unos ${item.duracion_min} minutos` : ''}. ¿${usted ? 'Quiere' : 'Quieres'} que ${te} reserve un espacio?`;
+    datos.push(`${item.nombre} ${precio(item.precio)}`);
+  } else if (/cita|agend|turno|reserv|disponib|espacio/.test(t)) {
+    intencion = 'Agendar una cita';
+    sugerencia = `Hola ${nombre}, ¡claro que sí! ${horario ? `Atendemos ${horario}. ` : ''}¿Qué día y a qué hora ${usted ? 'le' : 'te'} queda mejor${item ? ` para ${item.nombre.toLowerCase()}` : ''}?`;
+    if (horario) datos.push(`Horario: ${horario}`);
+    if (item) datos.push(item.nombre);
+  } else if (/horario|abren|cierran|hasta que hora|atienden/.test(t)) {
+    intencion = 'Conocer el horario de atención';
+    sugerencia = horario ? `Hola ${nombre}, atendemos ${horario}. ¿${usted ? 'Le' : 'Te'} ayudo a agendar?` : `Hola ${nombre}, ya ${te} confirmo el horario de hoy.`;
+    if (horario) datos.push(`Horario: ${horario}`);
+  } else if (/gracias|listo|perfecto|ok\b|vale\b/.test(t)) {
+    intencion = 'Agradecer o confirmar';
+    sugerencia = `Con gusto, ${nombre}. Aquí ${usted ? 'estamos' : 'estamos'} para lo que ${usted ? 'necesite' : 'necesites'}. ¡Que ${usted ? 'tenga' : 'tengas'} un excelente día!`;
+  }
+  return { sugerencia, intencion, datos_usados: datos };
+}
+
+/** Simulador de «mejorar redacción»: corrige abreviaturas, mayúsculas y puntuación sin cambiar el contenido. */
+function mejorarHeuristic(d: any) {
+  const original = String(d?.borrador ?? '').trim();
+  const nombre = String(d?.cliente ?? '').split(' ')[0];
+  const cambios: string[] = [];
+  let x = original.replace(/\s+/g, ' ');
+  const abrev: [RegExp, string][] = [[/\bq\b/gi, 'que'], [/\b(xq|pq|porq)\b/gi, 'porque'], [/\bud\b/gi, 'usted'], [/\btmb\b/gi, 'también'], [/\b(xfa|pls|porfa)\b/gi, 'por favor'], [/\bmsj\b/gi, 'mensaje'], [/\bk\b/gi, 'que'], [/\bta\b/gi, 'está']];
+  let abreviaturas = false;
+  for (const [re, por] of abrev) if (re.test(x)) { x = x.replace(re, por); abreviaturas = true; }
+  if (abreviaturas) cambios.push('Escribí completas las abreviaturas');
+  const conMayus = x.replace(/(^|[.!?]\s+)([a-záéíóúñ])/g, (_m, a, l) => a + l.toUpperCase());
+  if (conMayus !== x) { x = conMayus; cambios.push('Mayúsculas al inicio de cada frase'); }
+  if (!/[.!?…]$/.test(x)) { x += '.'; cambios.push('Puntuación final'); }
+  if (nombre && !/^(hola|buen[oa]s|saludos|hey)\b/i.test(x)) { x = `Hola ${nombre}, ${x.charAt(0).toLowerCase()}${x.slice(1)}`; cambios.push('Saludo con el nombre del cliente'); }
+  if (!/gracias|quedo atent|con gusto|cualquier cosa/i.test(x) && !/\?$/.test(x)) { x += ' Quedo atento a cualquier cosa que necesites.'; cambios.push('Cierre amable'); }
+  if (!cambios.length) cambios.push('El mensaje ya estaba claro: solo se revisó el tono');
+  return { texto: x.slice(0, 4000), cambios };
 }
 
 /** Simulador del asistente de soporte: redacta solo con las revisiones de la cuenta y las guías verificadas. */

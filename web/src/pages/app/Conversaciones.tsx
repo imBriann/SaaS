@@ -139,6 +139,11 @@ function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: str
   const [compartir, setCompartir] = useState(false);
   const [panelMovil, setPanelMovil] = useState(false);
   const [nuevos, setNuevos] = useState(false);
+  // Propuesta del copiloto: se revisa antes de usarla; nunca se envía sola.
+  const [propuesta, setPropuesta] = useState<null | { tipo: 'sugerencia' | 'mejora'; texto: string; nota?: string; detalle: string[]; original?: string }>(null);
+  const [pensando, setPensando] = useState<null | 'sugerencia' | 'mejora'>(null);
+  const [anterior, setAnterior] = useState<string | null>(null);
+  const navegar = useNavigate();
   const { run, ocupado } = useAccion();
   const scroll = useRef<HTMLDivElement>(null);
   const campo = useRef<HTMLTextAreaElement>(null);
@@ -167,6 +172,7 @@ function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: str
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
   }, [texto]);
+  useEffect(() => { setPropuesta(null); setAnterior(null); }, [nota]);
 
   if (error) return <section className="cv-chat"><div className="cv-pad"><button className="btn sutil solo-movil" onClick={volver}><Icon n="atras" className="" size={16} />Bandeja</button><ErrorCarga error={error} reintentar={recargar} /></div></section>;
   if (!data) return <section className="cv-chat"><div className="cv-pad"><Cargando filas={8} /></div></section>;
@@ -188,7 +194,25 @@ function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: str
     if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
     if (e.ctrlKey || e.metaKey || (!e.shiftKey && !tactil())) { e.preventDefault(); enviar(); }
   };
-  const sugerir = async () => { const r = await run(() => api.post(`/api/t/conversaciones/${id}/sugerencia`)); if (r?.sugerencia) { setTexto(r.sugerencia); if (!tactil()) campo.current?.focus(); } };
+  const sugerir = async () => {
+    setPropuesta(null); setPensando('sugerencia');
+    const r = await run(() => api.post(`/api/t/conversaciones/${id}/sugerencia`));
+    setPensando(null);
+    if (r?.sugerencia) setPropuesta({ tipo: 'sugerencia', texto: r.sugerencia, nota: r.intencion, detalle: r.datos_usados ?? [] });
+  };
+  const mejorar = async () => {
+    if (texto.trim().length < 2) return;
+    setPropuesta(null); setPensando('mejora');
+    const r = await run(() => api.post(`/api/t/conversaciones/${id}/mejorar`, { texto }));
+    setPensando(null);
+    if (r?.texto) setPropuesta({ tipo: 'mejora', texto: r.texto, detalle: r.cambios ?? [], original: texto });
+  };
+  const usarPropuesta = () => {
+    if (!propuesta) return;
+    setAnterior(propuesta.tipo === 'mejora' ? propuesta.original ?? null : texto || null);
+    setTexto(propuesta.texto); setPropuesta(null);
+    if (!tactil()) requestAnimationFrame(() => campo.current?.focus());
+  };
   const puedeResponder = puede('conversation:reply') && !s.solo_lectura;
   const ventanaCerrada = data.canal === 'WHATSAPP' && !data.ventana_abierta;
 
@@ -199,6 +223,10 @@ function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: str
   if (casoAbierto && puede('case:supervise')) secundarias.push({ t: 'Reasignar o cambiar prioridad', i: 'persona', f: () => setReasignar(true) });
   if (data.control === 'HUMANO' && data.estado !== 'CERRADA' && puede('case:manage')) secundarias.push({ t: 'Devolver a la IA', i: 'ia', f: () => accion(() => api.post(`/api/t/conversaciones/${id}/devolver-ia`), 'La IA vuelve a atender') });
   if (data.puede_reabrir && !casoAbierto && puede('case:manage')) secundarias.push({ t: 'Reabrir radicado', i: 'reloj', f: () => setReabrir(true) });
+  // Casos extremos: la empresa comparte esta conversación con el soporte de Omnegia (solo lectura, con plazo).
+  if (data.soporte && !data.soporte.acceso) secundarias.push({ t: 'Compartir con soporte de Omnegia', i: 'compartir', f: () => setCompartir(true) });
+  if (data.soporte?.acceso) secundarias.push({ t: 'Retirar acceso de soporte', i: 'candado', f: () => accion(() => api.post(`/api/t/conversaciones/${id}/acceso-soporte/revocar`), 'Acceso retirado: soporte ya no puede leerla') });
+  if (!data.soporte) secundarias.push({ t: 'Pedir ayuda a soporte de Omnegia', i: 'soporte', f: () => navegar('/soporte') });
   if (data.estado !== 'CERRADA' && puede('case:manage')) secundarias.push({ t: 'Cerrar conversación', i: 'ok', f: () => setCerrar(true), peligro: true });
 
   let diaPrevio = '';
@@ -217,7 +245,7 @@ function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: str
           <div className="cv-chat-acciones">
             {tomar && <button className="btn peq primario" disabled={ocupado || s.solo_lectura} onClick={() => accion(() => api.post(`/api/t/casos/${caso.id}/tomar`), 'Radicado asignado a ti')}><Icon n="persona" className="" size={14} /><span className="cv-ocultable">{caso.asignado_a ? 'Aceptar' : 'Tomar'}</span></button>}
             {!tomar && pasar && <button className="btn peq" disabled={ocupado || s.solo_lectura} onClick={() => accion(() => api.post(`/api/t/conversaciones/${id}/escalar`, { motivo: 'Intervención manual desde el panel', prioridad: 'MEDIA' }), 'La conversación pasó a una persona')}><Icon n="persona" className="" size={14} /><span className="cv-ocultable">Pasar a una persona</span></button>}
-            {secundarias.length > 0 && !s.solo_lectura && (
+            {secundarias.length > 0 && (
               <Menu boton={(abrir, abierto) => <button className="cv-icono" onClick={abrir} aria-expanded={abierto} aria-haspopup="menu" aria-label="Más acciones"><Icon n="puntos" className="" size={20} /></button>}>
                 {(cerrarMenu) => <>{tomar && pasar && <button className="opcion" role="menuitem" onClick={() => { cerrarMenu(); accion(() => api.post(`/api/t/conversaciones/${id}/escalar`, { motivo: 'Intervención manual desde el panel', prioridad: 'MEDIA' }), 'La conversación pasó a una persona'); }}><Icon n="persona" className="" size={16} />Pasar a una persona</button>}
                   {secundarias.map((a) => <button key={a.t} className={`opcion ${a.peligro ? 'peligro' : ''}`} role="menuitem" onClick={() => { cerrarMenu(); a.f(); }}><Icon n={a.i} className="" size={16} />{a.t}</button>)}</>}
@@ -237,6 +265,10 @@ function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: str
           </div>
         )}
 
+        {data.soporte?.acceso && (
+          <div className="cv-compartida" role="status"><Icon n="compartir" className="" size={13} /><span>Compartida con soporte de Omnegia hasta el {fechaHora(data.soporte.acceso.expira_en)} · solo lectura</span>
+            <button type="button" onClick={() => accion(() => api.post(`/api/t/conversaciones/${id}/acceso-soporte/revocar`), 'Acceso retirado: soporte ya no puede leerla')}>Retirar</button></div>
+        )}
         <div className="cv-hilo-scroll" ref={scroll} onScroll={alDesplazar}>
           <div className="cv-hilo" aria-live="polite" aria-relevant="additions">
             {eventos.map((ev: any) => {
@@ -282,8 +314,34 @@ function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: str
             <div className="cv-modos" role="group" aria-label="Tipo de mensaje">
               <button type="button" className={!nota ? 'on' : ''} aria-pressed={!nota} onClick={() => setNota(false)}><Icon n="enviar" className="" size={13} />Responder a {nombre}</button>
               <button type="button" className={nota ? 'on' : ''} aria-pressed={nota} onClick={() => setNota(true)}><Icon n="nota" className="" size={13} />Nota interna</button>
-              {puede('ai:assist') && !nota && !ventanaCerrada && <button type="button" className="cv-sugerir" disabled={ocupado} onClick={sugerir}><Icon n="ia" className="" size={13} />Sugerir con IA</button>}
+              {puede('ai:assist') && !nota && !ventanaCerrada && (
+                <span className="cv-ia-botones">
+                  {texto.trim().length >= 2 && <button type="button" className="cv-ia-btn" disabled={!!pensando} onClick={mejorar} title="Corrige y vuelve más amable lo que escribiste, sin cambiar lo que dice"><Icon n="editar" className="" size={13} />Mejorar redacción</button>}
+                  <button type="button" className="cv-ia-btn" disabled={!!pensando} onClick={sugerir} title="Propone una respuesta con los datos de tu negocio"><Icon n="ia" className="" size={13} />Sugerir respuesta</button>
+                </span>
+              )}
             </div>
+            {(pensando || propuesta) && (
+              <div className={`cv-propuesta ${pensando ? 'cargando' : ''}`} role="status" aria-live="polite">
+                <div className="cv-propuesta-cab">
+                  <span className="cv-propuesta-ico" aria-hidden="true"><Icon n={(pensando ?? propuesta?.tipo) === 'mejora' ? 'editar' : 'ia'} className="" size={14} /></span>
+                  <b>{(pensando ?? propuesta?.tipo) === 'mejora' ? 'Redacción mejorada' : 'Respuesta sugerida'}</b>
+                  {propuesta?.nota && <span className="cv-propuesta-nota">Entendí: {propuesta.nota}</span>}
+                  {!pensando && <button type="button" className="cv-propuesta-x" onClick={() => setPropuesta(null)} aria-label="Descartar"><Icon n="x" className="" size={14} /></button>}
+                </div>
+                {pensando ? (
+                  <div className="cv-propuesta-brillo"><i /><i /><i /><span>{pensando === 'mejora' ? `Puliendo tu mensaje para ${nombre}…` : 'Leyendo la conversación, el radicado y tu catálogo…'}</span></div>
+                ) : propuesta && <>
+                  <p className="cv-propuesta-texto">{propuesta.texto}</p>
+                  {propuesta.detalle.length > 0 && <div className="cv-propuesta-datos"><span>{propuesta.tipo === 'mejora' ? 'Cambios:' : 'Con base en:'}</span>{propuesta.detalle.map((d) => <i key={d}>{d}</i>)}</div>}
+                  <div className="cv-propuesta-acciones">
+                    <button type="button" className="btn peq primario" onClick={usarPropuesta}><Icon n="ok" className="" size={14} />Usar este texto</button>
+                    {propuesta.tipo === 'sugerencia' ? <button type="button" className="btn peq" onClick={sugerir}>Otra opción</button> : <button type="button" className="btn peq" onClick={mejorar}>Otra versión</button>}
+                    <span className="tenue peq-txt">Revísalo antes de enviar: no sale hasta que tú lo envíes.</span>
+                  </div>
+                </>}
+              </div>
+            )}
             {ventanaCerrada && !nota ? (
               <div className="cv-ventana-24">
                 <p><Icon n="reloj" className="" size={14} />Pasaron más de 24 horas desde el último mensaje de {nombre}. WhatsApp solo permite escribirle con una plantilla aprobada.</p>
@@ -291,12 +349,13 @@ function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: str
               </div>
             ) : (
               <div className="cv-caja">
-                <textarea ref={campo} rows={1} value={texto} maxLength={4000} onChange={(e) => setTexto(e.target.value)} onKeyDown={teclas}
+                <textarea ref={campo} rows={1} value={texto} maxLength={4000} onChange={(e) => { setTexto(e.target.value); setAnterior(null); }} onKeyDown={teclas}
                   placeholder={nota ? 'Nota visible solo para el equipo…' : `Escribe a ${nombre}…`} aria-label={nota ? 'Nota interna' : `Respuesta a ${data.cliente}`} />
                 <button type="button" className="cv-enviar" disabled={ocupado || !texto.trim()} onClick={enviar} aria-label={nota ? 'Guardar nota' : 'Enviar'}><Icon n={nota ? 'nota' : 'enviar'} className="" size={18} /></button>
               </div>
             )}
-            <span className="cv-composer-pie">{nota ? 'El cliente no recibe la nota.' : data.control === 'AI' ? 'Al responder, tomas la conversación: la IA deja de contestar y queda un radicado a tu nombre.' : `Sale por ${data.canal === 'WHATSAPP' ? 'WhatsApp' : 'el canal web'} desde este hilo.`}{!tactil() && <span className="cv-teclas"> · Enter envía · Shift + Enter salta de línea</span>}</span>
+            <span className="cv-composer-pie">{nota ? 'El cliente no recibe la nota.' : data.control === 'AI' ? 'Al responder, tomas la conversación: la IA deja de contestar y queda un radicado a tu nombre.' : `Sale por ${data.canal === 'WHATSAPP' ? 'WhatsApp' : 'el canal web'} desde este hilo.`}{!tactil() && <span className="cv-teclas"> · Enter envía · Shift + Enter salta de línea</span>}
+              {anterior !== null && <button type="button" className="cv-deshacer" onClick={() => { setTexto(anterior); setAnterior(null); }}>Deshacer</button>}</span>
           </div>
         )}
       </section>
