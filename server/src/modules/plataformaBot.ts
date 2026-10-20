@@ -243,7 +243,7 @@ export const TEXTOS = {
   insistir: 'Entiendo que necesitas una solución. Vamos paso a paso.',
 };
 
-const CATEGORIA: Record<Tema, CategoriaSoporte> = {
+export const CATEGORIA: Record<Tema, CategoriaSoporte> = {
   ACCESO: 'CUENTA', SUSCRIPCION: 'FACTURACION', WHATSAPP: 'WHATSAPP', IA: 'IA', PLANES: 'OTRO', FUNCIONES: 'OTRO', ALTA: 'OTRO', DATOS: 'OTRO', OTRO: 'OTRO',
 };
 export const ASUNTO_TEMA: Record<Tema, string> = {

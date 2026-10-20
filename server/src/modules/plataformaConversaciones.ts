@@ -1,3 +1,4 @@
+import { DELEGABLES, responderConIA } from './plataformaIA.js';
 import type { Database, Tx } from '../db/index.js';
 import { config } from '../config.js';
 import { enqueue } from '../core/events.js';
@@ -144,7 +145,15 @@ export async function procesarPlataforma(db: Database, conversacionId: string, m
   if (prep.omitir) return;
 
   const comercios = await reconocerTelefono(db, prep.conv.telefono);
-  const d = decidir({ texto: prep.texto, tipo: prep.tipo, nombre: prep.conv.nombre_perfil ?? '', estado: (prep.conv.contexto ?? {}) as EstadoDialogo, conocido: comercios.length > 0 });
+  const estadoPrevio = (prep.conv.contexto ?? {}) as EstadoDialogo;
+  let d = decidir({ texto: prep.texto, tipo: prep.tipo, nombre: prep.conv.nombre_perfil ?? '', estado: estadoPrevio, conocido: comercios.length > 0 });
+  // Lo informativo y lo que el gestor no supo resolver lo responde la IA con toda la conversación y la base
+  // de conocimiento de Omnegia. Lo delicado (acceso, contraseñas, pedir una persona) sigue en el gestor.
+  let ia: { tokens: number; motor: string } | null = null;
+  if (prep.tipo === 'TEXTO' && !d.accion && DELEGABLES.has(d.clave)) {
+    const r = await responderConIA(db, { conversacionId, nombre: prep.conv.nombre_perfil ?? '', estado: estadoPrevio, claveGestor: d.clave }).catch(() => null);
+    if (r) { d = r.decision; ia = { tokens: r.tokens, motor: r.motor }; }
+  }
 
   // Acción con efectos fuera de la conversación: la recuperación de acceso real (respuesta uniforme).
   let texto = d.texto;
@@ -172,7 +181,7 @@ export async function procesarPlataforma(db: Database, conversacionId: string, m
       estado = { ...estado, aviso: true, ultima: 'escalar', avisoEsperaEn: new Date().toISOString() };
     }
     if (texto) {
-      await agregarMensajePlataforma(tx, { conversacionId, remitente: 'ASISTENTE', contenido: texto, metadatos: { intencion: d.intencion, clave: d.clave, accion: d.accion?.tipo ?? null, tema: estado.tema ?? null } });
+      await agregarMensajePlataforma(tx, { conversacionId, remitente: 'ASISTENTE', contenido: texto, metadatos: { intencion: d.intencion, clave: d.clave, accion: d.accion?.tipo ?? null, tema: estado.tema ?? null, ...(ia ? { ia: { motor: ia.motor, tokens: ia.tokens } } : {}) } });
     }
     await tx.query(
       `UPDATE plataforma_conversacion SET contexto=$2, empresas_relacionadas=$3::uuid[], tenant_relacionado=coalesce(tenant_relacionado, $4), actualizado_en=now() WHERE id=$1`,
