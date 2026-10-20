@@ -284,7 +284,7 @@ export async function atencionEmpresas(db: Database, op: Operador, q: any) {
          AND ($1::uuid IS NULL OR k.tenant_id=$1) AND (NOT $2 OR k.sla_vence_en < now())
        ORDER BY k.sla_vence_en LIMIT 150`, [empresa, soloVencidos])).rows;
     const accesos = (await tx.query(
-      `SELECT g.id, g.tenant_id, t.nombre AS empresa, g.conversation_id, g.motivo, g.otorgado_por_nombre, g.ticket_numero, g.expira_en, g.creado_en
+      `SELECT g.id, g.tenant_id, t.nombre AS empresa, g.conversation_id, g.motivo, g.otorgado_por_nombre, g.ticket_numero, g.expira_en, g.creado_en, g.puede_responder
        FROM acceso_soporte g JOIN tenant t ON t.id=g.tenant_id WHERE g.revocado_en IS NULL AND g.expira_en > now() AND ($1::uuid IS NULL OR g.tenant_id=$1)
        ORDER BY g.creado_en DESC LIMIT 100`, [empresa])).rows;
     const totales = empresas.reduce((a: any, e: any) => ({

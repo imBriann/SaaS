@@ -676,6 +676,7 @@ export function OpTicket() {
       <Cabecera titulo={t.asunto} sub={<span className="fila" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mono">{t.numero}</span><span>·</span>{t.empresa_id ? <Link to={`/operador/empresas/${t.empresa_id}`}>{t.empresa}</Link> : <span className="tenue">Sin empresa</span>}{t.empresa_sin_verificar && <span className="tenue peq-txt">(relacionada por el teléfono, sin verificar)</span>}<span>·</span><span>{t.categoria_nombre}</span>{t.canal === 'WHATSAPP' && <Estado v="WHATSAPP" />}<Estado v={t.prioridad} /><Estado v={t.estado} texto={ESTADO_TICKET[t.estado]} /></span>}>
         <Link className="btn" to="/operador/soporte"><Icon n="atras" className="" size={16} />Todas</Link>
         {t.canal === 'WHATSAPP' && t.conversacion_id && <Link className="btn primario" to={`/operador/conversaciones/${t.conversacion_id}`}><Icon n="conversaciones" className="" size={16} />Abrir la conversación</Link>}
+        {data.compartida && <Link className="btn primario" to={`/operador/atencion/conversaciones/${data.compartida.conversation_id}`}><Icon n="conversaciones" className="" size={16} />{data.compartida.puede_responder ? 'Abrir la conversación del cliente y responder' : 'Leer la conversación compartida'}</Link>}
         {gestionar && t.estado !== 'CERRADO' && <button className="btn" disabled={ocupado} onClick={async () => { await run(() => api.patch(`/api/operador/soporte/${t.id}`, { estado: 'CERRADO' }), 'Solicitud cerrada.'); recargar(); }}>Cerrar</button>}
       </Cabecera>
       <div className="grid g-main">
