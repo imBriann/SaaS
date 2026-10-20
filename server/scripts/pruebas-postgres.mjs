@@ -11,7 +11,7 @@ import { join } from 'node:path';
 
 const ARCHIVOS = process.env.ARCHIVOS ? process.env.ARCHIVOS.split(',') : ['test/isolation.test.ts', 'test/acceso.test.ts', 'test/postgres.test.ts', 'test/negocio.test.ts', 'test/canal.test.ts', 'test/correo.test.ts', 'test/operador.test.ts', 'test/institucional.test.ts', 'test/pagos.test.ts', 'test/documentos.test.ts', 'test/ia-registro.test.ts', 'test/registro-prioridades.test.ts',
   // Atención por WhatsApp, agente, pagos y catálogo: dependen de fechas y roles que PGlite no reproduce igual.
-  'test/plataforma-whatsapp.test.ts', 'test/agente-conversacion.test.ts', 'test/pagos-ventas.test.ts', 'test/catalogo-asistente.test.ts', 'test/soporte-ia.test.ts', 'test/propietario.test.ts', 'test/copiloto.test.ts', 'test/soporte-responde.test.ts', 'test/avisos.test.ts'];
+  'test/plataforma-whatsapp.test.ts', 'test/agente-conversacion.test.ts', 'test/pagos-ventas.test.ts', 'test/catalogo-asistente.test.ts', 'test/soporte-ia.test.ts', 'test/propietario.test.ts', 'test/copiloto.test.ts', 'test/soporte-responde.test.ts', 'test/avisos.test.ts', 'test/plataforma-ia.test.ts'];
 
 let url = process.env.DATABASE_URL_PRUEBAS;
 let detener = async () => {};

@@ -65,6 +65,14 @@ Las pruebas del WhatsApp pasaban en PGlite y fallaban en PostgreSQL (17 casos) p
 | `npm run test:postgres` | **292 de 292** en 21 archivos |
 | Navegador de punta a punta (empresa pide ayuda → soporte responde → la empresa ve «Soporte de Omnegia») | 6 de 6, sin errores |
 
+### WhatsApp de Omnegia con IA (19 de octubre de 2026)
+
+| Comprobación | Resultado |
+|---|---|
+| `plataforma-ia.test.ts` (9 casos): base de conocimiento con datos reales, la conversación de la captura («planes» → «sí» → módulos), contexto completo al modelo, contraseñas y recuperación siguen en el gestor, modelo caído, URL fuera de la lista cerrada, derivación decidida por la IA y petición de correo | 9 de 9 |
+| `plataforma-whatsapp.test.ts` (flujos anteriores sin cambios) | 27 de 27 |
+| Evaluación con Claude real sobre una base en memoria (sin producción) | Explica cada módulo con su precio, calcula el estimado ($107.000 para barbería con agenda y WhatsApp con IA), aclara que la renovación usa el nivel asignado, rechaza temas ajenos y no revela datos de cuentas |
+
 ## Recorridos visuales (Playwright, servidor local aislado)
 
 | Recorrido | Comprobaciones | Resultado |

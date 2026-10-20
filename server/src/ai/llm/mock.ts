@@ -1,5 +1,6 @@
 import type { ChatTurn, LlmClient, LoopInput, LoopOutput, StructuredInput, ToolCallOutcome } from './types.js';
 import { normalizeText } from '../../lib/util.js';
+import { MODULE_CATALOG } from '../../onboarding/pricing.js';
 import { addDays, DIAS } from '../../lib/time.js';
 
 /**
@@ -307,6 +308,7 @@ export class MockLlm implements LlmClient {
     if (input.tarea === 'resumir_caso') raw = summarizeHeuristic(input.datos as any);
     if (input.tarea === 'sugerir_respuesta') raw = suggestHeuristic(input.datos as any);
     if (input.tarea === 'mejorar_redaccion') raw = mejorarHeuristic(input.datos as any);
+    if (input.tarea === 'responder_plataforma') raw = plataformaHeuristic(input.datos as any);
     if (input.tarea === 'atender_soporte') raw = soporteHeuristic(input.datos as any);
     if (input.tarea === 'resumir_hilo') {
       const d = input.datos as { previo: string | null; mensajes: { rol: string; contenido: string }[] };
@@ -461,6 +463,28 @@ function suggestHeuristic(d: any) {
     sugerencia = `Con gusto, ${nombre}. Aquí ${usted ? 'estamos' : 'estamos'} para lo que ${usted ? 'necesite' : 'necesites'}. ¡Que ${usted ? 'tenga' : 'tengas'} un excelente día!`;
   }
   return { sugerencia, intencion, datos_usados: datos };
+}
+
+/**
+ * Simulador del WhatsApp de Omnegia: responde con el catálogo de módulos y sus tarifas (las mismas del
+ * configurador) cuando preguntan por módulos o precios, también cuando la persona responde «sí» a la oferta
+ * de contarle los módulos. Para lo demás no devuelve respuesta y decide el gestor de diálogo.
+ */
+function plataformaHeuristic(d: any) {
+  const hist: { remitente: string; contenido: string }[] = d?.historial ?? [];
+  const ultimo = normalizeText([...hist].reverse().find((m) => m.remitente === 'CLIENTE')?.contenido ?? '');
+  const previo = normalizeText([...hist].reverse().find((m) => m.remitente === 'ASISTENTE')?.contenido ?? '');
+  const afirma = /^(si|claro|dale|ok|bueno|listo|por favor)\b/.test(ultimo.trim());
+  const modulos = /modulo|incluye|que tiene|funciones|que hace/.test(ultimo) || (afirma && /modulo/.test(previo));
+  const precios = /precio|cuanto (cuesta|vale|cobra|sale)|plan(es)?\b|tarifa|costo/.test(ultimo);
+  // Datos de una empresa (ventas, NIT…): nunca se responden aquí; decide el gestor.
+  if (/vendi|facturo|\bnit\b|datos de|clientes de/.test(ultimo)) return { respuesta: '' };
+  if (!modulos && !precios) return { respuesta: '' };
+  const url = (fin: string) => (d?.paginas ?? []).find((p: any) => p.ruta.endsWith(fin))?.ruta ?? '';
+  const saludo = d?.saludado ? '' : `${d?.visto ? 'Hola de nuevo' : 'Hola'}${d?.nombre ? `, ${d.nombre}` : ''}. Soy el asistente virtual de Omnegia.\n\n`;
+  const lineas = MODULE_CATALOG.map((m) => `• *${m.nombre}*: ${m.descripcion} ${m.precio ? `$${m.precio.toLocaleString('es-CO')} al mes.` : 'Incluido en la base.'}${m.id === 'facturacion' ? ' Requiere conectar un proveedor autorizado por la DIAN.' : ''}`);
+  const respuesta = `${saludo}${precios ? 'Así se calcula el valor en el configurador: una base de $29.000 al mes (incluye Clientes y Catálogo) más los módulos que elijas:' : 'Estos son los módulos de Omnegia (agenda, ventas, WhatsApp con IA y más), con su valor en el configurador sobre una base de $29.000 al mes:'}\n${lineas.join('\n')}\n\nLas tarifas del configurador son de demostración. Puedes armar tu configuración en ${url('/planes')} y ver el recorrido en ${url('/producto')}. ¿Cuáles te interesan para tu negocio?`;
+  return { respuesta, tema: precios ? 'PLANES' : 'FUNCIONES', siguiente: 'conversar', motivo_persona: '' };
 }
 
 /** Simulador de «mejorar redacción»: corrige abreviaturas, mayúsculas y puntuación sin cambiar el contenido. */
