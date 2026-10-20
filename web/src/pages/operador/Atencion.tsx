@@ -373,10 +373,19 @@ export function OpAtencionEmpresas() {
   );
 }
 
-/** Lectura de una conversación que la empresa compartió. Solo lectura; cada apertura queda en ambas auditorías. */
+/**
+ * Conversación que la empresa compartió con soporte. Siempre se puede leer mientras el acceso esté
+ * vigente; responder al cliente solo si la empresa lo autorizó («leer y responder»). Cada apertura y
+ * cada respuesta quedan en la auditoría del operador y en la de la empresa.
+ */
 export function OpConversacionCompartida() {
   const { id } = useParams();
-  const { data, error, recargar } = useApi<any>(() => api.get(`/api/operador/atencion-empresas/conversaciones/${id}`), [id]);
+  const { yo, puede } = useYo();
+  const { data, error, cargando, recargar } = useApi<any>(() => api.get(`/api/operador/atencion-empresas/conversaciones/${id}`), [id]);
+  const [texto, setTexto] = useState('');
+  const { run, ocupado } = useAccion();
+  const fin = useRef<HTMLDivElement>(null);
+  useEffect(() => { fin.current?.scrollIntoView({ block: 'end' }); }, [data?.mensajes?.length]);
   if (error) {
     return <>
       <Cabecera titulo="Conversación compartida"><Link className="btn" to="/operador/atencion"><Icon n="atras" className="" size={16} />Atención de las empresas</Link></Cabecera>
@@ -385,24 +394,53 @@ export function OpConversacionCompartida() {
   }
   if (!data) return <Cargando filas={8} />;
   const tipo = (m: any): TipoMensaje => (m.tipo === 'NOTA_INTERNA' ? 'nota' : m.remitente === 'CUSTOMER' ? 'cliente' : m.remitente === 'AI' ? 'ia' : m.remitente === 'HUMAN' ? 'humano' : 'sistema');
+  const responde = !!data.acceso?.puede_responder && puede('atencion:responder_autorizadas');
+  const enviar = async () => {
+    if (!texto.trim() || ocupado) return;
+    const r = await run(() => api.post(`/api/operador/atencion-empresas/conversaciones/${id}/responder`, { texto }), 'Respuesta enviada al cliente');
+    if (r) { setTexto(''); recargar(); }
+  };
   return (
     <>
       <Cabecera titulo={`${data.empresa} · ${data.cliente}`} sub={<span className="fila envolver" style={{ gap: 8 }}><span className="mono">{data.telefono}</span><span>·</span><span>{data.canal === 'WHATSAPP' ? 'WhatsApp' : 'Web'}</span><Estado v={data.estado} /></span>}>
+        <button className="btn" disabled={cargando} onClick={recargar}><Icon n="reloj" className="" size={16} />Actualizar</button>
         <Link className="btn" to="/operador/atencion"><Icon n="atras" className="" size={16} />Atención de las empresas</Link>
       </Cabecera>
       <div className="col" style={{ gap: 16 }}>
-        <div className="aviso peq-txt"><Icon n="candado" className="" size={14} /><span>Solo lectura. {data.acceso ? <>La compartió {data.acceso.otorgado_por_nombre} el {fechaHora(data.acceso.creado_en)} hasta el {fechaHora(data.acceso.expira_en)}: «{data.acceso.motivo}».</> : null} Esta lectura quedó registrada en tu auditoría y en la de la empresa.</span></div>
+        <div className={`op-acceso ${data.acceso?.puede_responder ? 'responde' : ''}`}>
+          <Icon n={data.acceso?.puede_responder ? 'conversaciones' : 'candado'} className="" size={16} />
+          <span>
+            <b>{data.acceso?.puede_responder ? 'Puedes leer y responder al cliente.' : 'Solo lectura.'}</b>{' '}
+            {data.acceso ? <>La compartió {data.acceso.otorgado_por_nombre} el {fechaHora(data.acceso.creado_en)} hasta el {fechaHora(data.acceso.expira_en)}: «{data.acceso.motivo}»{data.acceso.ticket_numero ? ` · solicitud ${data.acceso.ticket_numero}` : ''}.</> : null} Cada lectura y respuesta queda en tu auditoría y en la de la empresa.
+          </span>
+        </div>
         <div className="grid g-main" style={{ alignItems: 'start' }}>
-          <section className="tarjeta" aria-label="Mensajes">
+          <section className="tarjeta op-chat" aria-label="Mensajes">
             <div className="hilo" style={{ padding: 20 }}>
               {data.mensajes.length === 0 && <Vacio titulo="Sin mensajes" />}
               {data.mensajes.map((m: any) => (
-                <Mensaje key={m.id} tipo={tipo(m)} quien={tipo(m) === 'cliente' ? data.cliente : undefined} hora={`${fecha(m.creado_en)} ${hora(m.creado_en)}`}
+                <Mensaje key={m.id} tipo={m.de_soporte ? 'humano' : tipo(m)} rol={m.de_soporte ? 'Soporte de Omnegia' : undefined}
+                  quien={tipo(m) === 'cliente' ? data.cliente : m.de_soporte ? m.operador : undefined} hora={`${fecha(m.creado_en)} ${hora(m.creado_en)}`}
                   meta={m.estado_entrega && m.estado_entrega !== 'N/A' ? (ENTREGA[m.estado_entrega] ?? m.estado_entrega) + (m.estado_entrega === 'FALLIDO' && m.error_entrega ? `: ${m.error_entrega}` : '') : undefined}>
                   {m.tipo === 'MEDIA' ? <span className="tenue">Archivo adjunto (soporte no puede abrirlo).{m.contenido ? ` ${m.contenido}` : ''}</span> : <TextoWhatsApp texto={m.contenido ?? ''} />}
                 </Mensaje>
               ))}
+              <div ref={fin} />
             </div>
+            {responde && (
+              data.estado === 'CERRADA' ? <div className="op-chat-pie tenue peq-txt"><Icon n="ok" className="" size={14} />La empresa cerró esta conversación.</div>
+              : !data.ventana_abierta ? <div className="op-chat-pie tenue peq-txt"><Icon n="reloj" className="" size={14} />Pasaron más de 24 horas desde el último mensaje del cliente: WhatsApp no permite escribirle sin una plantilla de la empresa.</div>
+              : (
+                <div className="op-chat-pie">
+                  <div className="cv-caja">
+                    <textarea rows={2} value={texto} maxLength={4000} onChange={(e) => setTexto(e.target.value)} placeholder={`Escribe a ${String(data.cliente).split(' ')[0]}…`} aria-label="Respuesta al cliente"
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); enviar(); } }} />
+                    <button type="button" className="cv-enviar" disabled={ocupado || !texto.trim()} onClick={enviar} aria-label="Enviar"><Icon n="enviar" className="" size={18} /></button>
+                  </div>
+                  <span className="tenue peq-txt">Sale por el WhatsApp de {data.empresa}; en su panel aparece como «Soporte de Omnegia» ({yo.nombre}). Enter envía.</span>
+                </div>
+              )
+            )}
           </section>
           {data.caso && (
             <Tarjeta titulo={<span className="id">{data.caso.radicado}</span>} acciones={<Estado v={data.caso.estado} />}>

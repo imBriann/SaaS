@@ -2,7 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEv
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, cop, descargar, fecha, fechaHora, guardar, hace, hora, leer } from '../../api';
 import { Escritura, Menu, useSesion } from '../../components/Layout';
-import { Campo, Cargando, Confirmar, ErrorCarga, Estado, Modal, Recibo, Tarjeta, useAccion, useApi, useRetardo, Vacio } from '../../components/ui';
+import { Campo, Cargando, Confirmar, ErrorCarga, Estado, Modal, Recibo, Tarjeta, useAccion, useApi, useRetardo, useToast, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import { TextoWhatsApp } from '../../components/Markdown';
 
@@ -224,8 +224,8 @@ function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: str
   if (data.control === 'HUMANO' && data.estado !== 'CERRADA' && puede('case:manage')) secundarias.push({ t: 'Devolver a la IA', i: 'ia', f: () => accion(() => api.post(`/api/t/conversaciones/${id}/devolver-ia`), 'La IA vuelve a atender') });
   if (data.puede_reabrir && !casoAbierto && puede('case:manage')) secundarias.push({ t: 'Reabrir radicado', i: 'reloj', f: () => setReabrir(true) });
   // Casos extremos: la empresa comparte esta conversación con el soporte de Omnegia (solo lectura, con plazo).
-  if (data.soporte && !data.soporte.acceso) secundarias.push({ t: 'Compartir con soporte de Omnegia', i: 'compartir', f: () => setCompartir(true) });
-  if (data.soporte?.acceso) secundarias.push({ t: 'Retirar acceso de soporte', i: 'candado', f: () => accion(() => api.post(`/api/t/conversaciones/${id}/acceso-soporte/revocar`), 'Acceso retirado: soporte ya no puede leerla') });
+  if (data.soporte && !data.soporte.acceso) secundarias.push({ t: 'Pedir ayuda a Omnegia', i: 'soporte', f: () => setCompartir(true) });
+  if (data.soporte?.acceso) secundarias.push({ t: 'Retirar el acceso de Omnegia', i: 'candado', f: () => accion(() => api.post(`/api/t/conversaciones/${id}/acceso-soporte/revocar`), 'Acceso retirado: soporte ya no puede leerla') });
   if (!data.soporte) secundarias.push({ t: 'Pedir ayuda a soporte de Omnegia', i: 'soporte', f: () => navegar('/soporte') });
   if (data.estado !== 'CERRADA' && puede('case:manage')) secundarias.push({ t: 'Cerrar conversación', i: 'ok', f: () => setCerrar(true), peligro: true });
 
@@ -266,7 +266,7 @@ function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: str
         )}
 
         {data.soporte?.acceso && (
-          <div className="cv-compartida" role="status"><Icon n="compartir" className="" size={13} /><span>Compartida con soporte de Omnegia hasta el {fechaHora(data.soporte.acceso.expira_en)} · solo lectura</span>
+          <div className="cv-compartida" role="status"><Icon n="compartir" className="" size={13} /><span>Soporte de Omnegia está ayudando{data.soporte.acceso.ticket_numero ? ` (${data.soporte.acceso.ticket_numero})` : ''} · {data.soporte.acceso.puede_responder ? 'puede leer y responder al cliente' : 'solo lectura'} hasta el {fechaHora(data.soporte.acceso.expira_en)}</span>
             <button type="button" onClick={() => accion(() => api.post(`/api/t/conversaciones/${id}/acceso-soporte/revocar`), 'Acceso retirado: soporte ya no puede leerla')}>Retirar</button></div>
         )}
         <div className="cv-hilo-scroll" ref={scroll} onScroll={alDesplazar}>
@@ -278,14 +278,15 @@ function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: str
               if (ev.t === 'e') return <Fragment key={ev.e.id}>{separador}<div className="cv-recibo"><Recibo e={ev.e} compacto /></div></Fragment>;
               const m = ev.m;
               if (m.remitente === 'SYSTEM' && m.tipo === 'NOTA_INTERNA') return <Fragment key={m.id}>{separador}<div className="cv-evento"><Icon n="info" className="" size={13} />{m.contenido}<span>{hora(m.creado_en)}</span></div></Fragment>;
+              const soporte = m.metadatos?.soporte_omnegia === true;
               const tipo = tipoDe(m);
               const [rolTxt, rolIco] = ROL_BURBUJA[tipo];
-              const autor = tipo === 'humano' || tipo === 'nota' ? m.autor : tipo === 'ia' ? 'Agente IA' : null;
+              const autor = soporte ? `Soporte de Omnegia${m.metadatos?.operador ? ` · ${m.metadatos.operador}` : ''}` : tipo === 'humano' || tipo === 'nota' ? m.autor : tipo === 'ia' ? 'Agente IA' : null;
               const fallo = m.estado_entrega === 'FALLIDO';
               return (
                 <Fragment key={m.id}>
                   {separador}
-                  <div className={`cv-msg ${tipo} ${fallo ? 'fallo' : ''}`}>
+                  <div className={`cv-msg ${tipo} ${soporte ? 'soporte' : ''} ${fallo ? 'fallo' : ''}`}>
                     {(autor || m.tipo === 'PLANTILLA' || tipo === 'sistema') && <span className="cv-msg-autor"><Icon n={rolIco} className="" size={11} />{m.tipo === 'PLANTILLA' ? 'Plantilla' : autor ?? rolTxt}</span>}
                     <div className="cv-burbuja">
                       {m.tipo === 'MEDIA' ? <Archivo m={m} conv={id} /> : <TextoWhatsApp texto={m.contenido ?? ''} />}
@@ -433,10 +434,10 @@ function SoporteOmnegia({ soporte, onCompartir, onRetirar, ocupado }: { soporte:
   const a = soporte.acceso;
   const lecturas: string[] = soporte.lecturas ?? [];
   return (
-    <Tarjeta titulo="Soporte de Omnegia" acciones={a ? <Estado v="PENDIENTE" texto="Compartida" /> : <Estado v="CERRADA" texto="Privada" />}>
+    <Tarjeta titulo="Soporte de Omnegia" acciones={a ? <Estado v="PENDIENTE" texto={a.puede_responder ? 'Puede responder' : 'Solo lectura'} /> : <Estado v="CERRADA" texto="Privada" />}>
       <div className="col" style={{ gap: 10 }}>
         {a ? <>
-          <span className="peq-txt">El soporte puede leer esta conversación hasta el <b>{fechaHora(a.expira_en)}</b>. No puede responder al cliente ni cambiar nada.</span>
+          <span className="peq-txt">{a.puede_responder ? <>Soporte puede leer esta conversación y responderle al cliente hasta el <b>{fechaHora(a.expira_en)}</b>. No puede cambiar nada más.</> : <>Soporte puede leer esta conversación hasta el <b>{fechaHora(a.expira_en)}</b>. No puede responder al cliente ni cambiar nada.</>}</span>
           <dl className="datos-def">
             <dt>Motivo</dt><dd>{a.motivo}</dd>
             {a.ticket_numero && <><dt>Solicitud</dt><dd className="mono">{a.ticket_numero}</dd></>}
@@ -444,8 +445,8 @@ function SoporteOmnegia({ soporte, onCompartir, onRetirar, ocupado }: { soporte:
           </dl>
           <Escritura permiso="tenant:configure"><button className="btn peq peligro" style={{ alignSelf: 'flex-start' }} disabled={ocupado} onClick={onRetirar}>Retirar acceso ahora</button></Escritura>
         </> : <>
-          <span className="peq-txt sec">El equipo de Omnegia no puede leer tus conversaciones. Si pediste ayuda sobre esta, compártela con soporte por un tiempo limitado.</span>
-          <Escritura permiso="tenant:configure"><button className="btn peq" style={{ alignSelf: 'flex-start' }} onClick={onCompartir}><Icon n="compartir" className="" size={14} />Compartir con soporte</button></Escritura>
+          <span className="peq-txt sec">El equipo de Omnegia no puede leer tus conversaciones. En un caso difícil, pide ayuda: compartes solo esta, por un tiempo limitado, y eliges si soporte puede responder.</span>
+          <Escritura permiso="tenant:configure"><button className="btn peq" style={{ alignSelf: 'flex-start' }} onClick={onCompartir}><Icon n="soporte" className="" size={14} />Pedir ayuda a Omnegia</button></Escritura>
         </>}
         {lecturas.length > 0 && <span className="tenue peq-txt">Soporte la abrió {lecturas.length === 1 ? 'una vez' : `${lecturas.length} veces`}; la última {hace(lecturas[0])}.</span>}
       </div>
@@ -454,21 +455,38 @@ function SoporteOmnegia({ soporte, onCompartir, onRetirar, ocupado }: { soporte:
 }
 
 function CompartirConSoporte({ conv, cliente, onCerrar, onHecho }: { conv: string; cliente: string; onCerrar: () => void; onHecho: () => void }) {
-  const [f, setF] = useState({ motivo: '', horas: 24, ticket: '' });
+  const [f, setF] = useState({ motivo: '', horas: 24, ticket: '', responder: true });
+  const [conTicket, setConTicket] = useState(false);
   const { run, ocupado, error } = useAccion();
+  const toast = useToast();
   const ticketValido = !f.ticket.trim() || /^SOP-\d{6}$/i.test(f.ticket.trim());
   const listo = f.motivo.trim().length >= 10 && ticketValido;
+  const enviar = async () => {
+    const r = await run(() => api.post(`/api/t/conversaciones/${conv}/acceso-soporte`, { motivo: f.motivo.trim(), horas: f.horas, ticket: conTicket ? f.ticket.trim() || null : null, responder: f.responder }), undefined, { silencioso: true });
+    if (r) { toast(r.ticket ? `Listo: solicitud ${r.ticket} enviada a Omnegia` : 'Conversación compartida con soporte'); onHecho(); }
+  };
   return (
-    <Modal titulo="Compartir con soporte de Omnegia" onCerrar={onCerrar} pie={<><button className="btn" onClick={onCerrar}>Cancelar</button>
-      <button className="btn primario" disabled={ocupado || !listo} onClick={async () => { const r = await run(() => api.post(`/api/t/conversaciones/${conv}/acceso-soporte`, { motivo: f.motivo.trim(), horas: f.horas, ticket: f.ticket.trim() || null }), 'Conversación compartida con soporte', { silencioso: true }); if (r) onHecho(); }}>Compartir</button></>}>
+    <Modal titulo="Pedir ayuda a Omnegia" onCerrar={onCerrar} pie={<><button className="btn" onClick={onCerrar}>Cancelar</button>
+      <button className="btn primario" disabled={ocupado || !listo} onClick={enviar}><Icon n="soporte" className="" size={15} />{ocupado ? 'Enviando…' : 'Pedir ayuda'}</button></>}>
       {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
-      <p className="sec" style={{ margin: 0 }}>Soporte podrá <b>leer</b> la conversación con {cliente} (mensajes, nombre y teléfono del cliente) hasta que venza el plazo o retires el acceso. No podrá responder ni ver otras conversaciones.</p>
-      <Campo etiqueta="¿Para qué lo necesita soporte?"><textarea className="input" value={f.motivo} maxLength={300} onChange={(e) => setF({ ...f, motivo: e.target.value })} placeholder="Ej.: el agente le respondió mal el precio al cliente y quiero que revisen qué pasó" /></Campo>
+      <p className="sec" style={{ margin: 0 }}>El equipo de Omnegia recibe tu solicitud y la conversación con {cliente}. Solo esta conversación y solo mientras dure el plazo; puedes retirar el acceso cuando quieras.</p>
+      <Campo etiqueta="¿Qué necesitas que haga soporte?"><textarea className="input" value={f.motivo} maxLength={300} onChange={(e) => setF({ ...f, motivo: e.target.value })} placeholder="Ej.: el cliente reclama un cobro doble y no sé cómo resolverlo; ayúdenme a responderle" /></Campo>
+      <div className="op-permiso" role="radiogroup" aria-label="Qué puede hacer soporte">
+        <button type="button" role="radio" aria-checked={f.responder} className={f.responder ? 'on' : ''} onClick={() => setF({ ...f, responder: true })}>
+          <Icon n="conversaciones" className="" size={18} /><b>Leer y responder</b><span>Soporte puede escribirle al cliente por tu WhatsApp. Sus mensajes se ven en el hilo como «Soporte de Omnegia».</span>
+        </button>
+        <button type="button" role="radio" aria-checked={!f.responder} className={!f.responder ? 'on' : ''} onClick={() => setF({ ...f, responder: false })}>
+          <Icon n="candado" className="" size={18} /><b>Solo leer</b><span>Soporte revisa la conversación y te orienta, pero no le escribe al cliente.</span>
+        </button>
+      </div>
       <div className="grid g2">
         <Campo etiqueta="Por cuánto tiempo"><select className="input" value={f.horas} onChange={(e) => setF({ ...f, horas: Number(e.target.value) })}><option value={24}>24 horas</option><option value={72}>3 días</option><option value={168}>7 días</option></select></Campo>
-        <Campo etiqueta="Número de solicitud" ayuda="opcional" error={ticketValido ? undefined : 'Tiene la forma SOP-000123.'}><input className="input mono" value={f.ticket} maxLength={10} onChange={(e) => setF({ ...f, ticket: e.target.value.toUpperCase() })} placeholder="SOP-000123" /></Campo>
+        <Campo etiqueta="Solicitud" ayuda={conTicket ? 'usa una que ya abriste' : 'se crea una nueva'} error={ticketValido ? undefined : 'Tiene la forma SOP-000123.'}>
+          {conTicket ? <input className="input mono" value={f.ticket} maxLength={10} onChange={(e) => setF({ ...f, ticket: e.target.value.toUpperCase() })} placeholder="SOP-000123" />
+            : <button type="button" className="btn" style={{ width: '100%' }} onClick={() => setConTicket(true)}>Ya tengo una solicitud</button>}
+        </Campo>
       </div>
-      <span className="tenue peq-txt">Cada vez que soporte la abra quedará en la auditoría de tu empresa.</span>
+      <span className="tenue peq-txt">Cada vez que soporte abra o responda esta conversación quedará en la auditoría de tu empresa.</span>
     </Modal>
   );
 }

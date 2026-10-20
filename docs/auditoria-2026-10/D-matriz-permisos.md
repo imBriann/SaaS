@@ -36,6 +36,8 @@ Una misma cuenta puede pertenecer a varias empresas con un rango distinto en cad
 | Auditoría | ✓ | | | |
 | Suscripción | ✓ | | | |
 
+**Pedir ayuda a Omnegia desde una conversación** (`tenant:configure`): abre la solicitud y comparte solo esa conversación por 24 horas, 3 días o 7 días, en modo «solo leer» o «leer y responder». Se retira cuando se quiera; las notas internas nunca se comparten.
+
 **Soporte de Omnegia:** cualquier persona de la empresa puede abrir una consulta. Solo quien la abrió puede marcarla como resuelta o pasarla al equipo; otra empresa recibe 404.
 
 ## 3. Agentes de IA (nunca reciben permisos de dinero, configuración ni auditoría)
@@ -59,6 +61,7 @@ Una misma cuenta puede pertenecer a varias empresas con un rango distinto en cad
 | Responder una conversación que atiende otra persona | ✓ | solo nota interna |
 | Atención de las empresas (solo cifras) | ✓ | ✓ |
 | Leer una conversación que la empresa compartió | ✓ | ✓ |
+| Responder al cliente en una conversación compartida con «leer y responder» (sale por el WhatsApp de la empresa como «Soporte de Omnegia»; nunca con «solo leer», acceso vencido o retirado) | ✓ | ✓ |
 | Verificar el WhatsApp de una empresa con Meta (solo consulta) | ✓ | ✓ |
 | Editar productos, precios, inventario o ventas de una empresa | **Nunca** | **Nunca** |
 

@@ -1,3 +1,4 @@
+import { crearTicket } from './soporte.js';
 import { z } from 'zod';
 import type { Tx } from '../db/index.js';
 import { type Ctx, can, requirePerm, requireWritable } from '../core/context.js';
@@ -232,7 +233,7 @@ export async function conversationDetail(tx: Tx, ctx: Ctx, id: string) {
   // Acceso del soporte de Omnegia a esta conversación: lo concede y lo ve quien administra la empresa.
   const soporte = can(ctx, 'tenant:configure') ? {
     acceso: (await tx.query(
-      `SELECT id, motivo, otorgado_por_nombre, ticket_numero, expira_en, creado_en FROM acceso_soporte WHERE conversation_id=$1 AND revocado_en IS NULL AND expira_en > now() ORDER BY expira_en DESC LIMIT 1`, [id])).rows[0] ?? null,
+      `SELECT id, motivo, otorgado_por_nombre, ticket_numero, expira_en, creado_en, puede_responder FROM acceso_soporte WHERE conversation_id=$1 AND revocado_en IS NULL AND expira_en > now() ORDER BY expira_en DESC LIMIT 1`, [id])).rows[0] ?? null,
     lecturas: (await tx.query(
       `SELECT creado_en FROM audit_event WHERE accion='soporte.conversacion_leida' AND recurso_id=$1 ORDER BY creado_en DESC LIMIT 20`, [id])).rows.map((r) => r.creado_en),
   } : null;
@@ -246,6 +247,8 @@ const AccesoSoporteInput = z.object({
   motivo: z.string().trim().min(10, 'Explica para qué lo necesita soporte (mínimo 10 caracteres).').max(300),
   horas: z.union([z.literal(24), z.literal(72), z.literal(168)], 'Elige por cuánto tiempo.'),
   ticket: z.string().trim().toUpperCase().regex(/^SOP-\d{6}$/, 'El número de solicitud tiene la forma SOP-000123.').optional().nullable().or(z.literal('').transform(() => null)),
+  /** Además de leer, soporte puede escribirle al cliente (con la misma vigencia). */
+  responder: z.boolean().optional().default(false),
 });
 
 /**
@@ -260,14 +263,25 @@ export async function otorgarAccesoSoporte(tx: Tx, ctx: Ctx, conversationId: str
   const v = (await tx.query(`SELECT id FROM conversation WHERE id=$1`, [conversationId])).rows[0];
   if (!v) throw notFound();
   if (d.ticket && !(await tx.query(`SELECT 1 FROM soporte_ticket WHERE numero=$1`, [d.ticket])).rows[0]) throw invalid('No encontramos esa solicitud de soporte en tu empresa.');
+  // Pedir ayuda desde el chat abre la solicitud a Omnegia en el mismo paso (si no se indicó una existente).
+  let ticket = d.ticket ?? null;
+  let ticketId: string | null = null;
+  if (!ticket) {
+    const cliente = (await tx.query(`SELECT c.nombre FROM conversation v JOIN customer c ON c.id=v.customer_id WHERE v.id=$1`, [conversationId])).rows[0]?.nombre ?? 'un cliente';
+    const t = await crearTicket(tx, ctx, {
+      categoria: 'WHATSAPP', prioridad: 'ALTA', asunto: `Ayuda con la conversación de ${cliente}`.slice(0, 120),
+      descripcion: `${d.motivo}\n\nConversación compartida con soporte por ${d.horas} horas (${d.responder ? 'puede leer y responder al cliente' : 'solo lectura'}).`,
+    });
+    ticket = t.numero; ticketId = t.id;
+  }
   await tx.query(`UPDATE acceso_soporte SET revocado_en=now(), revocado_por_nombre=$2 WHERE conversation_id=$1 AND revocado_en IS NULL AND expira_en > now()`, [conversationId, `${ctx.actor.nombre} (reemplazado)`]);
   const id = uuidv7();
   const r = (await tx.query(
-    `INSERT INTO acceso_soporte (id, tenant_id, conversation_id, otorgado_por, otorgado_por_nombre, motivo, ticket_numero, expira_en)
-     VALUES ($1,$2,$3,$4,$5,$6,$7, now() + ($8 || ' hours')::interval) RETURNING expira_en`,
-    [id, ctx.tenantId, conversationId, ctx.actor.id, ctx.actor.nombre, d.motivo, d.ticket ?? null, String(d.horas)])).rows[0];
-  await audit(tx, ctx, { accion: 'soporte.acceso_otorgado', recurso: 'conversation', recursoId: conversationId, resultado: 'EXITO', detalle: { horas: d.horas, ticket: d.ticket ?? null } });
-  return { ok: true, id, expira_en: r.expira_en };
+    `INSERT INTO acceso_soporte (id, tenant_id, conversation_id, otorgado_por, otorgado_por_nombre, motivo, ticket_numero, expira_en, puede_responder)
+     VALUES ($1,$2,$3,$4,$5,$6,$7, now() + ($8 || ' hours')::interval, $9) RETURNING expira_en`,
+    [id, ctx.tenantId, conversationId, ctx.actor.id, ctx.actor.nombre, d.motivo, ticket, String(d.horas), d.responder])).rows[0];
+  await audit(tx, ctx, { accion: 'soporte.acceso_otorgado', recurso: 'conversation', recursoId: conversationId, resultado: 'EXITO', detalle: { horas: d.horas, ticket, responder: d.responder } });
+  return { ok: true, id, expira_en: r.expira_en, ticket, ticket_id: ticketId, puede_responder: d.responder };
 }
 
 export async function revocarAccesoSoporte(tx: Tx, ctx: Ctx, conversationId: string) {
@@ -445,6 +459,34 @@ export async function humanReply(tx: Tx, ctx: Ctx, conversationId: string, texto
     }
   }
   await audit(tx, ctx, { accion: nota ? 'conversacion.nota' : 'conversacion.responder', recurso: 'conversation', recursoId: v.id, resultado: 'EXITO' });
+  return r;
+}
+
+/**
+ * Respuesta del soporte de Omnegia al cliente de una empresa. Solo existe si la empresa compartió la
+ * conversación con permiso para responder y el acceso sigue vigente: se comprueba aquí, dentro de la
+ * transacción de la empresa, aunque la ruta ya lo haya verificado. Sale por el canal de la empresa
+ * marcada como «Soporte de Omnegia» y no cambia el responsable del radicado.
+ */
+export async function respuestaSoporte(tx: Tx, ctx: Ctx, conversationId: string, texto: string, operador: string) {
+  if (!isUuid(conversationId)) throw notFound();
+  const t = texto.trim();
+  if (!t) throw invalid('El mensaje está vacío.');
+  if (t.length > 4000) throw invalid('El mensaje supera 4.000 caracteres.');
+  const g = (await tx.query(
+    `SELECT id FROM acceso_soporte WHERE conversation_id=$1 AND puede_responder AND revocado_en IS NULL AND expira_en > now() ORDER BY expira_en DESC LIMIT 1 FOR UPDATE`, [conversationId])).rows[0];
+  if (!g) throw new AppError('FORBIDDEN', 'La empresa no autorizó a soporte a responder esta conversación o el acceso venció.');
+  const v = (await tx.query(`SELECT * FROM conversation WHERE id=$1 FOR UPDATE`, [conversationId])).rows[0];
+  if (!v) throw notFound();
+  if (v.estado === 'CERRADA') throw new AppError('CONFLICT', 'La empresa cerró esta conversación.');
+  if (v.canal === 'WHATSAPP' && !ventanaAbierta(v.ultimo_mensaje_cliente_en)) {
+    throw new AppError('CONFLICT', 'Pasaron más de 24 horas desde el último mensaje del cliente: WhatsApp solo permite escribirle con una plantilla de la empresa.');
+  }
+  const r = await addMessage(tx, ctx, { conversation_id: v.id, remitente: 'HUMAN', contenido: t, autor_user_id: null, metadatos: { soporte_omnegia: true, operador } });
+  // Con una persona al frente la IA no contesta; el radicado conserva su responsable.
+  await tx.query(`UPDATE conversation SET control='HUMANO', estado='ESCALADA' WHERE id=$1`, [v.id]);
+  await tx.query(`UPDATE support_case SET primera_respuesta_en=coalesce(primera_respuesta_en, now()) WHERE conversation_id=$1 AND estado <> 'CERRADO'`, [v.id]);
+  await audit(tx, ctx, { accion: 'soporte.respuesta_enviada', recurso: 'conversation', recursoId: v.id, resultado: 'EXITO', detalle: { operador } });
   return r;
 }
 

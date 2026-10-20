@@ -70,6 +70,7 @@ export async function registerOperatorRoutes(app: FastifyInstance, db: Database)
   // Atención de las empresas: indicadores sin contenido y lectura solo con autorización de la empresa.
   r('GET', '/atencion-empresas', (o, req) => atencion.atencionEmpresas(db, o, req.query));
   r('GET', '/atencion-empresas/conversaciones/:id', (o, req) => atencion.leerConversacionAutorizada(db, o, req.params.id));
+  r('POST', '/atencion-empresas/conversaciones/:id/responder', (o, req) => atencion.responderConversacionAutorizada(db, o, req.params.id, req.body));
 
   r('GET', '/soporte', (o, req) => op.listarTickets(db, o, req.query));
   r('GET', '/soporte/:id', (o, req) => op.verTicket(db, o, req.params.id));
