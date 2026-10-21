@@ -5,7 +5,7 @@ import { RegistrationData } from '../../components/RegistrationData';
 import { RegistrationCompletion } from '../../components/RegistrationCompletion';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { api, ApiError, cop, descargarDocumentos, guardar, irAEmpresa, leer, slugDelHost } from '../../api';
+import { api, ApiError, cop, descargarDocumentos, direccionEmpresa, guardar, irAEmpresa, leer, slugDelHost } from '../../api';
 import { debeConsultar, faseCierre, pasosCumplidos, type FaseCierre } from './cierre';
 import { faseRecibo, reciboEnCurso, type FaseRecibo } from './recibo';
 import { useFaseMinima, useRevelado } from './ritmo';
@@ -757,11 +757,12 @@ export function Empresas() {
         {s.empresas.map((e: any) => (
           <button key={e.id} className="btn fila" style={{ justifyContent: 'flex-start', height: 'auto', padding: '10px 14px', gap: 12 }} onClick={() => irAEmpresa(e.slug, volver ?? '/', nav)}>
             <span style={{ width: 32, height: 32, borderRadius: 8, background: e.tema?.acento ?? 'var(--tinta-3)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 600, fontSize: 13, flex: 'none' }} aria-hidden="true">{e.tema?.monograma}</span>
-            <span style={{ textAlign: 'left', minWidth: 0 }}><b>{e.nombre}</b><br /><span className="tenue peq-txt">{e.rol} · {e.slug}.localhost</span></span>
+            <span style={{ textAlign: 'left', minWidth: 0 }}><b>{e.nombre}</b><br /><span className="tenue peq-txt">{e.propietario ? 'Propietario' : e.rol} · {direccionEmpresa(e.slug)}</span></span>
             <Icon n="derecha" className="" size={16} />
           </button>
         ))}
         {s.usuario.rol_plataforma && s.usuario.segundo_factor && <Link className="btn" to="/operador">Panel del operador de {MARCA.nombre}</Link>}
+        {!s.usuario.rol_plataforma && <Link className="btn sutil" to="/empezar"><Icon n="mas" className="" size={16} />Crear otra empresa con esta cuenta</Link>}
       </div>
     </PublicoLayout>
   );

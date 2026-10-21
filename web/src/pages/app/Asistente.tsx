@@ -22,6 +22,11 @@ const PROGRESO: Record<string, string> = {
   crear_item_catalogo: 'Preparando el nuevo ítem', editar_item_catalogo: 'Preparando el cambio',
 };
 const MAX = 1000;
+/**
+ * Pantalla táctil (teléfono o tableta): ahí devolver el foco al cuadro de texto abre el teclado y tapa
+ * la respuesta. Solo se enfoca solo con teclado y ratón.
+ */
+const tactil = () => !!window.matchMedia?.('(pointer: coarse)').matches;
 
 /** Indicador de trabajo: muestra los pasos reales que llegan del servidor y el tiempo que lleva. */
 export function Trabajando({ pasos, fase }: { pasos: Paso[]; fase: string }) {
@@ -222,6 +227,7 @@ export function Asistente() {
   const [verLista, setVerLista] = useState(false);
   const [borrar, setBorrar] = useState(false);
   const [lejos, setLejos] = useState(false);
+  const [buscar, setBuscar] = useState('');
   const { run } = useAccion();
   const { iniciarGuia } = useIA();
   const [respuestas, setRespuestas] = useState(0);
@@ -271,6 +277,8 @@ export function Asistente() {
     if (!pregunta || ocupado) return;
     const hiloAlEnviar = id;
     setQ(''); setOcupado(true); setPasos([]); setFase('pensando'); pegado.current = true;
+    // En el teléfono se cierra el teclado al enviar: la persona ve cómo trabaja el asistente y su respuesta.
+    if (tactil()) campo.current?.blur();
     setMensajes((m) => {
       const base = m.map((x) => ({ ...x, nuevo: false }));
       if (reintento !== undefined) return base.map((x, i) => (i === reintento ? { ...x, fallo: null } : x));
@@ -296,7 +304,7 @@ export function Asistente() {
       const mensaje = (err as ApiError).message;
       if (actual.current === hiloAlEnviar) setMensajes((m) => m.map((x, i) => (i === (reintento ?? m.length - 1) ? { ...x, fallo: mensaje } : x)));
       setFallos((n) => n + 1);
-    } finally { setOcupado(false); campo.current?.focus(); }
+    } finally { setOcupado(false); if (!tactil()) campo.current?.focus(); }
   };
 
   const desdeInicio = useRef(false);
@@ -325,11 +333,15 @@ export function Asistente() {
     { texto: '¿Cómo registro un pago en efectivo?', permiso: 'ai:assist', modulo: 'ventas' },
     { texto: '¿Cómo emito una nota crédito?', permiso: 'ai:assist', modulo: 'facturacion' },
   ].filter((p) => puede(p.permiso) && s.modulos.includes(p.modulo)).slice(0, 4);
-  const lista = hilos.data ?? [];
+  const todos = hilos.data ?? [];
+  const lista = buscar.trim() ? todos.filter((h) => String(h.titulo ?? '').toLowerCase().includes(buscar.trim().toLowerCase())) : todos;
+  // Preguntas de seguimiento: las sugerencias que todavía no se hicieron en esta conversación.
+  const hechas = new Set(mensajes.filter((m) => m.rol === 'user').map((m) => m.contenido.trim()));
+  const seguir = !vacio && !ocupado && mensajes.length > 0 && mensajes[mensajes.length - 1].rol === 'assistant' ? sugerencias.filter((p) => !hechas.has(p.texto)).slice(0, 3) : [];
   const nombre = s.usuario.nombre.split(' ')[0];
   const saludo = `Hola, ${nombre}. Soy el asistente de ${s.tenant.nombre}. Conozco tu catálogo, tus horarios y tus módulos; lo que cambia —ventas, citas, existencias— lo consulto en el momento y te muestro de dónde sale.`;
   const cara = useCaraIA({ ocupado, escribiendo: !!q.trim(), respuesta: respuestas, fallo: fallos, largo });
-  const nueva = () => { setVerLista(false); nav('/asistente'); campo.current?.focus(); };
+  const nueva = () => { setVerLista(false); nav('/asistente'); if (!tactil()) campo.current?.focus(); };
   const alResolverAccion = (texto: string, recibo: Ejecucion) => {
     setMensajes((m) => [...m.map((x) => ({ ...x, nuevo: false })), { rol: 'assistant', contenido: texto, ejecuciones: [recibo], creado_en: new Date().toISOString(), nuevo: true }]);
   };
@@ -339,17 +351,18 @@ export function Asistente() {
       <div className={`as-ventana ${verLista ? 'ver-lista' : ''}`}>
         <aside className="as-lista" aria-label="Tus conversaciones con el asistente">
           <div className="as-lista-cab">
-            <h2>Conversaciones</h2>
-            <button className="btn primario" onClick={nueva}><Icon n="mas" className="" size={16} />Nueva conversación</button>
+            <div className="as-lista-marca"><span className="as-lista-orbe"><OrbeCara tamano={26} /></span><div><h2>Omnegia IA</h2><span>Solo tú ves tus conversaciones</span></div></div>
+            <button className="as-nueva" onClick={nueva}><Icon n="mas" className="" size={16} />Nueva conversación</button>
+            {todos.length > 4 && <label className="as-buscar"><Icon n="buscar" className="" size={15} /><input type="search" value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Buscar en tus conversaciones" aria-label="Buscar en tus conversaciones" /></label>}
           </div>
           {hilos.cargando && !hilos.data ? <Cargando filas={4} /> : lista.length === 0 ? (
-            <p className="as-lista-vacia">Cuando preguntes algo, la conversación quedará guardada aquí. Solo tú la ves.</p>
+            <p className="as-lista-vacia">{buscar.trim() ? 'Ninguna conversación coincide.' : 'Cuando preguntes algo, la conversación quedará guardada aquí. Solo tú la ves.'}</p>
           ) : (
             <ul className="asistente-hilos">
               {lista.map((h, i) => (
                 <li key={h.id} style={{ ['--i' as any]: Math.min(i, 8) }}>
                   <button type="button" className={`asistente-hilo ${h.id === id ? 'activo' : ''}`} aria-current={h.id === id ? 'true' : undefined} onClick={() => nav(`/asistente/${h.id}`)}>
-                    <span className="lista-titulo cortar">{h.titulo}</span>
+                    <span className="lista-titulo cortar"><Icon n="conversaciones" className="" size={14} />{h.titulo}</span>
                     <span className="lista-detalle">{hace(h.actualizado_en)} · {h.preguntas} {h.preguntas === 1 ? 'pregunta' : 'preguntas'}</span>
                   </button>
                 </li>
@@ -401,6 +414,7 @@ export function Asistente() {
           {lejos && !vacio && <button type="button" className="as-ir-final" onClick={() => { pegado.current = true; setLejos(false); alFinal(); }}><Icon n="abajo" className="" size={16} />Ir al final</button>}
 
           <form className="as-composer" onSubmit={enviar}>
+            {seguir.length > 0 && <div className="as-seguir" aria-label="Preguntas sugeridas">{seguir.map((p, i) => <button key={p.texto} type="button" style={{ ['--i' as any]: i }} onClick={() => preguntar(p.texto)}><Icon n="ia" className="" size={13} />{p.texto}</button>)}</div>}
             <div className="as-caja">
               <textarea ref={campo} rows={1} value={q} onChange={(e) => setQ(e.target.value.slice(0, MAX))} onKeyDown={teclas} maxLength={MAX} placeholder="Pregúntale a tu negocio…" aria-label="Pregunta al asistente" disabled={noEncontrado} />
               <button type="submit" className="composer-send" disabled={ocupado || !q.trim() || noEncontrado} aria-label={ocupado ? 'Trabajando en la respuesta' : 'Preguntar'}>

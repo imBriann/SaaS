@@ -223,6 +223,19 @@ export const cambioAcceso = (o: { nombre: string; empresa: string; rolAnterior?:
   noFuiste: 'Si crees que es un error, habla con el administrador de la empresa.',
 });
 
+/** Cesión de la propiedad de la empresa: se avisa a quien la recibe y a quien la cedió. */
+export const propiedadCedida = (o: { nombre: string; empresa: string; recibe: boolean; otro: string; urlPanel: string }) => render({
+  tipo: 'propiedad_cedida',
+  asunto: o.recibe ? `Ahora eres el propietario de ${o.empresa}` : `Cediste la propiedad de ${o.empresa}`,
+  previa: 'Cambio de propietario de la empresa.', titulo: o.recibe ? 'Ahora eres el propietario' : 'Cediste la propiedad',
+  saludo: `Hola ${primerNombre(o.nombre)},`,
+  parrafos: o.recibe
+    ? [`${o.otro} te cedió la propiedad de ${o.empresa}. Tienes todos los permisos y nadie más puede cambiar tu rol ni retirarte el acceso.`]
+    : [`Cediste la propiedad de ${o.empresa} a ${o.otro}. Sigues en el equipo como administrador, pero ahora el propietario puede cambiar tu rol.`],
+  boton: { texto: 'Abrir el panel', url: o.urlPanel }, empresa: o.empresa,
+  noFuiste: o.recibe ? undefined : 'Si no fuiste tú, cambia tu contraseña de inmediato y escríbenos respondiendo a este correo.',
+});
+
 const ESTADOS_SUSCRIPCION: Record<string, [string, string]> = {
   PAGO_PENDIENTE: ['Tu suscripción venció', 'Renueva el pago para seguir sin interrupciones. Por ahora todo funciona con normalidad.'],
   EN_GRACIA: ['Tu suscripción está en periodo de gracia', 'Si no se registra el pago antes de la fecha indicada, la cuenta pasará a solo lectura y el canal de WhatsApp se pausará.'],

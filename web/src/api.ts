@@ -29,6 +29,9 @@ export function irAEmpresa(slug: string, ruta = '/', navegar?: (r: string) => vo
   return false;
 }
 
+/** Una página del dominio principal (alta, lista de empresas): desde un subdominio sale a <dominio>. */
+export const urlPrincipal = (ruta: string) => (subdominiosActivos() && slugDelHost() ? `https://${BASE}${ruta}` : ruta);
+
 /** Dirección pública de una empresa para mostrarla (nunca «.localhost» en producción). */
 export const direccionEmpresa = (slug: string) => (BASE === 'localhost' ? `${slug}.localhost` : `${slug}.${BASE}`);
 

@@ -15,7 +15,8 @@
     "migrar": "tsx src/db/migrar.ts",
     "respaldo": "tsx src/db/respaldo.ts",
     "correo:prueba": "tsx src/email/prueba.ts",
-    "operador": "tsx src/seed/operador.ts"
+    "operador": "tsx src/seed/operador.ts",
+    "reiniciar": "tsx src/seed/reiniciar.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

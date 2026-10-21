@@ -207,6 +207,8 @@ export async function createTenantFromTemplate(tx: Tx, d: NuevoTenant, etapa: (e
     if (!d.admin.password && !d.admin.passwordHash) passwordToken = token(24);
   }
   await tx.query(`INSERT INTO user_tenant (user_id, tenant_id, role_id) VALUES ($1,$2,$3)`, [user.id, tenantId, roleIds[tpl.rol_administrador]]);
+  // Quien hace el alta es el propietario: un rango por encima del administrador.
+  await tx.query(`UPDATE tenant SET propietario_id=$2 WHERE id=$1`, [tenantId, user.id]);
   await etapa('administrador_creado');
   await etapa('tema_generado');
   await etapa('subdominio_asignado');

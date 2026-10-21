@@ -29,7 +29,8 @@ import * as exportsMod from '../../modules/exports.js';
 import { iniciarPagoSuscripcion } from '../../modules/billing.js';
 import { documentosTenant, enlaceDocumentosTenant } from '../../documentos/servicio.js';
 import { verificarWhatsapp } from '../../modules/channelStatus.js';
-import { askAssistant, confirmarAccionAsistente, suggestReply } from '../../ai/runtime.js';
+import { askAssistant, confirmarAccionAsistente } from '../../ai/runtime.js';
+import * as copiloto from '../../ai/copiloto.js';
 import { depurar } from '../../lib/depurar.js';
 import { signMeta, whatsapp } from '../../adapters/channel.js';
 import { applyMapping, inferMapping, readSheet } from '../../onboarding/importer.js';
@@ -189,11 +190,9 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
        FROM user_tenant ut JOIN users u ON u.id=ut.user_id WHERE ut.activo AND EXISTS (SELECT 1 FROM role_permission rp WHERE rp.role_id=ut.role_id AND rp.permiso='case:manage') ORDER BY u.nombre`)).rows;
   });
   r('post', '/yo/disponibilidad', (tx, ctx, req) => admin.setMyAvailability(tx, ctx, !!req.body?.disponible));
-  rx('post', '/conversaciones/:id/sugerencia', async (ctx, req) => {
-    requirePerm(ctx, 'ai:assist');
-    if (!isUuid(req.params.id)) throw notFound();
-    return { sugerencia: await suggestReply(db, ctx, req.params.id) };
-  });
+  // Copiloto del asesor: propuestas con los datos del negocio que la persona revisa antes de enviar.
+  rx('post', '/conversaciones/:id/sugerencia', (ctx, req) => copiloto.sugerirRespuesta(db, ctx, req.params.id));
+  rx('post', '/conversaciones/:id/mejorar', (ctx, req) => copiloto.mejorarRedaccion(db, ctx, req.params.id, req.body));
 
   // --- Centro de IA y asistente
   r('get', '/ia', (tx, ctx) => admin.aiCenter(tx, ctx));
@@ -242,6 +241,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('get', '/configuracion', (tx, ctx) => admin.settings(tx, ctx));
   r('patch', '/configuracion/modulos/:modulo', (tx, ctx, req) => admin.toggleModule(tx, ctx, req.params.modulo, !!req.body?.activo));
   r('patch', '/configuracion/personas/:id', (tx, ctx, req) => admin.updateMember(tx, ctx, req.params.id, req.body));
+  rx('post', '/configuracion/propietario', (ctx, req) => admin.transferirPropiedad(db, ctx, req.body));
   r('get', '/configuracion/invitaciones', (tx, ctx) => team.listInvitations(tx, ctx));
   r('post', '/configuracion/invitaciones', (tx, ctx, req) => team.invite(tx, ctx, req.body));
   r('post', '/configuracion/invitaciones/:id/revocar', (tx, ctx, req) => team.revokeInvitation(tx, ctx, req.params.id));

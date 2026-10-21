@@ -6,6 +6,7 @@ import { AppError, MSG_NO_ENCONTRADO } from '../lib/errors.js';
 import { uuidv7 } from '../lib/util.js';
 import { config } from '../config.js';
 import { loadUserByToken, type SessionUser } from '../modules/auth.js';
+import { TODOS_LOS_PERMISOS_DE_TENANT } from '../core/permissions.js';
 
 /**
  * Identidad y resolución de tenant del panel.
@@ -60,7 +61,8 @@ export function slugFromRequest(req: FastifyRequest): string | null {
 
 export async function memberships(tx: Tx, userId: string) {
   return (await tx.query(
-    `SELECT t.id, t.slug, t.nombre, t.tema, r.nombre AS rol, s.estado AS suscripcion FROM user_tenant ut JOIN tenant t ON t.id=ut.tenant_id JOIN role r ON r.id=ut.role_id
+    `SELECT t.id, t.slug, t.nombre, t.tema, r.nombre AS rol, (t.propietario_id = ut.user_id) AS propietario, s.estado AS suscripcion
+     FROM user_tenant ut JOIN tenant t ON t.id=ut.tenant_id JOIN role r ON r.id=ut.role_id
      LEFT JOIN subscription s ON s.tenant_id=t.id
      WHERE ut.user_id=$1 AND ut.activo ORDER BY t.nombre`,
     [userId],
@@ -75,7 +77,7 @@ export function tenantGuard(db: Database) {
     const slug = slugFromRequest(req);
     if (!slug) throw new AppError('NOT_FOUND', MSG_NO_ENCONTRADO);
     const data = await db.withPlatform(async (tx) => {
-      const t = (await tx.query(`SELECT t.id, s.estado FROM tenant t LEFT JOIN subscription s ON s.tenant_id=t.id WHERE t.slug=$1`, [slug])).rows[0];
+      const t = (await tx.query(`SELECT t.id, t.propietario_id, s.estado FROM tenant t LEFT JOIN subscription s ON s.tenant_id=t.id WHERE t.slug=$1`, [slug])).rows[0];
       if (!t) return { t: null };
       const m = (await tx.query(
         `SELECT r.clave, coalesce(array_agg(rp.permiso) FILTER (WHERE rp.permiso IS NOT NULL), '{}') AS permisos
@@ -94,11 +96,14 @@ export function tenantGuard(db: Database) {
     if (!data.t || !data.m) throw new AppError('NOT_FOUND', MSG_NO_ENCONTRADO);
     if (data.t.estado === 'CANCELADA') throw new AppError('SUSPENDED', 'La suscripción de esta empresa fue cancelada.');
     req.user = user;
+    // El propietario conserva siempre todos los permisos de su empresa, cualquiera sea su rol.
+    const propietario = data.t.propietario_id === user.id;
     req.ctx = {
       tenantId: data.t.id,
       actor: { tipo: 'USUARIO', id: user.id, nombre: user.nombre },
       roleKey: data.m.clave,
-      permisos: new Set<string>(data.m.permisos),
+      permisos: new Set<string>(propietario ? [...data.m.permisos, ...TODOS_LOS_PERMISOS_DE_TENANT] : data.m.permisos),
+      propietario,
       origen: 'PANEL',
       correlacion: req.correlacion,
       soloLectura: data.t.estado === 'SUSPENDIDA',

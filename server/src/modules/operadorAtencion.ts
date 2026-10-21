@@ -5,7 +5,7 @@ import { AppError, invalid, notFound } from '../lib/errors.js';
 import { enmascararTelefono, isUuid } from '../lib/util.js';
 
 export { enmascararTelefono };
-import { ventanaAbierta } from './conversations.js';
+import { respuestaSoporte, ventanaAbierta } from './conversations.js';
 import { revisarContenido } from './soporte.js';
 import { verificarWhatsapp } from './channelStatus.js';
 import { agregarMensajePlataforma, auditarConversacion } from './plataformaConversaciones.js';
@@ -284,7 +284,7 @@ export async function atencionEmpresas(db: Database, op: Operador, q: any) {
          AND ($1::uuid IS NULL OR k.tenant_id=$1) AND (NOT $2 OR k.sla_vence_en < now())
        ORDER BY k.sla_vence_en LIMIT 150`, [empresa, soloVencidos])).rows;
     const accesos = (await tx.query(
-      `SELECT g.id, g.tenant_id, t.nombre AS empresa, g.conversation_id, g.motivo, g.otorgado_por_nombre, g.ticket_numero, g.expira_en, g.creado_en
+      `SELECT g.id, g.tenant_id, t.nombre AS empresa, g.conversation_id, g.motivo, g.otorgado_por_nombre, g.ticket_numero, g.expira_en, g.creado_en, g.puede_responder
        FROM acceso_soporte g JOIN tenant t ON t.id=g.tenant_id WHERE g.revocado_en IS NULL AND g.expira_en > now() AND ($1::uuid IS NULL OR g.tenant_id=$1)
        ORDER BY g.creado_en DESC LIMIT 100`, [empresa])).rows;
     const totales = empresas.reduce((a: any, e: any) => ({
@@ -304,13 +304,15 @@ export async function leerConversacionAutorizada(db: Database, op: Operador, con
       `SELECT v.id, v.tenant_id, v.canal, v.estado, v.control, v.creado_en, v.actualizado_en, c.nombre AS cliente, c.telefono, t.nombre AS empresa
        FROM conversation v JOIN customer c ON c.id=v.customer_id JOIN tenant t ON t.id=v.tenant_id WHERE v.id=$1`, [conversationId])).rows[0];
     if (!v) return null;
-    const acceso = (await tx.query(`SELECT motivo, otorgado_por_nombre, ticket_numero, expira_en, creado_en FROM acceso_soporte WHERE conversation_id=$1 ORDER BY expira_en DESC LIMIT 1`, [conversationId])).rows[0];
+    const acceso = (await tx.query(`SELECT motivo, otorgado_por_nombre, ticket_numero, expira_en, creado_en, puede_responder FROM acceso_soporte WHERE conversation_id=$1 ORDER BY expira_en DESC LIMIT 1`, [conversationId])).rows[0];
     const mensajes = (await tx.query(
-      `SELECT id, remitente, tipo, contenido, estado_entrega, error_entrega, coalesce(ocurrido_en, creado_en) AS creado_en FROM message WHERE conversation_id=$1 ORDER BY coalesce(ocurrido_en, creado_en), creado_en`,
+      `SELECT id, remitente, tipo, contenido, estado_entrega, error_entrega, coalesce(ocurrido_en, creado_en) AS creado_en, (metadatos->>'soporte_omnegia') = 'true' AS de_soporte, metadatos->>'operador' AS operador
+       FROM message WHERE conversation_id=$1 AND tipo <> 'NOTA_INTERNA' ORDER BY coalesce(ocurrido_en, creado_en), creado_en`,
       [conversationId])).rows;
     const caso = (await tx.query(`SELECT radicado, motivo, prioridad, estado, sla_vence_en, primera_respuesta_en, creado_en FROM support_case WHERE conversation_id=$1 ORDER BY creado_en DESC LIMIT 1`, [conversationId])).rows[0] ?? null;
     // Para diagnosticar basta con el texto: el teléfono del cliente se entrega parcial (minimización).
-    return { ...v, telefono: enmascararTelefono(v.telefono), acceso, mensajes, caso };
+    const ventana = (await tx.query(`SELECT ultimo_mensaje_cliente_en FROM conversation WHERE id=$1`, [conversationId])).rows[0]?.ultimo_mensaje_cliente_en;
+    return { ...v, telefono: enmascararTelefono(v.telefono), acceso, mensajes, caso, ventana_abierta: v.canal !== 'WHATSAPP' || ventanaAbierta(ventana) };
   });
   if (!data) {
     await db.withOperador((tx) => auditar(tx, op, { accion: 'empresa.conversacion.lectura_autorizada', recurso: 'conversation', recursoId: conversationId, resultado: 'DENEGADO', detalle: { razon: 'sin_acceso_vigente' } }));
@@ -321,6 +323,28 @@ export async function leerConversacionAutorizada(db: Database, op: Operador, con
   await db.withPlatform((tx) => auditPlatform(tx, data.tenant_id, { tipo: 'PLATAFORMA', id: op.user.id, nombre: 'Soporte de Omnegia' }, 'PLATAFORMA', op.correlacion,
     { accion: 'soporte.conversacion_leida', recurso: 'conversation', recursoId: conversationId, resultado: 'EXITO', detalle: { operador: op.user.email } }));
   return data;
+}
+
+/**
+ * Soporte responde al cliente de una empresa que lo autorizó («leer y responder»). El acceso se comprueba
+ * con el rol de lectura autorizada y de nuevo dentro de la transacción de la empresa al escribir.
+ */
+export async function responderConversacionAutorizada(db: Database, op: Operador, conversationId: string, body: unknown) {
+  exigir(op, 'atencion:responder_autorizadas');
+  if (!isUuid(conversationId)) throw notFound();
+  const d = z.object({ texto: z.string().trim().min(1, 'Escribe la respuesta.').max(4000, 'El mensaje supera 4.000 caracteres.') }).parse(body ?? {});
+  revisarContenido(d.texto);
+  const g = await db.withSoporte(async (tx) => (await tx.query(
+    `SELECT tenant_id, puede_responder FROM acceso_soporte WHERE conversation_id=$1 ORDER BY expira_en DESC LIMIT 1`, [conversationId])).rows[0]);
+  if (!g || !g.puede_responder) {
+    await db.withOperador((tx) => auditar(tx, op, { accion: 'empresa.conversacion.respuesta', recurso: 'conversation', recursoId: conversationId, tenantId: g?.tenant_id ?? null, resultado: 'DENEGADO', detalle: { razon: g ? 'solo_lectura' : 'sin_acceso_vigente' } }));
+    if (!g) throw notFound();
+    throw new AppError('FORBIDDEN', 'La empresa compartió esta conversación solo para lectura.');
+  }
+  const ctx = { tenantId: g.tenant_id, actor: { tipo: 'PLATAFORMA' as const, id: op.user.id, nombre: 'Soporte de Omnegia' }, roleKey: null, permisos: new Set<string>(), origen: 'PLATAFORMA' as const, correlacion: op.correlacion };
+  const r = await db.withTenant(g.tenant_id, (tx) => respuestaSoporte(tx, ctx, conversationId, d.texto, op.user.nombre));
+  await db.withOperador((tx) => auditar(tx, op, { accion: 'empresa.conversacion.respuesta', recurso: 'conversation', recursoId: conversationId, tenantId: g.tenant_id, resultado: 'EXITO' }));
+  return { ok: true, id: r.id };
 }
 
 /** Comprobación del número de WhatsApp de una empresa con Meta (solo consulta su estado; no lee mensajes). */

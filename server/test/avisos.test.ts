@@ -20,6 +20,9 @@ beforeAll(async () => {
   admin = api(E.app, await login(E.app, ...CRED.admin), 'elparche');
   laura = api(E.app, await login(E.app, ...CRED.laura), 'elparche');
   gym = api(E.app, await login(E.app, ...CRED.gym), 'fuerzanorte');
+  // WhatsApp fecha los mensajes en segundos enteros: en una máquina rápida, el mensaje de la prueba
+  // podría caer en el mismo segundo que los de demostración y ordenarse antes que ellos.
+  await new Promise((r) => setTimeout(r, 1100));
 });
 afterAll(async () => { await E.app.close(); await E.db.close(); });
 

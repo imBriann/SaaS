@@ -33,11 +33,13 @@ export function Inicio() {
     ['customer:write', '/clientes', 'clientes', 'Añadir un cliente'], ['conversation:read', '/conversaciones', 'conversaciones', 'Revisar mensajes'],
   ] as const).filter(([p]) => puede(p));
   const ver = (p: string, m?: string) => puede(p) && (!m || s.modulos.includes(m));
+  const h = new Date().getHours();
+  const saludo = personalizacion?.titulo || `${h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'}, ${s.usuario.nombre.split(' ')[0]}`;
   let n = 0; // orden de aparición de cada tarjeta durante la construcción
   const sig = () => n++;
   return (
     <>
-      <Cabecera titulo={personalizacion?.titulo || `Hola, ${s.usuario.nombre.split(' ')[0]}`} sub={data ? `${fechaLarga(data.fecha)} · ${s.tenant.nombre}` : s.tenant.nombre}>
+      <Cabecera titulo={saludo} sub={data ? `${fechaLarga(data.fecha)} · ${resumenDelDia(data, puede)}` : s.tenant.nombre}>
         {accesos.map(([p, to, icon, label]) => <Link key={p} className="btn" to={to}><Icon n={icon} className="" size={16} />{label}</Link>)}
       </Cabecera>
       <div className="contenido tablero-vivo">
@@ -299,6 +301,16 @@ function Personalizado({ p }: { p: any }) {
       </div>
     </section>
   );
+}
+
+/** Una frase con lo que lleva el día, según lo que el rol puede ver. */
+function resumenDelDia(data: any, puede: (p: string) => boolean): string {
+  const c = data.cifras;
+  const partes: string[] = [];
+  if (puede('order:read')) partes.push(c.n_ventas_hoy ? `${c.n_ventas_hoy} ${c.n_ventas_hoy === 1 ? 'venta' : 'ventas'} por ${cop(c.ventas_hoy)}` : 'todavía sin ventas');
+  if (puede('appointment:read')) partes.push(`${c.citas_hoy} ${c.citas_hoy === 1 ? 'cita' : 'citas'}`);
+  if (puede('conversation:read') && c.escaladas) partes.push(`${c.escaladas} ${c.escaladas === 1 ? 'cliente espera' : 'clientes esperan'} respuesta`);
+  return partes.length ? `Hoy llevas ${partes.join(', ')}.` : 'Así va tu negocio hoy.';
 }
 
 /** Configuración inicial: cada paso se marca solo cuando el dato existe en el servidor. */

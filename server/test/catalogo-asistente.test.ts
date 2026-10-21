@@ -107,6 +107,9 @@ describe('Asistente: cambios de catálogo con confirmación explícita', () => {
     const r = await admin.post('/asistente', { pregunta: 'cambia el precio del corte clásico a 41.000', hilo_id: hilo });
     const id = r.body.ejecuciones.find((e: any) => e.herramienta === 'editar_item_catalogo').pendiente_id;
     await E.db.withTenant(E.A, (tx) => tx.query(`DELETE FROM role_permission WHERE permiso='catalog:write' AND role_id=(SELECT id FROM role WHERE clave='administrador')`));
+    // El propietario conserva siempre todos los permisos: aquí actúa como una administradora más.
+    const propietario = (await E.db.withPlatform((tx) => tx.query(`SELECT propietario_id FROM tenant WHERE id=$1`, [E.A]))).rows[0].propietario_id;
+    await E.db.withPlatform((tx) => tx.query(`UPDATE tenant SET propietario_id=NULL WHERE id=$1`, [E.A]));
     try {
       const cookie = await login(E.app, ...CRED.admin); // la sesión toma los permisos nuevos
       const c = await api(E.app, cookie, 'elparche').post(`/asistente/acciones/${id}`, { decision: 'confirmar' });
@@ -116,6 +119,7 @@ describe('Asistente: cambios de catálogo con confirmación explícita', () => {
       expect((await productos()).find((x) => x.nombre === 'Corte clásico').precio).not.toBe(41000);
     } finally {
       await E.db.withTenant(E.A, (tx) => tx.query(`INSERT INTO role_permission (tenant_id, role_id, permiso) SELECT tenant_id, id, 'catalog:write' FROM role WHERE clave='administrador' ON CONFLICT DO NOTHING`));
+      await E.db.withPlatform((tx) => tx.query(`UPDATE tenant SET propietario_id=$2 WHERE id=$1`, [E.A, propietario]));
     }
   });
 

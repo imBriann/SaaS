@@ -29,6 +29,50 @@ Todas las cifras corresponden a ejecuciones reales del 18 y 19 de octubre de 202
 
 Las pruebas del WhatsApp pasaban en PGlite y fallaban en PostgreSQL (17 casos) por la precisión de las fechas. Tras la corrección pasan en ambos. Por eso las pruebas nuevas quedaron incluidas en `test:postgres`.
 
+### Propietario y varias empresas (19 de octubre de 2026)
+
+| Ejecución | Resultado |
+|---|---|
+| `npm test` (PGlite) | 471 de 472 en la primera pasada: `catalogo-asistente` quitaba un permiso a la administradora demo, que ahora es propietaria. Se ajustó la prueba para usar una administradora no propietaria y el archivo pasó 12 de 12 |
+| `npm run test:postgres` | **277 de 277** en 18 archivos, incluido `propietario` |
+| `propietario.test.ts` (9 casos) | Varias empresas por cuenta, permisos completos del propietario, protección frente a otro administrador, cesión con contraseña y reinicio (simulacro, negativas y aplicado) |
+| Recorrido visual del selector, la cortina de cambio, Configuración y teléfono | 9 de 9, sin errores de consola |
+
+### Rediseño del asistente, conversaciones y tableros (19 de octubre de 2026)
+
+| Comprobación | Resultado |
+|---|---|
+| Foco tras la respuesta del asistente | Teléfono: ya no vuelve al cuadro de texto (no abre el teclado). Portátil: sigue enfocado |
+| Interacciones (enviar con Enter, Shift+Enter, nota interna, menú de acciones, panel de detalles, búsqueda, preguntas de seguimiento; en el teléfono Enter salta de línea, barras ocultas en el chat y volver a la bandeja) | 14 de 14 |
+| Recorrido de 52 páginas (empresa y operador, escritorio y 390 px) | 0 errores, 0 desbordes |
+
+### Copiloto del asesor (19 de octubre de 2026)
+
+| Comprobación | Resultado |
+|---|---|
+| `copiloto.test.ts` (6 casos): la sugerencia usa el precio real del catálogo y dice qué entendió; el modelo recibe catálogo, horarios, radicado e hilo como datos; no envía nada; «Mejorar redacción» conserva cifras y corrige abreviaturas; permisos y auditoría | 6 de 6 |
+| `npm test` completo | **478 de 478** en 35 archivos |
+| `npm run test:postgres` | **283 de 283** en 19 archivos |
+| Navegador: sugerir, usar, mejorar, deshacer, compartir con soporte desde el menú y retirar, teléfono sin desborde | Correcto. El único fallo marcado fue de la prueba (esperaba «Deshacer» con el cuadro vacío) |
+
+### Pedir ayuda a Omnegia y respuesta de soporte (19 de octubre de 2026)
+
+| Comprobación | Resultado |
+|---|---|
+| `soporte-responde.test.ts` (6 casos): solicitud automática, lectura con permiso para responder, respuesta por el canal de la empresa marcada y auditada, bloqueo de claves y de la ventana de 24 h, «solo leer» y acceso retirado, permisos de la empresa | 6 de 6 |
+| `avisos.test.ts` fallaba en GitHub por el orden de los mensajes dentro del mismo segundo; se ajustó la prueba | Corregido |
+| `npm test` completo | **484 de 484** en 36 archivos |
+| `npm run test:postgres` | **292 de 292** en 21 archivos |
+| Navegador de punta a punta (empresa pide ayuda → soporte responde → la empresa ve «Soporte de Omnegia») | 6 de 6, sin errores |
+
+### WhatsApp de Omnegia con IA (19 de octubre de 2026)
+
+| Comprobación | Resultado |
+|---|---|
+| `plataforma-ia.test.ts` (9 casos): base de conocimiento con datos reales, la conversación de la captura («planes» → «sí» → módulos), contexto completo al modelo, contraseñas y recuperación siguen en el gestor, modelo caído, URL fuera de la lista cerrada, derivación decidida por la IA y petición de correo | 9 de 9 |
+| `plataforma-whatsapp.test.ts` (flujos anteriores sin cambios) | 27 de 27 |
+| Evaluación con Claude real sobre una base en memoria (sin producción) | Explica cada módulo con su precio, calcula el estimado ($107.000 para barbería con agenda y WhatsApp con IA), aclara que la renovación usa el nivel asignado, rechaza temas ajenos y no revela datos de cuentas |
+
 ## Recorridos visuales (Playwright, servidor local aislado)
 
 | Recorrido | Comprobaciones | Resultado |

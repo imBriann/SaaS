@@ -1,6 +1,6 @@
 import { cloneElement, createContext, useContext, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { api, fecha, guardar, setZona, slugDelHost, tenantSlug } from '../api';
+import { api, fecha, guardar, setZona, tenantSlug, urlPrincipal } from '../api';
 import { useApi, Medidor, Cargando, Modal, Campo, useAccion, CodigoOtp, useCuentaAtras, useToast } from './ui';
 import { Icon } from './icons';
 import { MARCA } from '../brand';
@@ -9,9 +9,10 @@ import { IAProvider } from './ia/contexto';
 import { PanelIA, PildoraIA } from './ia/PanelIA';
 import { GuiaEnPantalla } from './ia/GuiaEnPantalla';
 import { BarraSuperior } from './ia/BarraSuperior';
+import { SelectorEmpresa } from './SelectorEmpresa';
 
 export interface Sesion {
-  usuario: { id: string; nombre: string; rol: string; rol_nombre: string; email: string | null; correo_verificado: boolean };
+  usuario: { id: string; nombre: string; rol: string; rol_nombre: string; propietario: boolean; email: string | null; correo_verificado: boolean };
   tenant: any;
   modulos: string[];
   permisos: string[];
@@ -211,7 +212,7 @@ export function PanelLayout() {
         <div className="tarjeta pad col" style={{ maxWidth: 440, gap: 16 }}>
           <div className="bloqueado"><Icon n="candado" className="" size={16} /> No encontramos eso.</div>
           <p className="sec">Esta empresa no existe o tu cuenta ya no tiene acceso a ella.</p>
-          <button className="btn" onClick={() => { guardar('empresa', null); nav('/empresas'); }}>Elegir otra empresa</button>
+          <button className="btn" onClick={() => { guardar('empresa', null); if (urlPrincipal('/empresas').startsWith('http')) window.location.assign(urlPrincipal('/empresas')); else nav('/empresas'); }}>Elegir otra empresa</button>
         </div>
       </div>
     );
@@ -235,8 +236,10 @@ export function PanelLayout() {
   const urgente = (av?.por_atender ?? 0) > 0;
   const textoAviso = av ? [av.sin_leer ? `${av.sin_leer} sin leer` : null, av.por_atender ? `${av.por_atender} ${av.por_atender === 1 ? 'espera' : 'esperan'} a una persona` : null].filter(Boolean).join(' · ') : '';
   const gobierno = GOBIERNO.filter(visible);
-  // El asistente usa toda la ventana (menos el menú): es una conversación, no una página con título.
-  const completa = loc.pathname.startsWith('/asistente');
+  // El asistente y la bandeja usan toda la ventana (menos el menú): son conversaciones, no páginas con título.
+  const completa = loc.pathname.startsWith('/asistente') || loc.pathname.startsWith('/conversaciones');
+  // Dentro de un chat, en el teléfono, el hilo ocupa toda la pantalla (como en WhatsApp): sin barras.
+  const enChat = /^\/conversaciones\/[^/]+/.test(loc.pathname);
   const piloto = puede('conversation:read') && data.simuladores;
   const iniciales = data.usuario.nombre.split(' ').map((w) => w[0]).slice(0, 2).join('');
   const salir = async (todas = false) => { await api.post(todas ? '/api/auth/logout-todas' : '/api/auth/logout').catch(() => {}); guardar('empresa', null); window.location.href = '/entrar'; };
@@ -252,7 +255,7 @@ export function PanelLayout() {
     <SesionCtx.Provider value={{ s: data, puede, recargar }}>
       <IAProvider>
       <Construccion nombre={t.nombre}>
-      <div className={`app ${navAbierta ? 'nav-abierta' : ''} ${completa ? 'app-completa' : ''}`}>
+      <div className={`app ${navAbierta ? 'nav-abierta' : ''} ${completa ? 'app-completa' : ''} ${enChat ? 'app-chat' : ''}`}>
         <a className="saltar" href="#contenido">Saltar al contenido</a>
         <header className="barra-movil">
           <Link to="/" className="contexto" aria-label={`${t.nombre}, inicio`}>{marca}<span className="contexto-txt"><b>{t.nombre}</b><span>{data.usuario.rol_nombre}</span></span></Link>
@@ -260,10 +263,7 @@ export function PanelLayout() {
         </header>
 
         <aside className="lateral" id="nav-lateral" aria-label="Navegación del panel">
-          <Link to="/" className="contexto" aria-label={`${t.nombre}, inicio`}>
-            {marca}
-            <span className="contexto-txt"><b>{t.nombre}</b><span>{data.usuario.rol_nombre}</span></span>
-          </Link>
+          <SelectorEmpresa slug={t.slug} nombre={t.nombre} rol={data.usuario.rol_nombre} marca={marca} />
           <nav className="nav-grupo" aria-label="Operación">
             <span className="nav-titulo">Operación</span>
             {OPERACION.filter(visible).map(enlace)}
@@ -294,7 +294,7 @@ export function PanelLayout() {
                 </div>
                 {data.consumo && <div className="bloque"><Medidor c={data.consumo.tokens_ia} etiqueta="Consumo de IA del mes" oscuro /></div>}
                 <div className="sep" />
-                {!slugDelHost() && <button className="opcion" role="menuitem" onClick={() => { cerrar(); nav('/empresas'); }}><Icon n="plataforma" className="" size={16} /> Cambiar de empresa</button>}
+                <a className="opcion" role="menuitem" href={urlPrincipal('/empresas')} onClick={cerrar}><Icon n="plataforma" className="" size={16} /> Todas tus empresas</a>
                 <button className="opcion" role="menuitem" onClick={() => { cerrar(); setContrasena(true); }}><Icon n="candado" className="" size={16} /> Cambiar contraseña</button>
                 <button className="opcion" role="menuitem" onClick={() => salir(false)}><Icon n="salir" className="" size={16} /> Cerrar sesión</button>
                 <button className="opcion" role="menuitem" onClick={() => salir(true)}><Icon n="salir" className="" size={16} /> Cerrar sesión en todos los dispositivos</button>

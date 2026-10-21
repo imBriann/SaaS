@@ -35,7 +35,7 @@ const ctxDe = (nombre: string): Ctx => ({ ...systemCtx(A, uuidv7(), nombre), ori
 
 describe(`Migraciones (${motor()})`, () => {
   it('una base creada antes del registro de migraciones se actualiza sin perder datos y repetir es inocuo', async () => {
-    expect(await db.migrations()).toEqual(['001_base', '002_operacion', '003_correo_operador', '004_institucional', '005_documentos_pago','006_registro','007_comisiones','008_creacion_asistida','009_legal','010_reembolsos','011_asistente','012_atencion_whatsapp','013_pagos_ventas','014_asistente_acciones','015_soporte_ia','016_numeros','017_asistente_informes','018_avisos','019_guias_en_pantalla']);
+    expect(await db.migrations()).toEqual(['001_base', '002_operacion', '003_correo_operador', '004_institucional', '005_documentos_pago','006_registro','007_comisiones','008_creacion_asistida','009_legal','010_reembolsos','011_asistente','012_atencion_whatsapp','013_pagos_ventas','014_asistente_acciones','015_soporte_ia','016_numeros','017_asistente_informes','018_avisos','019_propietario','020_soporte_responde','021_guias_en_pantalla']);
     expect(await db.migrate()).toBe(false);
     const cols = await db.raw(async (tx) => (await tx.query(`SELECT column_name FROM information_schema.columns WHERE table_name='message' AND column_name IN ('ocurrido_en','id_externo_salida','error_entrega')`)).rows.length);
     expect(cols).toBe(3);

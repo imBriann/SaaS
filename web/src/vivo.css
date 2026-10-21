@@ -417,12 +417,17 @@
 @media (min-width: 761px) {
   /* Riel lateral: una píldora blanca de íconos; el activo es un círculo negro y el nombre sale como etiqueta. */
   .ia-raiz .app { grid-template-columns: 104px minmax(0, 1fr); }
-  .ia-raiz .app .lateral { position: sticky; top: 16px; align-self: start; width: 72px; height: calc(100dvh - 32px); margin: 16px 0 16px 16px; padding: 14px 0; gap: 6px; align-items: center; overflow: visible; background: var(--superficie); border: 0; border-radius: 40px; box-shadow: var(--tv-sombra); }
-  .ia-raiz .lateral > .contexto { padding: 0; margin-bottom: 6px; }
-  .ia-raiz .lateral > .contexto .contexto-txt { display: none; }
+  .ia-raiz .app .lateral { position: sticky; z-index: 35; top: 16px; align-self: start; width: 72px; height: calc(100dvh - 32px); margin: 16px 0 16px 16px; padding: 14px 0; gap: 6px; align-items: center; overflow: visible; background: var(--superficie); border: 0; border-radius: 40px; box-shadow: var(--tv-sombra); }
+  .ia-raiz .lateral .contexto { justify-content: center; width: 52px; padding: 0; margin-bottom: 6px; border: 0; background: transparent; }
+  .ia-raiz .lateral .contexto .contexto-txt { display: none; }
+  /* Selector de empresa: solo el logotipo; si hay más empresas, su número va como insignia. */
+  .ia-raiz .lateral .contexto-btn { position: relative; }
+  .ia-raiz .lateral .contexto-cambiar { position: absolute; right: -2px; bottom: -2px; margin: 0; }
+  .ia-raiz .lateral .contexto-cambiar svg { display: none; }
+  .ia-raiz .lateral .contexto-cambiar i { display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 99px; background: var(--tinta); color: #fff; font-size: 10.5px; font-style: normal; font-weight: 700; box-shadow: 0 0 0 2px var(--superficie); }
   .ia-raiz .lateral .marca-negocio { width: 44px; height: 44px; border-radius: 50%; font-size: 14px; transition: transform 260ms var(--ease-salto); }
-  .ia-raiz .lateral > .contexto:hover { background: transparent; }
-  .ia-raiz .lateral > .contexto:hover .marca-negocio { transform: rotate(-8deg) scale(1.06); }
+  .ia-raiz .lateral .contexto:hover { background: transparent; }
+  .ia-raiz .lateral .contexto:hover .marca-negocio { transform: rotate(-8deg) scale(1.06); }
   .ia-raiz .lateral .nav-grupo { align-items: center; gap: 6px; width: 100%; }
   .ia-raiz .lateral .nav-grupo + .nav-grupo { padding-top: 10px; margin-top: 4px; border-top: 1px solid var(--borde); width: 40px; }
   .ia-raiz .lateral .nav-titulo { display: none; }
@@ -437,6 +442,9 @@
   .ia-raiz .lateral .nav-txt { position: absolute; left: calc(100% + 14px); top: 50%; z-index: 40; padding: 6px 11px; border-radius: 9px; background: var(--tinta); color: #fff; font-size: 13px; font-weight: 500; white-space: nowrap; pointer-events: none; opacity: 0; transform: translate(-6px, -50%); transition: opacity 160ms ease-out, transform 220ms var(--ease-suave); box-shadow: 0 8px 20px -10px rgb(27 27 25 / 60%); }
   .ia-raiz .lateral .nav-txt::before { content: ''; position: absolute; left: -4px; top: 50%; width: 8px; height: 8px; margin-top: -4px; border-radius: 2px; background: inherit; transform: rotate(45deg); }
   .ia-raiz .lateral .nav-item:hover .nav-txt, .ia-raiz .lateral .nav-item:focus-visible .nav-txt { opacity: 1; transform: translate(0, -50%); }
+  /* Los menús del riel (empresa y cuenta) se abren hacia la derecha, fuera de la píldora. */
+  .ia-raiz .lateral .menu-panel { left: calc(100% + 14px); right: auto; top: 0; bottom: auto; width: 290px; transform-origin: top left; }
+  .ia-raiz .lateral .menu-panel.arriba { top: auto; bottom: 0; transform-origin: bottom left; }
   .ia-raiz .lateral .cuenta { margin-top: auto; padding-top: 10px; border-top: 0; }
   .ia-raiz .lateral .cuenta-btn { justify-content: center; width: 44px; height: 44px; padding: 0; border-radius: 50%; }
   .ia-raiz .lateral .cuenta-btn > span:nth-child(2), .ia-raiz .lateral .cuenta-btn > svg { display: none; }

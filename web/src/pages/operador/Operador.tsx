@@ -6,6 +6,8 @@ import { Campo, Cargando, Cifra, ErrorCarga, Estado, Interruptor, Modal, Paginad
 import { Icon } from '../../components/icons';
 import { MARCA } from '../../brand';
 import { Pulso } from '../../components/Pulso';
+import { Anillo, BarrasH, BarrasVivas, Dona, TarjetaCifra } from '../../components/Tablero';
+import { Contador } from '../../components/Movimiento';
 
 /**
  * Panel interno del operador de Omnegia. Separado del panel de las empresas: no
@@ -86,8 +88,10 @@ export function OperadorLayout() {
 }
 
 // ------------------------------------------------------------------ utilidades
-const hoyIso = () => new Date().toISOString().slice(0, 10);
-const haceDias = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString().slice(0, 10);
+// Días en hora de Colombia, como los agrupa el servidor (en UTC, de noche ya sería «mañana»).
+const diaBogota = (ms: number) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+const hoyIso = () => diaBogota(Date.now());
+const haceDias = (d: number) => diaBogota(Date.now() - d * 86_400_000);
 
 function usePeriodo(dias = 30) {
   const [p, setP] = useState({ desde: haceDias(dias - 1), hasta: hoyIso() });
@@ -144,42 +148,74 @@ export function OpResumen() {
       {error ? <ErrorCarga error={error} reintentar={recargar} /> : cargando && !data ? <Cargando filas={6} /> : (
         <div className="col tablero-entrada" style={{ gap: 16 }}>
           <PulsoPlataforma data={data} />
-          <div className="kpis">
-            <Cifra etiqueta="Empresas activas" valor={num(data.empresas.por_estado.ACTIVA)} detalle={`${num(data.empresas.total)} registradas`} />
-            <Cifra etiqueta="Altas y bajas" valor={`+${data.empresas.altas_periodo} / −${data.empresas.bajas_periodo}`} detalle="en el periodo" />
-            <Cifra etiqueta="Ingresos aprobados" valor={cop(data.ingresos.aprobados.monto)} detalle={`${data.ingresos.aprobados.n} pagos · ${data.ingresos.pendientes.n} pendientes · ${data.ingresos.rechazados.n} rechazados`} />
-            <Cifra etiqueta="Ingreso mensual recurrente" valor={cop(data.ingresos.mrr_estimado)} detalle="estimado con los planes vigentes" />
-          </div>
-          <div className="kpis">
-            <Cifra etiqueta="Disponibilidad observada" valor={pct(data.solicitudes.disponibilidad)} detalle={`${num(data.solicitudes.total)} solicitudes · ${num(data.solicitudes.errores_5xx)} con error 5xx`} />
-            <Cifra etiqueta="Latencia" valor={ms(data.solicitudes.latencia_media_ms)} detalle={`p95 ≤ ${ms(data.solicitudes.p95_ms)}`} />
-            <Cifra etiqueta="Cola de trabajos" valor={num(data.cola.pendientes)} detalle={`${data.cola.fallidos} fallidos · ${data.cola.reintentando} reintentando`} />
-            <Cifra etiqueta="Incidentes abiertos" valor={num(Object.values(data.incidentes_abiertos as Record<string, number>).reduce((a, b) => a + b, 0))} detalle={`${data.incidentes_abiertos.CRITICA} críticos · ${data.soporte_abiertos} ${data.soporte_abiertos === 1 ? 'ticket abierto' : 'tickets abiertos'}`} />
-          </div>
-          <div className="grid g2">
-            <Tarjeta titulo="Empresas por estado">
-              <dl className="datos-def">{Object.entries(data.empresas.por_estado).map(([k, v]) => <Fragment key={k}><dt>{ETIQUETA_ESTADO_EMPRESA[k] ?? k}</dt><dd>{num(v as number)}</dd></Fragment>)}</dl>
-              <p className="tenue peq-txt" style={{ marginTop: 12 }}>No existe un periodo de prueba: una empresa se crea al confirmarse su primer pago.</p>
-            </Tarjeta>
-            <Tarjeta titulo="Altas por día">
-              <Barras etiqueta="Altas por día" datos={data.serie_altas.slice(-14).map((d: any) => ({ k: d.dia, v: d.altas, corto: `${d.dia.slice(8)}/${d.dia.slice(5, 7)}` }))} />
-            </Tarjeta>
-            <Tarjeta titulo="Uso de módulos">
-              <ul className="lista">{data.modulos.map((m: any) => <li key={m.codigo} className="fila entre"><span>{m.nombre}</span><b className="num">{m.empresas} {m.empresas === 1 ? 'empresa' : 'empresas'}</b></li>)}</ul>
-            </Tarjeta>
-            <Tarjeta titulo="Consumo técnico de IA">
-              <dl className="datos-def">
-                <dt>Llamadas al modelo</dt><dd>{num(data.ia.llamadas)} · {num(data.ia.errores)} con error</dd>
-                <dt>Tokens de entrada</dt><dd>{num(data.ia.tokens_entrada)}</dd>
-                <dt>Tokens de salida</dt><dd>{num(data.ia.tokens_salida)}</dd>
-                <dt>Tokens del mes en curso</dt><dd>{num(data.ia.tokens_mes_actual)}</dd>
-                <dt>Costo estimado del proveedor</dt><dd>{data.ia.costo_estimado_usd === null ? <span className="tenue">Sin precios configurados (variables IA_PRECIO_*_USD_MTOK)</span> : `US$ ${String(data.ia.costo_estimado_usd).replace('.', ',')}`}</dd>
-              </dl>
-              <p className="tenue peq-txt" style={{ marginTop: 12 }}>Solo cifras: ni instrucciones, ni conversaciones, ni respuestas del modelo.</p>
-            </Tarjeta>
-          </div>
+          <ResumenBento data={data} />
         </div>
       )}
+    </>
+  );
+}
+
+const COLOR_ESTADO: Record<string, string> = { ACTIVA: '#22a06b', PAGO_PENDIENTE: '#e2a03f', EN_GRACIA: '#f0b429', SUSPENDIDA: '#d64545', CANCELADA: '#8b8b93', SIN_SUSCRIPCION: '#c7c7cc' };
+
+/** Tablero del operador debajo del pulso: tarjetas con anillos y gráficas con los datos del periodo. */
+function ResumenBento({ data }: { data: any }) {
+  const total = Number(data.empresas.total ?? 0);
+  const activas = Number(data.empresas.por_estado.ACTIVA ?? 0);
+  const disp = data.solicitudes.disponibilidad;
+  const incidentes = Object.values(data.incidentes_abiertos as Record<string, number>).reduce((x, y) => x + y, 0);
+  const porDia = new Map<string, number>((data.serie_altas ?? []).map((d: any) => [String(d.dia).slice(0, 10), Number(d.altas)]));
+  const dias = Array.from({ length: 30 }, (_, i) => haceDias(29 - i));
+  const pagos = data.ingresos;
+  const tokens = Number(data.ia.tokens_entrada ?? 0) + Number(data.ia.tokens_salida ?? 0);
+  return (
+    <>
+      <div className="tb-bento" aria-label="Indicadores de la plataforma">
+        <TarjetaCifra i={0} icono="plataforma" etiqueta="Empresas activas" valor={activas} ruta="/operador/empresas" tono="ok"
+          detalle={`${num(total)} registradas · +${data.empresas.altas_periodo} / −${data.empresas.bajas_periodo} en el periodo`}
+          grafica={total > 0 ? <Anillo valor={activas} max={total} tam={48} grosor={6} tono="ok" etiqueta={`${activas} de ${total} empresas activas`}><small>{Math.round((activas / total) * 100)}%</small></Anillo> : undefined} />
+        <TarjetaCifra i={1} icono="suscripcion" etiqueta="Ingresos aprobados" valor={Number(pagos.aprobados.monto ?? 0)} formato={cop} ruta="/operador/suscripciones" tono="acento"
+          detalle={`${pagos.aprobados.n} pagos · ${pagos.pendientes.n} pendientes · ${pagos.rechazados.n} rechazados`} />
+        <TarjetaCifra i={2} icono="salud" etiqueta="Disponibilidad" valor={disp === null || disp === undefined ? '—' : pct(disp)} ruta="/operador/salud"
+          tono={disp === null || disp === undefined ? 'persona' : disp >= 99.5 ? 'ok' : disp >= 98 ? 'aviso' : 'error'}
+          detalle={`${num(data.solicitudes.total)} solicitudes · latencia ${ms(data.solicitudes.latencia_media_ms)} · p95 ${ms(data.solicitudes.p95_ms)}`}
+          grafica={disp === null || disp === undefined ? undefined : <Anillo valor={Number(disp)} max={100} tam={48} grosor={6} tono={disp >= 99.5 ? 'ok' : disp >= 98 ? 'aviso' : 'error'} etiqueta={`Disponibilidad ${pct(disp)}`}><Icon n="salud" className="" size={14} /></Anillo>} />
+        <TarjetaCifra i={3} icono="alerta" etiqueta="Incidentes y soporte" valor={incidentes + Number(data.soporte_abiertos ?? 0)} ruta="/operador/incidentes"
+          tono={data.incidentes_abiertos.CRITICA ? 'error' : incidentes || data.soporte_abiertos ? 'aviso' : 'ok'}
+          detalle={`${incidentes} ${incidentes === 1 ? 'incidente' : 'incidentes'} (${data.incidentes_abiertos.CRITICA} críticos) · ${data.soporte_abiertos} ${data.soporte_abiertos === 1 ? 'solicitud' : 'solicitudes'} · ${num(data.cola.pendientes)} en cola${data.cola.fallidos ? `, ${data.cola.fallidos} fallidos` : ''}`} />
+      </div>
+
+      <div className="tb-rejilla">
+        <Tarjeta titulo="Altas de empresas · 30 días" acciones={<Link to="/operador/empresas" className="btn sutil peq">Empresas</Link>}>
+          <BarrasVivas etiqueta="Altas por día" tono="ok" datos={dias.map((d) => ({ clave: d, valor: porDia.get(d) ?? 0, destacado: d === dias[dias.length - 1], corto: d === dias[dias.length - 1] ? 'Hoy' : `${Number(d.slice(8))}/${Number(d.slice(5, 7))}` }))}
+            formato={(n) => `${n} ${n === 1 ? 'alta' : 'altas'}`} />
+        </Tarjeta>
+        <Tarjeta titulo="Empresas por estado">
+          <Dona etiqueta="Empresas por estado" centro={num(total)} sub={total === 1 ? 'empresa' : 'empresas'}
+            partes={Object.entries(data.empresas.por_estado as Record<string, number>).map(([k, v]) => ({ etiqueta: ETIQUETA_ESTADO_EMPRESA[k] ?? k, valor: Number(v), color: COLOR_ESTADO[k] ?? '#8b8b93' }))} />
+          <p className="tenue peq-txt" style={{ marginTop: 14 }}>No existe un periodo de prueba: una empresa se crea al confirmarse su primer pago.</p>
+        </Tarjeta>
+        <Tarjeta titulo="Uso de módulos">
+          {data.modulos.length ? <BarrasH datos={data.modulos.map((m: any) => ({ etiqueta: m.nombre, valor: Number(m.empresas) }))} formato={(n) => `${n} ${n === 1 ? 'empresa' : 'empresas'}`} /> : <p className="tenue">Sin módulos activos.</p>}
+        </Tarjeta>
+        <Tarjeta titulo="Consumo técnico de IA">
+          <div className="tb-ia-op">
+            <div className="tb-ia-op-cifras">
+              <span><b><Contador valor={Number(data.ia.llamadas ?? 0)} formato={num} /></b>llamadas al modelo</span>
+              <span><b><Contador valor={Number(data.ia.tokens_mes_actual ?? 0)} formato={num} /></b>tokens este mes</span>
+              <span><b>{data.ia.costo_estimado_usd === null ? '—' : `US$ ${String(data.ia.costo_estimado_usd).replace('.', ',')}`}</b>costo estimado</span>
+            </div>
+            {tokens > 0 && (
+              <div className="tb-ia-op-reparto" role="img" aria-label={`Tokens: ${num(data.ia.tokens_entrada)} de entrada y ${num(data.ia.tokens_salida)} de salida`}>
+                <span className="tb-ia-op-barra"><i style={{ width: `${(Number(data.ia.tokens_entrada) / tokens) * 100}%` }} /></span>
+                <span className="fila entre peq-txt"><span><i className="tb-ley entrada" />Entrada {num(data.ia.tokens_entrada)}</span><span><i className="tb-ley salida" />Salida {num(data.ia.tokens_salida)}</span></span>
+              </div>
+            )}
+            {data.ia.errores > 0 && <span className="estado warn">{num(data.ia.errores)} llamadas con error</span>}
+            {data.ia.costo_estimado_usd === null && <span className="tenue peq-txt">Sin precios configurados (variables IA_PRECIO_*_USD_MTOK).</span>}
+          </div>
+          <p className="tenue peq-txt" style={{ marginTop: 12 }}>Solo cifras: ni instrucciones, ni conversaciones, ni respuestas del modelo.</p>
+        </Tarjeta>
+      </div>
     </>
   );
 }
@@ -640,6 +676,7 @@ export function OpTicket() {
       <Cabecera titulo={t.asunto} sub={<span className="fila" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mono">{t.numero}</span><span>·</span>{t.empresa_id ? <Link to={`/operador/empresas/${t.empresa_id}`}>{t.empresa}</Link> : <span className="tenue">Sin empresa</span>}{t.empresa_sin_verificar && <span className="tenue peq-txt">(relacionada por el teléfono, sin verificar)</span>}<span>·</span><span>{t.categoria_nombre}</span>{t.canal === 'WHATSAPP' && <Estado v="WHATSAPP" />}<Estado v={t.prioridad} /><Estado v={t.estado} texto={ESTADO_TICKET[t.estado]} /></span>}>
         <Link className="btn" to="/operador/soporte"><Icon n="atras" className="" size={16} />Todas</Link>
         {t.canal === 'WHATSAPP' && t.conversacion_id && <Link className="btn primario" to={`/operador/conversaciones/${t.conversacion_id}`}><Icon n="conversaciones" className="" size={16} />Abrir la conversación</Link>}
+        {data.compartida && <Link className="btn primario" to={`/operador/atencion/conversaciones/${data.compartida.conversation_id}`}><Icon n="conversaciones" className="" size={16} />{data.compartida.puede_responder ? 'Abrir la conversación del cliente y responder' : 'Leer la conversación compartida'}</Link>}
         {gestionar && t.estado !== 'CERRADO' && <button className="btn" disabled={ocupado} onClick={async () => { await run(() => api.patch(`/api/operador/soporte/${t.id}`, { estado: 'CERRADO' }), 'Solicitud cerrada.'); recargar(); }}>Cerrar</button>}
       </Cabecera>
       <div className="grid g-main">
@@ -804,7 +841,7 @@ function PulsoPlataforma({ data }: { data: any }) {
   const disp = data.solicitudes.disponibilidad;
   // La serie solo trae los días con altas: se completan con cero los días del periodo sin altas.
   const porDia = new Map<string, number>((data.serie_altas ?? []).map((d: any) => [String(d.dia).slice(0, 10), Number(d.altas)]));
-  const serie = Array.from({ length: 30 }, (_, i) => porDia.get(new Date(Date.now() - (29 - i) * 86_400_000).toISOString().slice(0, 10)) ?? 0);
+  const serie = Array.from({ length: 30 }, (_, i) => porDia.get(haceDias(29 - i)) ?? 0);
   return (
     <Pulso etiqueta="Ingreso mensual recurrente" valor={Number(data.ingresos.mrr_estimado ?? 0)} formato={cop} serie={serie} serieEtiqueta="Altas por día"
       pie={`${num(data.empresas.por_estado.ACTIVA ?? 0)} empresas activas · +${data.empresas.altas_periodo} altas en el periodo`}
