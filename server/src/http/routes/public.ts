@@ -21,6 +21,7 @@ import { publicDocumentData } from '../../modules/fiscal.js';
 import { procesarEventoComercio, procesarEventoPago, verificarRetorno } from '../../modules/billing.js';
 import { ofertaAlta, resumenModalidad } from '../../onboarding/oferta.js';
 import * as auth from '../../modules/auth.js';
+import * as perfil from '../../modules/perfil.js';
 import * as team from '../../modules/team.js';
 import { FirmaInvalida, webhookResend } from '../../email/servicio.js';
 import { auditPlatform } from '../../core/audit.js';
@@ -105,13 +106,18 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
     return { usuario: req.user, empresas };
   });
 
-  app.get('/api/auth/perfil', async (req) => {
-    if (!req.user) throw new AppError('UNAUTHENTICATED', 'Tu sesión terminó. Inicia sesión de nuevo.');
-    return auth.perfil(db, req.user);
-  });
-  app.patch('/api/auth/perfil', async (req: any) => {
-    if (!req.user) throw new AppError('UNAUTHENTICATED', 'Tu sesión terminó. Inicia sesión de nuevo.');
-    return auth.actualizarPerfil(db, req.user, req.body ?? {}, req.correlacion);
+  // Perfil de la persona (su cuenta, no una empresa).
+  const conSesion = (req: any) => { if (!req.user) throw new AppError('UNAUTHENTICATED', 'Tu sesión terminó. Inicia sesión de nuevo.'); return req.user as auth.SessionUser; };
+  app.get('/api/auth/perfil', async (req: any) => perfil.perfil(db, conSesion(req), sessionToken(req)));
+  app.patch('/api/auth/perfil', async (req: any) => perfil.actualizarPerfil(db, conSesion(req), req.body ?? {}, req.correlacion));
+  app.post('/api/auth/perfil/correo', async (req: any) => perfil.solicitarCambioCorreo(db, conSesion(req), req.body ?? {}, req.ip, req.correlacion));
+  app.post('/api/auth/perfil/correo/confirmar', async (req: any) => perfil.confirmarCambioCorreo(db, conSesion(req), req.body?.codigo, req.correlacion));
+  app.delete('/api/auth/perfil/correo', async (req: any) => perfil.cancelarCambioCorreo(db, conSesion(req)));
+  app.delete('/api/auth/perfil/sesiones/:id', async (req: any) => perfil.cerrarSesion(db, conSesion(req), String(req.params.id ?? ''), sessionToken(req), req.correlacion));
+  app.post('/api/auth/perfil/sesiones/cerrar-otras', async (req: any) => perfil.cerrarOtrasSesiones(db, conSesion(req), sessionToken(req), req.correlacion));
+  app.get('/api/auth/perfil/exportar', async (req: any, reply) => {
+    const datos = await perfil.exportarDatos(db, conSesion(req), sessionToken(req));
+    return reply.header('content-disposition', 'attachment; filename="mis-datos.json"').header('cache-control', 'no-store, private').send(datos);
   });
 
   app.post('/api/auth/recuperar', async (req: any) => auth.requestPasswordReset(db, String(req.body?.email ?? ''), req.correlacion));

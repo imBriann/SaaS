@@ -42,7 +42,7 @@ export function validarContrasena(pw: unknown): string {
 const claveCorreo = (email: string) => `correo:${sha256(email.trim().toLowerCase()).slice(0, 32)}`;
 const claveIp = (ip: string) => `ip:${sha256(ip).slice(0, 32)}`;
 export const enmascararCorreo = (c: string) => c.replace(/^(.)(.*?)(.)?@/, (_m, a, _b, z) => `${a}${'•'.repeat(3)}${z ?? ''}@`);
-const urlRecuperar = () => `${config.publicUrl}/recuperar`;
+export const urlRecuperar = () => `${config.publicUrl}/recuperar`;
 
 const aSesion = (u: any, segundoFactor: boolean): SessionUser => ({
   id: u.id, email: u.email, nombre: u.nombre,
@@ -202,7 +202,7 @@ export async function requestPasswordReset(db: Database, email: string, correlac
   return { ok: true };
 }
 
-const fechaLegible = () => new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date());
+export const fechaLegible = () => new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date());
 
 async function avisarCambioContrasena(tx: Tx, userId: string) {
   const u = (await tx.query(`SELECT id, nombre, email FROM users WHERE id=$1`, [userId])).rows[0];
@@ -238,31 +238,6 @@ export async function changePassword(db: Database, user: SessionUser, actual: st
     await avisarCambioContrasena(tx, user.id);
     await auditPlatform(tx, null, { tipo: 'USUARIO', id: user.id, nombre: user.email }, 'PANEL', correlacion, { accion: 'sesion.contrasena_cambiada', resultado: 'EXITO' });
     return { ok: true };
-  });
-}
-
-/** Perfil de la cuenta: datos propios (no los de una empresa) y cuántas sesiones tiene abiertas. */
-export async function perfil(db: Database, user: SessionUser) {
-  return db.withPlatform(async (tx) => {
-    const u = (await tx.query(
-      `SELECT u.nombre, u.email, u.email_verificado_en, u.contrasena_cambiada_en, u.creado_en,
-              (SELECT count(*)::int FROM session s WHERE s.user_id=u.id AND s.expira_en > now()) AS sesiones
-       FROM users u WHERE u.id=$1`, [user.id])).rows[0];
-    if (!u) throw new AppError('UNAUTHENTICATED', 'Tu sesión terminó. Inicia sesión de nuevo.');
-    return { nombre: u.nombre, email: u.email, correo_verificado: !!u.email_verificado_en, contrasena_cambiada_en: u.contrasena_cambiada_en,
-      creado_en: u.creado_en, sesiones: u.sesiones };
-  });
-}
-
-/** Cambia el nombre de la persona. El correo no se cambia aquí: identifica la cuenta. */
-export async function actualizarPerfil(db: Database, user: SessionUser, body: { nombre?: unknown }, correlacion: string) {
-  const nombre = String(body?.nombre ?? '').replace(/\s+/g, ' ').trim();
-  if (nombre.length < 2 || nombre.length > 80) throw invalid('Escribe tu nombre (entre 2 y 80 caracteres).');
-  if (/[<>]/.test(nombre)) throw invalid('El nombre no puede tener los caracteres < o >.');
-  return db.withPlatform(async (tx) => {
-    await tx.query(`UPDATE users SET nombre=$2 WHERE id=$1`, [user.id, nombre]);
-    await auditPlatform(tx, null, { tipo: 'USUARIO', id: user.id, nombre: user.email }, 'PANEL', correlacion, { accion: 'perfil.actualizado', resultado: 'EXITO' });
-    return { ok: true, nombre };
   });
 }
 

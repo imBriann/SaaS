@@ -4,6 +4,7 @@ import { api, direccionEmpresa, irAEmpresa, urlPrincipal } from '../api';
 import { useApi } from './ui';
 import { Icon } from './icons';
 import { Menu } from './Layout';
+import { Avatar } from './Perfil';
 
 interface Empresa { id: string; slug: string; nombre: string; rol: string; propietario: boolean; tema?: { acento?: string; monograma?: string }; suscripcion?: string | null }
 
@@ -14,7 +15,7 @@ const reducido = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').m
  * activas); elegir una solo cambia el contexto: el servidor valida el acceso en cada petición.
  * En producción cada empresa vive en su subdominio y la cookie de sesión vale para todos.
  */
-export interface CuentaMenu { nombre: string; email: string | null; iniciales: string; onPerfil: () => void; onContrasena: () => void; onSalir: () => void }
+export interface CuentaMenu { nombre: string; email: string | null; iniciales: string; foto?: string | null; onPerfil: () => void; onContrasena: () => void; onSalir: () => void }
 
 export function SelectorEmpresa({ slug, nombre, rol, marca, cuenta }: { slug: string; nombre: string; rol: string; marca: ReactNode; cuenta: CuentaMenu }) {
   const { data } = useApi<{ empresas: Empresa[] }>(() => api.get('/api/auth/sesion'), []);
@@ -42,7 +43,7 @@ export function SelectorEmpresa({ slug, nombre, rol, marca, cuenta }: { slug: st
       )}>
         {(cerrar) => <div className="selector-empresa">
           <button type="button" role="menuitem" className="opcion cuenta-cabeza" onClick={() => { cerrar(); cuenta.onPerfil(); }}>
-            <span className="avatar" aria-hidden="true">{cuenta.iniciales}</span>
+            <Avatar nombre={cuenta.nombre} foto={cuenta.foto} />
             <span className="empresa-txt"><b>{cuenta.nombre}</b><small>{cuenta.email ?? 'Tu cuenta'}</small></span>
             <span className="ver-perfil">Mi perfil<Icon n="derecha" className="" size={13} /></span>
           </button>

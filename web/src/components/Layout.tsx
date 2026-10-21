@@ -10,12 +10,12 @@ import { PanelIA, PildoraIA } from './ia/PanelIA';
 import { GuiaEnPantalla } from './ia/GuiaEnPantalla';
 import { BarraSuperior } from './ia/BarraSuperior';
 import { SelectorEmpresa } from './SelectorEmpresa';
-import { PerfilModal, inicialesDe } from './Perfil';
+import { Avatar, inicialesDe } from './Perfil';
 import { sonar } from '../lib/sonido';
 import { SonidoBoton } from './SonidoBoton';
 
 export interface Sesion {
-  usuario: { id: string; nombre: string; rol: string; rol_nombre: string; propietario: boolean; email: string | null; correo_verificado: boolean };
+  usuario: { id: string; nombre: string; rol: string; rol_nombre: string; propietario: boolean; email: string | null; correo_verificado: boolean; foto?: string | null; nombre_en_empresa?: string | null; disponible?: boolean };
   tenant: any;
   modulos: string[];
   permisos: string[];
@@ -91,7 +91,7 @@ export function Menu({ boton, children, izquierda, arriba }: { boton: (abrir: ()
   );
 }
 
-function CambiarContrasena({ onCerrar }: { onCerrar: () => void }) {
+export function CambiarContrasena({ onCerrar }: { onCerrar: () => void }) {
   const [f, setF] = useState({ actual: '', nueva: '', repetir: '' });
   const { run, ocupado } = useAccion();
   const distintas = f.repetir.length > 0 && f.nueva !== f.repetir;
@@ -206,7 +206,6 @@ export function PanelLayout() {
   useEffect(() => { if (data) document.title = `${pendientes ? `(${pendientes}) ` : ''}${data.tenant.nombre} · ${MARCA.nombre}`; }, [pendientes, data]);
   const [navAbierta, setNavAbierta] = useState(false);
   const [contrasena, setContrasena] = useState(false);
-  const [perfil, setPerfil] = useState(false);
   useEffect(() => setNavAbierta(false), [loc.pathname]);
   useEffect(() => {
     if (!navAbierta) return;
@@ -276,7 +275,7 @@ export function PanelLayout() {
 
         <aside className="lateral" id="nav-lateral" aria-label="Navegación del panel">
           <SelectorEmpresa slug={t.slug} nombre={t.nombre} rol={data.usuario.rol_nombre} marca={marca}
-            cuenta={{ nombre: data.usuario.nombre, email: data.usuario.email, iniciales, onPerfil: () => setPerfil(true), onContrasena: () => setContrasena(true), onSalir: () => salir(false) }} />
+            cuenta={{ nombre: data.usuario.nombre, email: data.usuario.email, iniciales, foto: data.usuario.foto, onPerfil: () => nav('/perfil'), onContrasena: () => setContrasena(true), onSalir: () => salir(false) }} />
           <nav className="nav-grupo" aria-label="Operación">
             <span className="nav-titulo">Operación</span>
             {OPERACION.filter(visible).map(enlace)}
@@ -295,7 +294,7 @@ export function PanelLayout() {
           <div className="cuenta">
             <Menu arriba boton={(abrir, abierto) => (
               <button className="cuenta-btn" onClick={abrir} aria-expanded={abierto} aria-haspopup="menu" aria-label={`Tu cuenta: ${data.usuario.nombre}`}>
-                <span className="avatar">{iniciales}</span>
+                <Avatar nombre={data.usuario.nombre} foto={data.usuario.foto} />
                 <span><b>{data.usuario.nombre}</b><small>{t.slug}</small></span>
                 <Icon n="arriba_abajo" className="" size={16} />
               </button>
@@ -307,7 +306,7 @@ export function PanelLayout() {
                 </div>
                 {data.consumo && <div className="bloque"><Medidor c={data.consumo.tokens_ia} etiqueta="Consumo de IA del mes" oscuro /></div>}
                 <div className="sep" />
-                <button className="opcion" role="menuitem" onClick={() => { cerrar(); setPerfil(true); }}><Icon n="persona" className="" size={16} /> Mi perfil</button>
+                <Link className="opcion" role="menuitem" to="/perfil" onClick={cerrar}><Icon n="persona" className="" size={16} /> Mi perfil</Link>
                 <a className="opcion" role="menuitem" href={urlPrincipal('/empresas')} onClick={cerrar}><Icon n="plataforma" className="" size={16} /> Todas tus empresas</a>
                 <button className="opcion" role="menuitem" onClick={() => { cerrar(); setContrasena(true); }}><Icon n="candado" className="" size={16} /> Cambiar contraseña</button>
                 <button className="opcion" role="menuitem" onClick={() => salir(false)}><Icon n="salir" className="" size={16} /> Cerrar sesión</button>
@@ -342,7 +341,6 @@ export function PanelLayout() {
         </nav>
       </div>
       {contrasena && <CambiarContrasena onCerrar={() => setContrasena(false)} />}
-      {perfil && <PerfilModal slug={t.slug} onCerrar={() => setPerfil(false)} onContrasena={() => setContrasena(true)} onSalirTodas={() => salir(true)} onCambio={recargar} />}
       {veConversaciones && av && <AvisoEntrante ultima={av.ultima} />}
       <PildoraIA />
       <PanelIA />

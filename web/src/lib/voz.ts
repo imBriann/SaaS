@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import { sonidoActivo } from './sonido';
 
 /**
@@ -7,6 +8,22 @@ import { sonidoActivo } from './sonido';
  * en ese caso `hablar` responde «bloqueado» y la interfaz ofrece un botón para escuchar.
  */
 export type ResultadoVoz = 'ok' | 'bloqueado' | 'sin_voz' | 'cancelado' | 'silenciado';
+
+/** Preferencia de este dispositivo: la IA puede hablar (con el sonido activo) o solo escribir. */
+const CLAVE_VOZ = 'omnegia-voz';
+const oyentesVoz = new Set<() => void>();
+let vozActivaPref = (() => { try { return localStorage.getItem(CLAVE_VOZ) !== 'off'; } catch { return true; } })();
+export const vozActiva = () => vozActivaPref;
+export function activarVoz(v: boolean) {
+  vozActivaPref = v;
+  try { localStorage.setItem(CLAVE_VOZ, v ? 'on' : 'off'); } catch { /* sin almacenamiento */ }
+  if (!v) callar();
+  oyentesVoz.forEach((f) => f());
+}
+export function useVoz(): [boolean, (v: boolean) => void] {
+  const v = useSyncExternalStore((f) => { oyentesVoz.add(f); return () => oyentesVoz.delete(f); }, () => vozActivaPref, () => true);
+  return [v, activarVoz];
+}
 
 const PREFERIDAS = [/dalia|salome|gonzalo/i, /paulina|google espa[ñn]ol de estados unidos|sabina|jorge|natural|online/i, /google/i];
 let voces: SpeechSynthesisVoice[] = [];
@@ -46,7 +63,7 @@ export function callar() {
  * Si en 1,5 s no empezó (navegador sin permiso o sin motor de voz), se cancela y devuelve «bloqueado».
  */
 export function hablar(texto: string, o: { alEmpezar?: () => void; alPalabra?: () => void } = {}): Promise<ResultadoVoz> {
-  if (!sonidoActivo()) return Promise.resolve('silenciado');
+  if (!sonidoActivo() || !vozActivaPref) return Promise.resolve('silenciado');
   if (!vozDisponible()) return Promise.resolve('sin_voz');
   const limpio = textoHablado(texto);
   if (!limpio) return Promise.resolve('ok');

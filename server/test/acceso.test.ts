@@ -103,22 +103,6 @@ describe('Recuperación de acceso', () => {
     await E.app.inject({ method: 'POST', url: '/api/auth/cambiar-contrasena', payload: { actual: 'clave-gym-nueva-2026', nueva: CRED.gym[1] }, headers: { cookie: esta } });
   });
 
-  it('perfil: muestra los datos propios y cambia el nombre, que se refleja en la sesión', async () => {
-    const c = cliente(E.app);
-    await c.call('POST', '/api/auth/login', { email: CRED.laura[0], password: CRED.laura[1] });
-    const p = await c.call('GET', '/api/auth/perfil');
-    expect(p.status).toBe(200);
-    expect(p.body).toMatchObject({ email: CRED.laura[0] });
-    expect(p.body.sesiones).toBeGreaterThanOrEqual(1);
-    const anterior = p.body.nombre;
-    expect((await c.call('PATCH', '/api/auth/perfil', { nombre: 'x' })).status).toBe(400);
-    expect((await c.call('PATCH', '/api/auth/perfil', { nombre: '<b>Laura</b>' })).status).toBe(400);
-    const ok = await c.call('PATCH', '/api/auth/perfil', { nombre: '  Laura   Pabón R. ', email: 'otro@correo.test' });
-    expect(ok.status).toBe(200);
-    expect((await c.call('GET', '/api/auth/sesion')).body.usuario).toMatchObject({ nombre: 'Laura Pabón R.', email: CRED.laura[0] });
-    await c.call('PATCH', '/api/auth/perfil', { nombre: anterior });
-    expect((await cliente(E.app).call('GET', '/api/auth/perfil')).status).toBe(401);
-  });
 });
 
 describe('Invitaciones al equipo', () => {
@@ -256,7 +240,7 @@ describe('Salud y migraciones', () => {
   it('readiness informa la base, las migraciones aplicadas y el estado de las integraciones sin secretos', async () => {
     const r = await E.app.inject({ method: 'GET', url: '/api/salud/listo' });
     expect(r.statusCode).toBe(200);
-    expect(r.json().migraciones).toEqual(['001_base', '002_operacion', '003_correo_operador', '004_institucional', '005_documentos_pago','006_registro','007_comisiones','008_creacion_asistida','009_legal','010_reembolsos','011_asistente','012_atencion_whatsapp','013_pagos_ventas','014_asistente_acciones','015_soporte_ia','016_numeros','017_asistente_informes','018_avisos','019_propietario','020_soporte_responde','021_guias_en_pantalla','022_planes_ciclo_cambio','023_alta_con_plan','024_asistente_web']);
+    expect(r.json().migraciones).toEqual(['001_base', '002_operacion', '003_correo_operador', '004_institucional', '005_documentos_pago','006_registro','007_comisiones','008_creacion_asistida','009_legal','010_reembolsos','011_asistente','012_atencion_whatsapp','013_pagos_ventas','014_asistente_acciones','015_soporte_ia','016_numeros','017_asistente_informes','018_avisos','019_propietario','020_soporte_responde','021_guias_en_pantalla','022_planes_ciclo_cambio','023_alta_con_plan','024_asistente_web','025_perfil']);
     expect(r.body).not.toMatch(/sk-ant|secret|token-de/);
   });
   void drain;

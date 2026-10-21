@@ -186,6 +186,22 @@ export const avisoSeguridad = (o: { nombre: string; motivo: 'intentos_fallidos' 
   noFuiste: o.motivo === 'intentos_fallidos' ? 'Tu contraseña sigue a salvo mientras nadie la conozca. Si usas la misma en otros sitios, cámbiala.' : 'Restablece tu contraseña de inmediato y responde a este correo.',
 });
 
+export const codigoCambioCorreo = (o: { nombre: string; codigo: string; minutos: number }) => render({
+  tipo: 'cambio_correo_codigo', asunto: `Confirma tu nuevo correo en ${MARCA.nombre}`,
+  previa: 'Tu código para usar este correo en tu cuenta.', titulo: 'Confirma tu nuevo correo',
+  saludo: `Hola ${primerNombre(o.nombre)},`, parrafos: ['Pediste usar este correo para entrar a tu cuenta. Escribe este código en tu perfil para confirmar el cambio.'],
+  codigo: { valor: o.codigo, minutos: o.minutos }, noFuiste: 'Ignora este mensaje: sin el código, el correo de la cuenta no cambia.',
+});
+
+export const correoCambiado = (o: { nombre: string; nuevo: string; cuando: string; urlRecuperar: string }) => render({
+  tipo: 'correo_cambiado', asunto: `El correo de tu cuenta de ${MARCA.nombre} cambió`,
+  previa: 'Aviso de seguridad: cambio del correo de acceso.', titulo: 'El correo de tu cuenta cambió',
+  saludo: `Hola ${primerNombre(o.nombre)},`, parrafos: ['El correo con el que entras a tu cuenta se cambió. Desde ahora los avisos llegan al correo nuevo.'],
+  detalles: [['Correo nuevo', o.nuevo], ['Fecha', o.cuando]],
+  boton: { texto: 'No fui yo: recuperar mi cuenta', url: o.urlRecuperar },
+  noFuiste: 'Responde a este correo de inmediato para que revisemos el acceso a tu cuenta.',
+});
+
 // ------------------------------------------------------------------ gestión del SaaS
 export const bienvenida = (o: { nombre: string; empresa: string; urlPanel: string }) => render({
   tipo: 'bienvenida', asunto: `Bienvenido a ${MARCA.nombre}: ${o.empresa} ya tiene su espacio`,

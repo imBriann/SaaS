@@ -15,7 +15,7 @@ import { config } from '../config.js';
  *    (20 por hora).
  *  - El código nunca se devuelve en una respuesta de la API ni se registra.
  */
-export type Proposito = 'VERIFICAR_CORREO' | 'ACCESO_PLATAFORMA';
+export type Proposito = 'VERIFICAR_CORREO' | 'ACCESO_PLATAFORMA' | 'CAMBIAR_CORREO';
 
 export const LIMITES_OTP = { esperaSegundos: 60, porHoraUsuario: 5, porHoraIp: 20, maxIntentos: 5 };
 

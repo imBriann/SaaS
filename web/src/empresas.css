@@ -38,21 +38,12 @@
 .selector-nota { margin: 2px 10px 4px; font-size: 12px; line-height: 1.35; color: var(--tinta-3); }
 
 /* Mi perfil */
-.perfil-modal .cuerpo { display: flex; flex-direction: column; gap: 14px; }
-.perfil-cabeza { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 16px;
-  background: linear-gradient(135deg, var(--acento-tinte), color-mix(in srgb, var(--superficie-2) 70%, transparent)); }
 .perfil-avatar { width: 56px; height: 56px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 19px; font-weight: 700; color: #fff;
   background: linear-gradient(140deg, var(--acento), color-mix(in srgb, var(--acento) 55%, #352a9c)); box-shadow: 0 10px 24px -12px var(--acento);
   animation: perfil-entra 420ms var(--ease-out) both; }
-.perfil-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.perfil-id b { font-size: 17px; font-weight: 650; overflow-wrap: anywhere; }
-.perfil-id > span { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--tinta-2); overflow-wrap: anywhere; }
-.perfil-id small { font-size: 12px; color: var(--tinta-3); }
 .perfil-ok, .perfil-pend { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 .perfil-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .perfil-pend { color: color-mix(in srgb, var(--atencion) 80%, var(--tinta)); background: color-mix(in srgb, var(--atencion) 14%, transparent); }
-.perfil-seccion { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-.perfil-seccion h3 { margin: 4px 0 0; font-size: 13px; font-weight: 650; color: var(--tinta-2); }
 .perfil-empresas { display: flex; flex-direction: column; gap: 6px; width: 100%; }
 .perfil-empresa { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--borde);
   background: var(--superficie); font: inherit; text-align: left; cursor: pointer; transition: border-color 160ms, transform 160ms var(--ease-out), background 160ms; }
@@ -67,7 +58,88 @@
 .perfil-fila small { font-size: 12px; color: var(--tinta-3); }
 .perfil-fila .btn { flex: none; }
 @keyframes perfil-entra { from { transform: scale(.6) rotate(-12deg); opacity: 0; } }
-@media (max-width: 480px) { .perfil-fila { flex-direction: column; align-items: stretch; } }
+
+/* Página «Mi perfil» */
+.avatar.con-foto, .perfil-avatar.con-foto { overflow: hidden; padding: 0; background: var(--superficie-3); }
+.avatar.con-foto img, .perfil-avatar.con-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.perfil-pagina { display: grid; grid-template-columns: minmax(250px, 300px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.perfil-resumen { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 12px; }
+.perfil-resumen-cab { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding-top: 4px; }
+.perfil-resumen-nombre { font-size: 18px; font-weight: 650; margin-top: 8px; overflow-wrap: anywhere; }
+.perfil-resumen-correo { font-size: 13px; color: var(--tinta-2); overflow-wrap: anywhere; }
+.perfil-rol { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  background: var(--superficie-2); color: var(--tinta-2); }
+.perfil-rol.dueno { color: color-mix(in srgb, var(--atencion) 80%, var(--tinta)); background: color-mix(in srgb, var(--atencion) 14%, transparent); }
+.perfil-rol.dueno svg { color: var(--atencion); }
+.perfil-foto { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.perfil-avatar.grande { width: 96px; height: 96px; font-size: 30px; }
+.perfil-foto-btn { position: absolute; top: 66px; left: calc(50% + 22px); width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--superficie);
+  background: var(--tinta); color: #fff; display: grid; place-items: center; cursor: pointer; transition: transform 180ms var(--ease-out); }
+.perfil-foto-btn:hover { transform: scale(1.08); }
+.perfil-foto-btn:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.perfil-foto-quitar { font-size: 12px; }
+.perfil-avance { margin-top: 16px; padding: 12px; border-radius: 14px; background: var(--superficie-2); }
+.perfil-avance-cab { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; }
+.perfil-barra { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--tinta) 9%, transparent); margin: 8px 0 10px; overflow: hidden; }
+.perfil-barra i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--acento), color-mix(in srgb, var(--acento) 50%, #8b7bff));
+  transition: width 600ms var(--ease-out); }
+.perfil-avance ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; font-size: 12.5px; color: var(--tinta-3); }
+.perfil-avance li { display: flex; align-items: center; gap: 6px; }
+.perfil-avance li.ok { color: var(--tinta-2); }
+.perfil-avance li.ok svg { color: var(--ok); }
+.perfil-datos { margin: 14px 0 0; display: grid; gap: 8px; }
+.perfil-datos div { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; }
+.perfil-datos dt { color: var(--tinta-3); }
+.perfil-datos dd { margin: 0; font-weight: 600; text-align: right; }
+.perfil-indice { display: flex; flex-direction: column; gap: 2px; padding: 4px; }
+.perfil-indice a { padding: 7px 12px; border-radius: 10px; font-size: 13.5px; color: var(--tinta-2); text-decoration: none; transition: background 160ms, color 160ms, transform 160ms var(--ease-out); }
+.perfil-indice a:hover { background: var(--superficie-2); color: var(--tinta); transform: translateX(3px); }
+.perfil-secciones { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.perfil-seccion-p { scroll-margin-top: 16px; }
+.perfil-seccion-p .cuerpo { display: flex; flex-direction: column; gap: 12px; }
+.perfil-ico { width: 26px; height: 26px; border-radius: 8px; display: inline-grid; place-items: center; margin-right: 8px; vertical-align: -7px;
+  background: var(--acento-tinte); color: var(--acento-texto, var(--acento)); }
+.perfil-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; }
+.perfil-form > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+.perfil-pie { display: flex; justify-content: flex-end; gap: 8px; }
+.perfil-fijo { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.perfil-fijo-et { font-size: 13px; font-weight: 600; color: var(--tinta-2); }
+.perfil-fijo-val { display: flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 12px; border-radius: 10px; border: 1px dashed var(--borde);
+  background: var(--superficie-2); color: var(--tinta-2); font-size: 14px; overflow-wrap: anywhere; }
+.perfil-fijo-val svg { color: var(--tinta-3); flex: none; }
+.perfil-fijo small { font-size: 12px; color: var(--tinta-3); }
+.perfil-fila-acc { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.perfil-fila small { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.perfil-pendiente { border: 1px solid color-mix(in srgb, var(--acento) 30%, transparent); background: var(--acento-tinte); border-radius: 12px; padding: 12px 14px; }
+.perfil-pendiente p { margin: 0 0 8px; display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; overflow-wrap: anywhere; }
+.perfil-pendiente p svg { flex: none; margin-top: 2px; color: var(--acento); }
+.perfil-pendiente-acc { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.perfil-pendiente-acc .campo { margin: 0; max-width: 200px; }
+.perfil-sesiones { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.perfil-sesiones li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--borde); }
+.perfil-sesiones li.actual { border-color: color-mix(in srgb, var(--ok) 35%, transparent); background: color-mix(in srgb, var(--ok) 5%, transparent); }
+.perfil-disp { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--superficie-2); color: var(--tinta-2); flex: none; }
+.perfil-sesion-txt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.perfil-sesion-txt b { font-size: 14px; font-weight: 600; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.perfil-sesion-txt small { font-size: 12px; color: var(--tinta-3); }
+.perfil-actividad { list-style: none; margin: 0; padding: 0 0 0 4px; display: flex; flex-direction: column; }
+.perfil-actividad li { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 10px; padding: 7px 0; font-size: 13.5px; position: relative; }
+.perfil-actividad li:not(:last-child)::after { content: ''; position: absolute; left: 4px; top: 24px; bottom: -8px; width: 2px; background: var(--borde); }
+.perfil-actividad .punto { width: 10px; height: 10px; border-radius: 50%; background: var(--acento); box-shadow: 0 0 0 3px var(--acento-tinte); }
+.perfil-actividad li.alerta .punto { background: var(--atencion); box-shadow: 0 0 0 3px color-mix(in srgb, var(--atencion) 18%, transparent); }
+.perfil-actividad time { font-size: 12px; color: var(--tinta-3); white-space: nowrap; }
+@media (max-width: 900px) {
+  .perfil-pagina { grid-template-columns: minmax(0, 1fr); }
+  .perfil-resumen { position: static; }
+  .perfil-indice { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .perfil-indice a { white-space: nowrap; }
+}
+@media (max-width: 560px) {
+  .perfil-form { grid-template-columns: minmax(0, 1fr); }
+  .perfil-fila { flex-direction: column; align-items: stretch; }
+  .perfil-fila-acc { justify-content: flex-start; }
+  .perfil-sesiones li { flex-wrap: wrap; }
+}
 
 /* Cortina al cambiar de empresa: el color de la empresa destino se abre desde el centro. */
 .cambio-empresa { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: var(--acento-op);
@@ -100,5 +172,8 @@ tr.fila-propietario td { background: color-mix(in srgb, var(--atencion) 5%, tran
   .empresa-mono.grande, .insignia-propietario svg { animation: none; }
   .empresa-op:hover .empresa-mono { transform: none; }
   .perfil-avatar { animation: none; }
+  .perfil-indice a:hover, .perfil-foto-btn:hover { transform: none; }
+  .perfil-barra i { transition: none; }
   .cuenta-cabeza:hover .ver-perfil, .perfil-empresa:hover:not(:disabled) { transform: none; }
 }
+.perfil-mas { align-self: flex-start; }

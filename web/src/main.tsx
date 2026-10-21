@@ -59,6 +59,7 @@ const VentaDetalle = lazy(() => negocio().then((m) => ({ default: m.VentaDetalle
 const gobierno = () => import('./pages/app/Gobierno');
 const Auditoria = lazy(() => gobierno().then((m) => ({ default: m.Auditoria })));
 const CentroIA = lazy(() => gobierno().then((m) => ({ default: m.CentroIA })));
+const PerfilPagina = lazy(() => import('./pages/app/Perfil').then((m) => ({ default: m.Perfil })));
 const Configuracion = lazy(() => gobierno().then((m) => ({ default: m.Configuracion })));
 const Simulador = lazy(() => gobierno().then((m) => ({ default: m.Simulador })));
 const Suscripcion = lazy(() => import('./pages/app/Suscripcion').then((m) => ({ default: m.Suscripcion })));
@@ -169,6 +170,7 @@ function App() {
             <Route path="/agenda" element={<Agenda />} />
             <Route path="/facturacion" element={<Facturacion />} />
             <Route path="/ia" element={<CentroIA />} />
+            <Route path="/perfil" element={<PerfilPagina />} />
             <Route path="/configuracion" element={<Configuracion />} />
             <Route path="/suscripcion" element={<Suscripcion />} />
             <Route path="/suscripcion/planes" element={<PlanesEmpresa />} />

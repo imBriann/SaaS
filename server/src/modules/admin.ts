@@ -35,10 +35,12 @@ export async function me(tx: Tx, ctx: Ctx) {
   )).rows[0];
   const modulos = (await tx.query(`SELECT modulo FROM tenant_module WHERE activo`)).rows.map((r) => r.modulo);
   const rol = (await tx.query(`SELECT nombre FROM role WHERE clave=$1`, [ctx.roleKey])).rows[0]?.nombre;
-  const u = (await tx.query(`SELECT email, email_verificado_en FROM users WHERE id=$1`, [ctx.actor.id])).rows[0];
+  const u = (await tx.query(`SELECT email, email_verificado_en, foto_data_url FROM users WHERE id=$1`, [ctx.actor.id])).rows[0];
+  const m = (await tx.query(`SELECT nombre_visible, disponible FROM user_tenant WHERE user_id=$1`, [ctx.actor.id])).rows[0];
   return {
     usuario: { id: ctx.actor.id, nombre: ctx.actor.nombre, rol: ctx.roleKey, rol_nombre: ctx.propietario ? 'Propietario' : rol, propietario: !!ctx.propietario,
-      email: u?.email ?? null, correo_verificado: !!u?.email_verificado_en },
+      email: u?.email ?? null, correo_verificado: !!u?.email_verificado_en, foto: u?.foto_data_url ?? null,
+      nombre_en_empresa: m?.nombre_visible ?? null, disponible: m?.disponible ?? true },
     tenant: { ...t, zona_horaria: zonaValida(t.zona_horaria) }, modulos, permisos: [...ctx.permisos], solo_lectura: !!ctx.soloLectura,
     consumo: can(ctx, 'usage:read') ? await allQuotas(tx, ctx.tenantId) : null,
     simuladores: config.simuladores,

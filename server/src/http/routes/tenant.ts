@@ -32,6 +32,7 @@ import { documentosTenant, enlaceDocumentosTenant } from '../../documentos/servi
 import { verificarWhatsapp } from '../../modules/channelStatus.js';
 import { askAssistant, confirmarAccionAsistente } from '../../ai/runtime.js';
 import * as copiloto from '../../ai/copiloto.js';
+import * as perfilMod from '../../modules/perfil.js';
 import { depurar } from '../../lib/depurar.js';
 import { signMeta, whatsapp } from '../../adapters/channel.js';
 import { applyMapping, inferMapping, readSheet } from '../../onboarding/importer.js';
@@ -191,6 +192,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
        FROM user_tenant ut JOIN users u ON u.id=ut.user_id WHERE ut.activo AND EXISTS (SELECT 1 FROM role_permission rp WHERE rp.role_id=ut.role_id AND rp.permiso='case:manage') ORDER BY u.nombre`)).rows;
   });
   r('post', '/yo/disponibilidad', (tx, ctx, req) => admin.setMyAvailability(tx, ctx, !!req.body?.disponible));
+  r('patch', '/yo/perfil', (tx, ctx, req) => perfilMod.actualizarEnEmpresa(tx, ctx, req.body ?? {}));
   // Copiloto del asesor: propuestas con los datos del negocio que la persona revisa antes de enviar.
   rx('post', '/conversaciones/:id/sugerencia', (ctx, req) => copiloto.sugerirRespuesta(db, ctx, req.params.id));
   rx('post', '/conversaciones/:id/mejorar', (ctx, req) => copiloto.mejorarRedaccion(db, ctx, req.params.id, req.body));
