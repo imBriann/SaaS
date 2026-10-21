@@ -209,7 +209,7 @@ export function RegistrationCompletion() {
         <p className="finish-lead">Tu recibo primero. Después, damos vida a tu espacio.</p>
         <ReciboImpresion fase={receipt} numero={status.documentos?.numero} monto={status.pago?.monto} empresa={name}
           concepto={status.pago?.modalidad === 'INSTITUCIONAL' ? `Acceso institucional · ${status.pago.acceso_dias} días` : 'Plan Omnegia'}
-          fiscal={status.documentos?.estado_fiscal_texto} validez={!!status.documentos?.validez_fiscal} />
+          fiscal={status.documentos?.estado_fiscal_texto} validez={!!status.documentos?.validez_fiscal} pago={status.pago} />
         <dl className="finish-payment-meta"><div><dt>Referencia del pago</dt><dd>{status.pago.referencia}</dd></div><div><dt>Correo del administrador</dt><dd>{email}</dd></div></dl>
         <div className="finish-receipt-actions">
           <button type="button" className="btn" disabled={receiptReal !== 'listo' || downloading} onClick={download}><Icon n="descargar" size={16} className="" />{downloading ? 'Preparando…' : 'Descargar documentos'}</button>

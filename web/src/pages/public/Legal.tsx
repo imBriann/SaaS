@@ -397,7 +397,7 @@ export function Cookies() {
             <tbody>
               <tr><th scope="row"><code>sid</code></th><td>Cookie necesaria</td><td>Mantiene tu sesión iniciada. Es <i>httpOnly</i> (la página no puede leerla), <i>SameSite=Lax</i> y, en producción, solo viaja por conexión cifrada.</td><td>Hasta 7 días, y se cierra antes si pasan 12 horas sin actividad (valores por defecto).</td></tr>
               <tr><th scope="row"><code>borrador</code>, <code>empresa</code></th><td>Almacenamiento local</td><td>Recuerdan tu registro en curso y la empresa que elegiste, para que no pierdas lo que escribiste.</td><td>Hasta que los borres o termine el alta.</td></tr>
-              <tr><th scope="row"><code>alta-datos…</code>, <code>descripcion_inicial</code>, <code>funciones_elegidas</code></th><td>Almacenamiento de sesión</td><td>Conservan lo que llenaste si vuelves atrás durante el registro.</td><td>Hasta que cierres la pestaña.</td></tr>
+              <tr><th scope="row"><code>alta-datos…</code>, <code>descripcion_inicial</code>, <code>funciones_elegidas</code>, <code>plan_elegido</code></th><td>Almacenamiento de sesión</td><td>Conservan lo que llenaste si vuelves atrás durante el registro.</td><td>Hasta que cierres la pestaña.</td></tr>
             </tbody>
           </table>
         </div>

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PLANES, caracteristicasPlan } from './planRules.js';
 
 /** Tarifas de demostración: no son una oferta comercial ni habilitan cobros. */
 export const MODULE_CATALOG = [
@@ -28,6 +29,31 @@ export function quoteModules(input: unknown) {
   const lineas = MODULE_CATALOG.filter(m => included.has(m.id)).map(m => ({ ...m, incluida: m.precio === 0, requerida: !requested.has(m.id) && m.precio > 0 }));
   const base = 29000;
   return { version: 'demo-modular-v1', demostracion: true, moneda: 'COP', periodo: 'mes', base, lineas, modulos: lineas.map(m => m.id), total: base + lineas.reduce((n, m) => n + m.precio, 0), nota: 'Estimación de demostración. Tarifas comerciales e impuestos pendientes de definición. No habilita cobros.' };
+}
+export type CicloAlta = 'MENSUAL' | 'ANUAL';
+export const esPlanEstandar = (c: unknown): c is (typeof PLANES)[number]['codigo'] => PLANES.some((p) => p.codigo === c);
+
+/** Los planes que se pueden contratar, con su precio mensual y anual (12 meses por 10). */
+export function planesAlta() {
+  return PLANES.map((p) => ({
+    codigo: p.codigo, nombre: p.nombre, descripcion: p.descripcion, mensual: p.precio_mensual, anual: p.precio_anual,
+    anual_por_mes: Math.round(p.precio_anual / 12), ahorro_anual: p.precio_mensual * 12 - p.precio_anual,
+    caracteristicas: caracteristicasPlan(p), destacado: p.codigo === 'negocio',
+    cuotas: { tokens_ia: p.cuota_tokens_ia, mensajes: p.cuota_mensajes, documentos: p.cuota_documentos, usuarios: p.max_usuarios },
+  }));
+}
+
+/** Lo que cuesta contratar un plan: el precio del plan en el ciclo elegido, con sus módulos incluidos. */
+export function quotePlan(codigo: string, ciclo: CicloAlta) {
+  const p = PLANES.find((x) => x.codigo === codigo) ?? PLANES[0];
+  const total = ciclo === 'ANUAL' ? p.precio_anual : p.precio_mensual;
+  const lineas = MODULE_CATALOG.filter((m) => p.modulos.includes(m.id)).map((m) => ({ ...m, precio: 0, incluida: true, requerida: false }));
+  return {
+    version: 'planes-2026-10', demostracion: false, moneda: 'COP', periodo: ciclo === 'ANUAL' ? 'año' : 'mes', ciclo,
+    plan: { codigo: p.codigo, nombre: p.nombre, descripcion: p.descripcion, mensual: p.precio_mensual, anual: p.precio_anual },
+    base: total, lineas, modulos: [...p.modulos], total,
+    nota: ciclo === 'ANUAL' ? 'Pago anual: 12 meses por el precio de 10. Sin renovación automática.' : 'Pago mensual. Sin permanencia ni renovación automática.',
+  };
 }
 export function quoteClassification(c: { modulos_sugeridos?: string[]; factura_electronica?: boolean | null }) {
   const modulos = (c.modulos_sugeridos ?? []).filter(m => ids.includes(m));

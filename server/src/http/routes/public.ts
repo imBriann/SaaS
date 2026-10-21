@@ -3,7 +3,7 @@ import { countries, divisions, cities } from '../../onboarding/location.js';
 import { availability, domainInfo } from '../../onboarding/subdomain.js';
 import { sendDraftCode, verifyDraftCode } from '../../onboarding/verification.js';
 import type { FastifyInstance } from 'fastify';
-import { MODULE_CATALOG, quoteModules } from '../../onboarding/pricing.js';
+import { MODULE_CATALOG, quoteModules, planesAlta } from '../../onboarding/pricing.js';
 import type { Database } from '../../db/index.js';
 import { AppError, invalid, notFound } from '../../lib/errors.js';
 import { cop, token } from '../../lib/util.js';
@@ -40,9 +40,8 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
     const o = ofertaAlta(q.total);
     return { ...q, oferta: { modalidad: o.modalidad, monto: o.monto, monto_referencia: o.montoReferencia, acceso_dias: o.accesoDias }, modalidad: resumenModalidad() };
   });
-  app.get('/api/publico/planes', async () =>
-    db.withPlatform(async (tx) => (await tx.query(`SELECT * FROM plan WHERE codigo IN ('esencial','negocio','pro') ORDER BY orden`)).rows.map((p) => ({ ...p, precio_mensual: Number(p.precio_mensual), precio_excedente_1k_tokens: Number(p.precio_excedente_1k_tokens) }))),
-  );
+  // Planes que se pueden contratar (precio mensual y anual del catálogo) y si la contratación en línea está abierta.
+  app.get('/api/publico/planes', async () => ({ planes: planesAlta(), contratacion: onboarding.puedeContratar(), modalidad: resumenModalidad(), simuladores: config.simuladores }));
   app.get('/api/publico/sectores', async () => loadTemplates().map((t) => ({ sector: t.sector, version: t.version, nombre: t.nombre, descripcion: t.descripcion, modulos: t.modulos })));
   app.get('/api/publico/estado', async () => ({ contratacion: onboarding.puedeContratar(), modalidad: resumenModalidad(), simuladores: config.simuladores, integraciones: integraciones().map(({ clave, estado }) => ({ clave, estado })) }));
 

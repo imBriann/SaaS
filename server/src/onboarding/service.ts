@@ -3,7 +3,7 @@ import { encolarCorreo } from '../email/servicio.js';
 import * as plantillas from '../email/plantillas.js';
 import { emitirOtp } from '../modules/otp.js';
 import { validarContrasena } from '../modules/auth.js';
-import { quoteClassification } from './pricing.js';
+import { esPlanEstandar, planesAlta, quoteClassification, quotePlan, type CicloAlta } from './pricing.js';
 import { z } from 'zod';
 import type { Database, Tx } from '../db/index.js';
 import { AppError, invalid, notFound } from '../lib/errors.js';
@@ -66,8 +66,24 @@ export function faltantesDePago(d: any, cuenta: { proveedor: string } | null): s
   return faltan;
 }
 
+/** Plan estándar del alta: el que eligió la persona o el que recomienda la tabla de reglas. */
+export function planDelAlta(d: any): string {
+  if (esPlanEstandar(d.plan_codigo)) return d.plan_codigo;
+  return esPlanEstandar(d.recomendacion?.plan) ? d.recomendacion.plan : 'esencial';
+}
+export const cicloDelAlta = (d: any): CicloAlta => (d.ciclo === 'ANUAL' ? 'ANUAL' : 'MENSUAL');
+
+/**
+ * Lo que vale el alta. En la modalidad comercial es el precio del plan en su ciclo; en la institucional, el
+ * precio institucional con la cotización modular como referencia comercial (sin cambios).
+ */
+export function cotizacionAlta(d: any) {
+  if (config.institucional.activo) return d.recomendacion?.cotizacion ?? quoteClassification(d.clasificacion);
+  return quotePlan(planDelAlta(d), cicloDelAlta(d));
+}
+
 function publicDraft(d: any) {
-  const cotizacion = d.recomendacion?.cotizacion ?? quoteClassification(d.clasificacion);
+  const cotizacion = cotizacionAlta(d);
   const oferta = ofertaAlta(cotizacion.total);
   return {
     dominio: domainInfo(),
@@ -87,7 +103,9 @@ function publicDraft(d: any) {
     facturacion_electronica: { habilitada: requisitosFacturacion().length === 0 },
     error_aprovisionamiento: d.error_aprovisionamiento ?? null,
     token: d.token, estado: d.estado, creacion_diferida: !!d.creacion_diferida, creacion: d.creacion, descripcion: d.descripcion, clasificacion: d.clasificacion, recomendacion: d.recomendacion,
-    plan_codigo: d.plan_codigo, negocio: sinFacturacion(d.negocio), tema: d.tema, logo_data_url: d.logo_data_url,
+    plan_codigo: d.plan_codigo, ciclo: cicloDelAlta(d), plan_elegido: !!d.plan_elegido, planes: planesAlta(),
+    plan_recomendado: esPlanEstandar(d.recomendacion?.plan) ? d.recomendacion.plan : null,
+    negocio: sinFacturacion(d.negocio), tema: d.tema, logo_data_url: d.logo_data_url,
     catalogo: d.catalogo, import_mapping: d.import_mapping,
     hoja_pendiente: d.hoja_pendiente ? { encabezados: d.hoja_pendiente.hoja.encabezados, filas: d.hoja_pendiente.hoja.filas.length, mapeo: d.hoja_pendiente.mapeo } : null,
     etapas: d.etapas, creado_en: d.creado_en,
@@ -147,6 +165,7 @@ const NegocioSchema = z.object({
 const PatchSchema = z.object({
   clasificacion: z.record(z.string(), z.unknown()).optional(),
   plan_codigo: z.enum(['esencial', 'negocio', 'pro']).optional(),
+  ciclo: z.enum(['MENSUAL', 'ANUAL']).optional(),
   negocio: NegocioSchema.optional(),
   colores_logo: z.array(z.string()).max(12).optional(),
   logo_data_url: z.string().max(300_000).regex(/^data:image\/(png|jpeg|webp);base64,/).optional().nullable(),
@@ -172,10 +191,22 @@ async function updateDraftLocked(db: Database, tk: string, body: unknown) {
     await db.withPlatform((tx) => tx.query(`UPDATE onboarding_draft SET negocio = negocio || jsonb_build_object('facturacion', $2::jsonb), actualizado_en=now() WHERE token=$1`, [tk, JSON.stringify(f)]));
     return publicDraft(await loadDraft(db, tk));
   }
+  // Plan y ciclo se pueden cambiar también con un checkout abierto (al volver de la pasarela sin pagar): el
+  // checkout anterior deja de ofrecerse y el siguiente cobra lo nuevo. Lo ya pagado fija el plan (provisioning).
+  const soloPlan = Object.keys(p).length > 0 && Object.keys(p).every((k) => k === 'plan_codigo' || k === 'ciclo');
+  if (soloPlan && d.estado === 'PAGO_INICIADO') {
+    await db.withPlatform((tx) => tx.query(
+      `UPDATE onboarding_draft SET plan_codigo=COALESCE($2, plan_codigo), ciclo=COALESCE($3, ciclo), plan_elegido = plan_elegido OR $2::text IS NOT NULL, actualizado_en=now() WHERE token=$1`,
+      [tk, p.plan_codigo ?? null, p.ciclo ?? null]));
+    return publicDraft(await loadDraft(db, tk));
+  }
   editable(d);
   let clasificacion: Clasificacion = d.clasificacion;
   let recomendacion = d.recomendacion;
   let plan = d.plan_codigo;
+  // Un plan elegido por la persona se respeta; la recomendación solo decide mientras no haya elegido.
+  let planElegido = !!d.plan_elegido;
+  const ciclo = p.ciclo ?? cicloDelAlta(d);
   if (p.clasificacion) {
     // Corrección humana: se revalida igual que la salida del modelo y se vuelve a aplicar la tabla de reglas.
     const corrections = { ...p.clasificacion };
@@ -213,9 +244,9 @@ async function updateDraftLocked(db: Database, tk: string, body: unknown) {
       // Las preguntas solo siguen para lo que aún está pendiente.
       preguntas: Object.fromEntries(Object.entries((d.clasificacion.preguntas ?? {}) as Record<string, string>).filter(([k]) => (s as any)[k] == null)) };
     recomendacion = recommendPlan(clasificacion);
-    plan = recomendacion.plan;
+    if (!planElegido) plan = recomendacion.plan;
   }
-  if (p.plan_codigo) plan = p.plan_codigo;
+  if (p.plan_codigo) { plan = p.plan_codigo; planElegido = true; }
   const negocio = { ...d.negocio, ...(p.negocio ?? {}) };
   if (p.facturacion) negocio.facturacion = prepararFacturacion(p.facturacion, d.negocio?.facturacion ?? null);
   if (p.negocio?.nombre && !d.negocio?.slug && !p.negocio.slug) negocio.slug = slugify(p.negocio.nombre);
@@ -236,8 +267,8 @@ async function updateDraftLocked(db: Database, tk: string, body: unknown) {
   }
   await db.withPlatform((tx) =>
     tx.query(
-      `UPDATE onboarding_draft SET clasificacion=$2, recomendacion=$3, plan_codigo=$4, negocio=$5, tema=$6, logo_data_url=$7, actualizado_en=now() WHERE token=$1`,
-      [tk, JSON.stringify(clasificacion), JSON.stringify(recomendacion), plan, JSON.stringify(negocio), tema ? JSON.stringify(tema) : null, logo],
+      `UPDATE onboarding_draft SET clasificacion=$2, recomendacion=$3, plan_codigo=$4, negocio=$5, tema=$6, logo_data_url=$7, ciclo=$8, plan_elegido=$9, actualizado_en=now() WHERE token=$1`,
+      [tk, JSON.stringify(clasificacion), JSON.stringify(recomendacion), plan, JSON.stringify(negocio), tema ? JSON.stringify(tema) : null, logo, ciclo, planElegido],
     ),
   );
   return publicDraft(await loadDraft(db, tk));
@@ -347,11 +378,16 @@ export async function startCheckout(db: Database, tk: string, correlacion = uuid
     const aprobado = (await tx.query(`SELECT referencia, monto, modalidad FROM payment WHERE draft_token=$1 AND estado='APROBADO' LIMIT 1`, [tk])).rows[0];
     if (aprobado) return { ya_pagado: true as const, referencia: aprobado.referencia as string, monto: Number(aprobado.monto), modalidad: aprobado.modalidad as string };
     // Términos vigentes, calculados aquí: modalidad, monto, referencia comercial y vigencia.
-    const quote = quoteClassification(locked.clasificacion);
+    const quote = cotizacionAlta(locked);
     const oferta = ofertaAlta(quote.total);
+    const institucionalAlta = oferta.modalidad === 'INSTITUCIONAL';
+    // Comercial: el plan estándar elegido y su ciclo (el precio sale del catálogo, nunca del navegador).
+    const planCobro = institucionalAlta ? null : planDelAlta(locked);
+    const cicloCobro = institucionalAlta ? null : cicloDelAlta(locked);
+    const conceptoCobro = institucionalAlta ? oferta.concepto : `Omnegia · plan ${(quote as any).plan?.nombre ?? planCobro} ${cicloCobro === 'ANUAL' ? '(12 meses)' : '(primer mes)'}`;
     const urlDe = (referencia: string, monto: number, expira: Date | undefined) => checkoutUrl(cuenta, {
       referencia, montoCentavos: aCentavos(monto), redirectUrl: urlRetorno, expiraEn: cuenta.proveedor === 'wompi' ? expira : undefined,
-      concepto: oferta.concepto, cliente: { email: n.email, nombre: n.nombre },
+      concepto: conceptoCobro, cliente: { email: n.email, nombre: n.nombre },
     });
     // Un checkout pendiente solo se reutiliza si sus términos coinciden exactamente con los vigentes
     // (mismo monto, modalidad, pasarela y ambiente) y no está por vencer. Los demás dejan de ofrecerse.
@@ -362,7 +398,8 @@ export async function startCheckout(db: Database, tk: string, correlacion = uuid
       && p.proveedor === cuenta.proveedor && (p.entorno ?? null) === entorno && (p.acceso_dias ?? null) === oferta.accesoDias
       && (!p.expira_en || new Date(p.expira_en).getTime() > Date.now() + 5 * 60_000)
       && (p.expira_en || cuenta.proveedor !== 'wompi')
-      && (p.facturacion_huella ?? null) === huella);
+      && (p.facturacion_huella ?? null) === huella
+      && (institucionalAlta || (p.plan_codigo === planCobro && (p.ciclo ?? 'MENSUAL') === cicloCobro)));
     for (const p of pendientes.filter((x: any) => x !== vigente)) {
       await tx.query(`UPDATE payment SET estado='REEMPLAZADO', actualizado_en=now() WHERE id=$1 AND estado='PENDIENTE'`, [p.id]);
       await auditPlatform(tx, null, { tipo: 'SISTEMA', id: null, nombre: 'Pagos' }, 'API', correlacion, { accion: 'pago.checkout_reemplazado', resultado: 'EXITO', detalle: { referencia: p.referencia, monto: Number(p.monto), modalidad: p.modalidad } });
@@ -371,10 +408,10 @@ export async function startCheckout(db: Database, tk: string, correlacion = uuid
       const expira = vigente.expira_en ? new Date(vigente.expira_en) : undefined;
       return { referencia: vigente.referencia as string, monto: Number(vigente.monto), modalidad: vigente.modalidad as string, acceso_dias: vigente.acceso_dias ?? null, expira_en: expira?.toISOString() ?? null, url: urlDe(vigente.referencia, Number(vigente.monto), expira) };
     }
-    const institucional = oferta.modalidad === 'INSTITUCIONAL';
-    const code = `${institucional ? 'institucional' : 'modular'}-${uuidv7()}`;
-    // Snapshot the entitlements; precio_mensual keeps the commercial reference. Existing plans and other tenants stay intact.
-    await tx.query(
+    const institucional = institucionalAlta;
+    const code = institucional ? `institucional-${uuidv7()}` : planCobro!;
+    // Institucional: se congelan los módulos en un plan propio (precio_mensual = referencia comercial). Comercial: plan estándar.
+    if (institucional) await tx.query(
       `INSERT INTO plan (codigo,nombre,precio_mensual,cuota_tokens_ia,cuota_mensajes,cuota_documentos,max_usuarios,modulos,politica_excedente,precio_excedente_1k_tokens,orden)
        SELECT $1,$5,$2,cuota_tokens_ia,cuota_mensajes,cuota_documentos,max_usuarios,$3::text[],politica_excedente,precio_excedente_1k_tokens,99 FROM plan WHERE codigo=$4
        ON CONFLICT (codigo) DO NOTHING`,
@@ -383,18 +420,22 @@ export async function startCheckout(db: Database, tk: string, correlacion = uuid
     const referencia = `SUB-${token(9)}`;
     const expira = new Date(Date.now() + MINUTOS_CHECKOUT * 60_000);
     await tx.query(
-      `INSERT INTO payment (id,draft_token,referencia,concepto,monto,estado,proveedor,modalidad,monto_referencia,acceso_dias,plan_codigo,entorno,expira_en,facturacion,documento_cifrado,facturacion_huella)
-       VALUES ($1,$2,$3,$4,$5,'PENDIENTE',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-      [uuidv7(), tk, referencia, oferta.concepto, oferta.monto, cuenta.proveedor, oferta.modalidad, oferta.montoReferencia, oferta.accesoDias, code, entorno, expira.toISOString(),
-        facturacion ? JSON.stringify(facturacionPublica(facturacion)) : null, facturacion?.documento_cifrado ?? null, huella],
+      `INSERT INTO payment (id,draft_token,referencia,concepto,monto,estado,proveedor,modalidad,monto_referencia,acceso_dias,plan_codigo,entorno,expira_en,facturacion,documento_cifrado,facturacion_huella,ciclo)
+       VALUES ($1,$2,$3,$4,$5,'PENDIENTE',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+      [uuidv7(), tk, referencia, conceptoCobro, oferta.monto, cuenta.proveedor, oferta.modalidad, oferta.montoReferencia, oferta.accesoDias, code, entorno, expira.toISOString(),
+        facturacion ? JSON.stringify(facturacionPublica(facturacion)) : null, facturacion?.documento_cifrado ?? null, huella, cicloCobro],
     );
-    await tx.query(`UPDATE onboarding_draft SET estado='PAGO_INICIADO', plan_codigo=$2, recomendacion=$3, actualizado_en=now() WHERE token=$1`,
-      [tk, code, JSON.stringify({ ...locked.recomendacion, cotizacion: quote })]);
+    if (institucional) {
+      await tx.query(`UPDATE onboarding_draft SET estado='PAGO_INICIADO', plan_codigo=$2, recomendacion=$3, actualizado_en=now() WHERE token=$1`,
+        [tk, code, JSON.stringify({ ...locked.recomendacion, cotizacion: quote })]);
+    } else {
+      await tx.query(`UPDATE onboarding_draft SET estado='PAGO_INICIADO', actualizado_en=now() WHERE token=$1`, [tk]);
+    }
     await auditPlatform(tx, null, { tipo: 'SISTEMA', id: null, nombre: 'Pagos' }, 'API', correlacion, {
       accion: 'pago.checkout_creado', resultado: 'EXITO',
-      detalle: { referencia, modalidad: oferta.modalidad, monto: oferta.monto, monto_centavos: aCentavos(oferta.monto), monto_referencia: oferta.montoReferencia, acceso_dias: oferta.accesoDias, proveedor: cuenta.proveedor, entorno },
+      detalle: { referencia, modalidad: oferta.modalidad, monto: oferta.monto, monto_centavos: aCentavos(oferta.monto), monto_referencia: oferta.montoReferencia, acceso_dias: oferta.accesoDias, proveedor: cuenta.proveedor, entorno, plan: planCobro ?? undefined, ciclo: cicloCobro ?? undefined },
     });
-    return { referencia, monto: oferta.monto, modalidad: oferta.modalidad, acceso_dias: oferta.accesoDias, expira_en: expira.toISOString(), url: urlDe(referencia, oferta.monto, expira) };
+    return { referencia, monto: oferta.monto, modalidad: oferta.modalidad, acceso_dias: oferta.accesoDias, plan: planCobro, ciclo: cicloCobro, expira_en: expira.toISOString(), url: urlDe(referencia, oferta.monto, expira) };
   });
   // Si ya estaba pagado, se asegura el alta (idempotente) y no se devuelve ningún enlace de pago.
   if ('ya_pagado' in r) {
@@ -406,8 +447,10 @@ export async function startCheckout(db: Database, tk: string, correlacion = uuid
 
 const ultimoPago = (db: Database, tk: string) => db.withPlatform(async (tx) => (await tx.query(
   // Un pago aprobado manda sobre cualquier checkout posterior; si no, el más reciente que no fue reemplazado.
-  `SELECT estado, referencia, monto, modalidad, acceso_dias, monto_referencia, proveedor, creado_en FROM payment WHERE draft_token=$1
-   ORDER BY (estado='APROBADO') DESC, (estado='REEMPLAZADO') ASC, creado_en DESC LIMIT 1`, [tk])).rows[0]);
+  `SELECT p.estado, p.referencia, p.monto, p.modalidad, p.acceso_dias, p.monto_referencia, p.proveedor, p.creado_en, p.concepto, p.ciclo, p.verificado_en,
+          p.metodo_pago, p.metodo_detalle, pl.nombre AS plan_nombre
+   FROM payment p LEFT JOIN plan pl ON pl.codigo=p.plan_codigo WHERE p.draft_token=$1
+   ORDER BY (p.estado='APROBADO') DESC, (p.estado='REEMPLAZADO') ASC, p.creado_en DESC LIMIT 1`, [tk])).rows[0]);
 
 export async function draftStatus(db: Database, tk: string, correlacion = uuidv7()) {
   let d = await loadDraft(db, tk);
@@ -434,6 +477,9 @@ export async function draftStatus(db: Database, tk: string, correlacion = uuidv7
     pago: pago ? {
       estado: pago.estado, referencia: pago.referencia, monto: Number(pago.monto), modalidad: pago.modalidad, acceso_dias: pago.acceso_dias ?? null,
       monto_referencia: pago.monto_referencia == null ? null : Number(pago.monto_referencia), proveedor: pago.proveedor,
+      // Para el recibo impreso: lo que se pagó y con qué (lo informa la pasarela; nunca datos de tarjeta completos).
+      concepto: pago.concepto, plan_nombre: pago.plan_nombre ?? null, ciclo: pago.ciclo ?? null, verificado_en: pago.verificado_en ?? null,
+      metodo_detalle: pago.metodo_detalle ?? null, metodo_pago: pago.metodo_pago ?? null,
     } : null,
     // Dirección y vigencia fijadas al crear el espacio (instantánea, no datos vivos del tenant).
     acceso: d.estado === 'APROVISIONADO' ? c?.acceso ?? (t ? { url: urlEmpresa(t.slug) } : null) : null,
@@ -540,7 +586,8 @@ export async function reanalyzeDraft(db: Database, tk: string, descripcion: unkn
     if(c.tipo_negocio && !sectorTypes(c.sector).includes(c.tipo_negocio)) { c.tipo_negocio=null; c.estados.tipo_negocio='pendiente'; }
     c.otro_descripcion=d.clasificacion.otro_descripcion;
     const rec=recommendPlan(c);
-    await tx.query('UPDATE onboarding_draft SET descripcion=$2,clasificacion=$3,recomendacion=$4,plan_codigo=$5,actualizado_en=now() WHERE token=$1',[tk,texto,JSON.stringify(c),JSON.stringify(rec),rec.plan]);
-    return publicDraft({...d,descripcion:texto,clasificacion:c,recomendacion:rec,plan_codigo:rec.plan});
+    const plan = d.plan_elegido && esPlanEstandar(d.plan_codigo) ? d.plan_codigo : rec.plan;
+    await tx.query('UPDATE onboarding_draft SET descripcion=$2,clasificacion=$3,recomendacion=$4,plan_codigo=$5,actualizado_en=now() WHERE token=$1',[tk,texto,JSON.stringify(c),JSON.stringify(rec),plan]);
+    return publicDraft({...d,descripcion:texto,clasificacion:c,recomendacion:rec,plan_codigo:plan});
   });
 }

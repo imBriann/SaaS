@@ -7,7 +7,7 @@ import { cop, token, uuidv7 } from '../lib/util.js';
 import { aCentavos } from '../lib/money.js';
 import { urlEmpresa } from '../config.js';
 import { checkoutUrl, cuentaPlataforma } from '../adapters/payments.js';
-import { PLANES } from '../onboarding/planRules.js';
+import { PLANES, caracteristicasPlan } from '../onboarding/planRules.js';
 import { encolarDocumentos } from '../documentos/servicio.js';
 
 /**
@@ -42,19 +42,9 @@ export function preciosDe(p: Pick<FilaPlan, 'precio_mensual' | 'precio_anual'>, 
   return { mensual: Number(p.precio_mensual), anual: Number(p.precio_anual ?? Number(p.precio_mensual) * 10) };
 }
 
-/** Lo que incluye un plan, en frases cortas y verificables (salen de sus cuotas y módulos). */
+/** Lo que incluye un plan (las mismas frases que ve quien contrata por primera vez). */
 export function caracteristicas(p: FilaPlan): string[] {
-  const n = (v: number | string) => Number(v).toLocaleString('es-CO');
-  const respuestas = Math.floor(Number(p.cuota_tokens_ia) / 5000 / 50) * 50;
-  const lista = [
-    `${p.max_usuarios} ${p.max_usuarios === 1 ? 'persona' : 'personas'} con acceso`,
-    `IA para unas ${n(respuestas)} respuestas al mes`,
-    `${n(p.cuota_mensajes)} mensajes de WhatsApp al mes`,
-    Number(p.cuota_documentos) > 0 ? `${n(p.cuota_documentos)} facturas electrónicas al mes` : 'Sin factura electrónica',
-    ...['agenda', 'ventas', 'inventario', 'comisiones', 'membresias'].filter((m) => p.modulos.includes(m)).map((m) => MODULO_TEXTO[m]),
-    p.politica_excedente === 'EXCEDENTE' ? `La IA sigue al pasar la cuota (${cop(Number(p.precio_excedente_1k_tokens))} por 1.000 tokens)` : 'Al tope, la IA pasa la conversación a tu equipo',
-  ];
-  return lista;
+  return caracteristicasPlan(p);
 }
 
 async function suscripcionDe(tx: Tx, tenantId: string, bloquear = false) {

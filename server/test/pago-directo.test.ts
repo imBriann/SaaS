@@ -53,7 +53,7 @@ async function alta(slug: string) {
 const cliente = { nombre: 'Marta Rojas', telefono: '3001234567' };
 const nequi = { metodo: 'NEQUI', celular: '3107654321' };
 const url = (tk: string, sufijo = '') => `/api/onboarding/borradores/${tk}/pago/directo${sufijo}`;
-const txWompi = (o: any = {}) => ({ id: '11854-1728506262-27959', reference: 'SUB-X', amount_in_cents: 12700000, currency: 'COP', status: 'PENDING', status_message: null, payment_method_type: 'NEQUI', payment_method: { type: 'NEQUI', extra: {} }, ...o });
+const txWompi = (o: any = {}) => ({ id: '11854-1728506262-27959', reference: 'SUB-X', amount_in_cents: 22900000, currency: 'COP', status: 'PENDING', status_message: null, payment_method_type: 'NEQUI', payment_method: { type: 'NEQUI', extra: {} }, ...o });
 
 beforeAll(async () => { E = await setup(); });
 afterAll(async () => { config.pagos = structuredClone(original.pagos); config.institucional = { ...original.institucional }; config.publicUrl = original.publicUrl; await E.app.close(); await E.db.close(); });
@@ -108,7 +108,7 @@ describe('Crear la transacción', () => {
     // El navegador no manda monto ni referencia: aunque lo intente, no cuentan.
     expect(c.reference).toMatch(/^SUB-/);
     expect(c.reference).not.toBe('SUB-FALSA');
-    expect(c.amount_in_cents).toBe(12_700_000);
+    expect(c.amount_in_cents).toBe(22_900_000); // plan Negocio mensual
     expect(c.currency).toBe('COP');
     expect(c.signature).toBe(sha(`${c.reference}${c.amount_in_cents}COP${SECRETO_INTEGRIDAD}`));
     expect(c).toMatchObject({ acceptance_token: 'acc_terminos_1', accept_personal_auth: 'acc_datos_1', customer_email: 'nequi@directo.test', payment_method: { type: 'NEQUI', phone_number: '3107654321' } });

@@ -21,16 +21,7 @@ export interface Cotizacion {
 
 export interface Aviso { id: number; texto: string; accion?: { texto: string; fn: () => void } }
 
-/** Color de cada plan (esfera, barra y botón). */
-export const TONOS: Record<string, { c1: string; c2: string; fondo: string; boton: string; tinta: string }> = {
-  esencial: { c1: '#ffe3ec', c2: '#ef7fa6', fondo: 'linear-gradient(165deg, #ffe6ee 0%, #f9bcd1 100%)', boton: '#f3a0bf', tinta: '#5b1d36' },
-  negocio: { c1: '#ece6ff', c2: '#9a82ef', fondo: 'linear-gradient(165deg, #efe9ff 0%, #c9bbf8 55%, #b9dcf7 100%)', boton: '#b7a5f6', tinta: '#2e1f6b' },
-  pro: { c1: '#e2f2ff', c2: '#5eaee9', fondo: 'linear-gradient(165deg, #e4f3ff 0%, #a9d4f5 100%)', boton: '#8fc7f0', tinta: '#123a5c' },
-};
-export const tono = (codigo: string) => TONOS[codigo] ?? TONOS.negocio;
-
-/** Precio corto para las barras colapsadas: $229k. */
-export const corto = (n: number) => `$${Math.round(n / 1000)}k`;
+export { TONOS, tono, corto } from '../../../components/facturacion/SelectorPlanes';
 
 /** El checkout puede ser la pasarela de prueba (misma web) o Wompi. */
 export function irACheckout(url: string) {

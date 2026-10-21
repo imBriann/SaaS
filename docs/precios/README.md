@@ -70,7 +70,7 @@ inventario, comisiones y la IA. Pro es para equipos grandes y alto volumen.
 ## 4. Cómo se aplica
 
 - Las empresas que ya pagan **conservan su precio mensual** mientras sigan en su plan (`subscription.precio_pactado`); reciben las cuotas nuevas desde ya. Si cambian de plan, pasan al precio vigente.
-- Las nuevas empresas ven y pagan los precios de esta tabla desde el registro.
+- Las nuevas empresas eligen plan y ciclo en la página pública de planes (`/planes`, sin iniciar sesión) o durante el alta, donde la IA sugiere un plan y la persona decide. El alta cobra el precio del plan en su ciclo (mensual o 12 meses) y crea la empresa en ese plan. En la modalidad institucional el cobro sigue siendo el institucional.
 - **Pago anual**: 12 meses por el precio de 10. Se elige al renovar o al cambiar de plan; la renovación anual extiende el periodo 12 meses.
 
 ### Cambio de plan (Suscripción › Plan actual o Suscripción › Planes)

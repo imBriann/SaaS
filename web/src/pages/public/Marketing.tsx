@@ -1,17 +1,18 @@
-import { Link } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { PublicoLayout } from './Publico';
-import { FeatureBuilder } from '../../components/Experience';
 import { Closing, MODULE_COPY } from '../../components/MarketingExperience';
 import { Icon } from '../../components/icons';
-import { api } from '../../api';
+import { api, cop } from '../../api';
+import { SelectorPlanes, type CicloPlan, type PlanVista } from '../../components/facturacion/SelectorPlanes';
 import { Cargando, ErrorCarga, useApi } from '../../components/ui';
 import { MARCA } from '../../brand';
 
 export function Producto() {
   const { data, error, recargar } = useApi<any>(() => api.get('/api/publico/modulos'), []);
   return <PublicoLayout transparente>
-    <section className="public-intro"><div><h1>Un negocio.<br /><span>Muchas piezas. Un sistema.</span></h1><p>Conecta la atención y la operación con los módulos que tu empresa necesita. Empieza con clientes y catálogo; añade lo que te ayude a trabajar.</p><Link className="btn primario grande" to="/planes">Elegir mis módulos <Icon n="flecha" size={18} className="" /></Link></div><div className="intro-symbol" aria-hidden="true"><Icon n="plataforma" size={130} className="" /></div></section>
-    <section className="om-section product-catalog" aria-label="Módulos disponibles">{error ? <ErrorCarga error={error} reintentar={recargar} /> : !data ? <Cargando filas={6} /> : data.modulos.map((m: any) => <article key={m.id} id={m.id} className="product-row"><Icon n={m.icono} size={30} className="" /><div><h2>{MODULE_COPY[m.id]?.nombre ?? m.nombre}</h2><span>{m.precio === 0 ? 'Incluido en tu espacio' : m.id === 'facturacion' ? 'Entorno de pruebas' : 'Módulo opcional'}</span></div><div><h3>{MODULE_COPY[m.id]?.beneficio}</h3><p>{MODULE_COPY[m.id]?.detalle ?? m.descripcion}</p></div><Link to="/planes#seleccion" aria-label={`Configurar ${MODULE_COPY[m.id]?.nombre ?? m.nombre}`}><Icon n="flecha" className="" size={22} /></Link></article>)}</section>
+    <section className="public-intro"><div><h1>Un negocio.<br /><span>Muchas piezas. Un sistema.</span></h1><p>Conecta la atención y la operación con los módulos que tu empresa necesita. Empieza con clientes y catálogo; añade lo que te ayude a trabajar.</p><Link className="btn primario grande" to="/planes">Ver los planes <Icon n="flecha" size={18} className="" /></Link></div><div className="intro-symbol" aria-hidden="true"><Icon n="plataforma" size={130} className="" /></div></section>
+    <section className="om-section product-catalog" aria-label="Módulos disponibles">{error ? <ErrorCarga error={error} reintentar={recargar} /> : !data ? <Cargando filas={6} /> : data.modulos.map((m: any) => <article key={m.id} id={m.id} className="product-row"><Icon n={m.icono} size={30} className="" /><div><h2>{MODULE_COPY[m.id]?.nombre ?? m.nombre}</h2><span>{m.precio === 0 ? 'Incluido en tu espacio' : m.id === 'facturacion' ? 'Entorno de pruebas' : 'Módulo opcional'}</span></div><div><h3>{MODULE_COPY[m.id]?.beneficio}</h3><p>{MODULE_COPY[m.id]?.detalle ?? m.descripcion}</p></div><Link to="/planes" aria-label={`Ver planes con ${MODULE_COPY[m.id]?.nombre ?? m.nombre}`}><Icon n="flecha" className="" size={22} /></Link></article>)}</section>
     <section className="om-section integration-note"><Icon n="integraciones" size={28} className="" /><div><h2>Las conexiones también importan.</h2><p>WhatsApp, IA y cobros necesitan una integración configurada. Revisa su estado en el panel. La facturación electrónica real requiere conectar un proveedor; los documentos de prueba no tienen validez fiscal.</p></div></section><Closing />
   </PublicoLayout>;
 }
@@ -25,9 +26,35 @@ export function Nosotros() {
   </PublicoLayout>;
 }
 
+/**
+ * Planes en el sitio público (sin iniciar sesión): el mismo selector del panel con los precios reales del
+ * catálogo. Elegir un plan lleva al alta con ese plan y ciclo; el cobro lo calcula el servidor.
+ */
 export function Planes() {
-  const estado = useApi<any>(() => api.get('/api/publico/estado'), []);
-  return <PublicoLayout transparente><section className="public-intro plans-intro"><div><h1>Solo las piezas<br /><span>que necesitas.</span></h1><p>Explora la configuración de tu empresa y revisa cada concepto antes de continuar. Clientes y catálogo están incluidos en la base.</p></div><div className="pricing-disclosure"><Icon n="info" size={24} className="" /><h2>Una estimación transparente.</h2><p>Los importes del configurador son tarifas de demostración, no una oferta comercial. Precios definitivos e impuestos pendientes de confirmación.</p>{estado.error ? <p role="status">No pudimos comprobar la disponibilidad de contratación. Puedes reintentar al continuar.</p> : estado.data && <span>{estado.data.simuladores ? 'Entorno de demostración · sin cobros reales' : estado.data.contratacion ? 'La contratación se revisa en el siguiente paso' : 'Contratación en línea pendiente de habilitar'}</span>}</div></section><FeatureBuilder /><section className="om-section plan-conditions"><h2>Antes de continuar</h2><dl><div><dt>Una configuración revisable</dt><dd>Puedes revisar los módulos y tus datos antes de ir a la pasarela.</dd></div><div><dt>Creación después del pago</dt><dd>El panel se crea cuando el servidor confirma el pago. Un borrador no es una empresa activa.</dd></div><div><dt>Servicios que requieren conexión</dt><dd>WhatsApp, IA, cobros y emisión fiscal dependen de sus proveedores y de la configuración de tu empresa.</dd></div></dl></section></PublicoLayout>;
+  const { data, error, recargar } = useApi<any>(() => api.get('/api/publico/planes'), []);
+  const [ciclo, setCiclo] = useState<CicloPlan>('MENSUAL');
+  const nav = useNavigate();
+  const elegir = (p: PlanVista) => {
+    try { sessionStorage.setItem('plan_elegido', JSON.stringify({ plan: p.codigo, ciclo })); } catch { /* sin almacenamiento: se elige en el alta */ }
+    nav('/empezar');
+  };
+  const inst = data?.modalidad;
+  return <PublicoLayout transparente>
+    <section className="matiz matiz-publico" aria-label="Planes de Omnegia">
+      {error ? <ErrorCarga error={error} reintentar={recargar} /> : !data ? <Cargando filas={6} /> : (
+        <SelectorPlanes planes={data.planes} ciclo={ciclo} onCiclo={setCiclo}
+          subtitulo="Atención por WhatsApp con IA, agenda, ventas y más en un solo lugar. Sin permanencia: pagas mes a mes, o el año con 2 meses gratis."
+          accion={(p) => <button type="button" className="btn-plan" onClick={() => elegir(p)}>{`Empezar con ${p.nombre}`}<Icon n="derecha" className="" size={15} /></button>}
+          pie={<p className="matiz-ayuda">{inst ? `Hoy la contratación es en modalidad institucional: ${cop(inst.precio)} por ${inst.acceso_dias} días de acceso. Los precios de los planes son la referencia comercial.` : data.simuladores ? 'Entorno de demostración · los pagos son de prueba' : data.contratacion ? 'Precios en pesos colombianos. Antes de pagar revisas tu plan, tus datos y el valor exacto.' : 'La contratación en línea está pendiente de habilitar.'}</p>} />
+      )}
+    </section>
+    <section className="om-section plan-conditions"><h2>Antes de continuar</h2><dl>
+      <div><dt>Puedes cambiar de plan</dt><dd>Durante el registro la IA te sugiere el plan que encaja con tu negocio; tú decides. Después, cambias desde tu panel cuando quieras.</dd></div>
+      <div><dt>Creación después del pago</dt><dd>El panel se crea cuando el servidor confirma el pago con la pasarela. Un borrador no es una empresa activa.</dd></div>
+      <div><dt>Sin cobros automáticos</dt><dd>Cada renovación la apruebas tú. WhatsApp, IA y facturación electrónica dependen de sus proveedores y de la configuración de tu empresa.</dd></div>
+    </dl></section>
+    <Closing />
+  </PublicoLayout>;
 }
 
 const PREGUNTAS = [

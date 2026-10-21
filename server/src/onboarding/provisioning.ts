@@ -89,6 +89,8 @@ export interface TerminosSuscripcion {
   precioPagado: number;
   montoReferencia: number | null;
   paymentId: string | null;
+  /** Pago anual: 12 meses (sin días de acceso). */
+  ciclo?: 'MENSUAL' | 'ANUAL';
 }
 
 /** Condiciones que quedan registradas con cada periodo pagado. */
@@ -135,15 +137,16 @@ export async function createTenantFromTemplate(tx: Tx, d: NuevoTenant, etapa: (e
   const s = d.suscripcion;
   const fin = new Date(ahora);
   if (s?.accesoDias) fin.setTime(ahora.getTime() + s.accesoDias * 86_400_000);
-  else fin.setUTCMonth(fin.getUTCMonth() + 1);
+  else fin.setUTCMonth(fin.getUTCMonth() + (s?.ciclo === 'ANUAL' ? 12 : 1));
+  const ciclo = s?.accesoDias ? 'MENSUAL' : s?.ciclo ?? 'MENSUAL';
   const condiciones = s ? condicionesPeriodo(s) : null;
   await tx.query(
-    `INSERT INTO subscription (tenant_id, plan_codigo, estado, periodo_inicio, periodo_fin, modalidad, precio_pagado, condiciones) VALUES ($1,$2,'ACTIVA',$3,$4,$5,$6,$7)`,
-    [tenantId, d.plan, ahora.toISOString(), fin.toISOString(), s?.modalidad ?? 'COMERCIAL', s?.precioPagado ?? null, condiciones ? JSON.stringify(condiciones) : null]);
+    `INSERT INTO subscription (tenant_id, plan_codigo, estado, periodo_inicio, periodo_fin, modalidad, precio_pagado, condiciones, ciclo) VALUES ($1,$2,'ACTIVA',$3,$4,$5,$6,$7,$8)`,
+    [tenantId, d.plan, ahora.toISOString(), fin.toISOString(), s?.modalidad ?? 'COMERCIAL', s?.precioPagado ?? null, condiciones ? JSON.stringify(condiciones) : null, ciclo]);
   if (s) {
     await tx.query(
-      `INSERT INTO subscription_period (id, tenant_id, payment_id, modalidad, plan_codigo, monto_pagado, monto_referencia, periodo_inicio, periodo_fin, condiciones) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [uuidv7(), tenantId, s.paymentId, s.modalidad, d.plan, s.precioPagado, s.montoReferencia, ahora.toISOString(), fin.toISOString(), JSON.stringify(condiciones)]);
+      `INSERT INTO subscription_period (id, tenant_id, payment_id, modalidad, plan_codigo, monto_pagado, monto_referencia, periodo_inicio, periodo_fin, condiciones, ciclo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [uuidv7(), tenantId, s.paymentId, s.modalidad, d.plan, s.precioPagado, s.montoReferencia, ahora.toISOString(), fin.toISOString(), JSON.stringify(condiciones), ciclo]);
   }
 
   // Módulos: los de la plantilla que el plan incluye.
@@ -228,7 +231,7 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
   if (d.creacion_diferida && (!d.personalizacion || d.creacion?.estado !== 'aplicando')) throw new Error('La creación asistida todavía no está preparada');
   // El pago aprobado fija el plan y las condiciones (los términos se congelaron al crear el checkout).
   const pago = (await tx.query(
-    `SELECT id, referencia, monto, monto_referencia, modalidad, acceso_dias, plan_codigo FROM payment WHERE draft_token=$1 AND estado='APROBADO' ORDER BY verificado_en NULLS LAST, creado_en LIMIT 1`, [draftToken])).rows[0];
+    `SELECT id, referencia, monto, monto_referencia, modalidad, acceso_dias, plan_codigo, ciclo FROM payment WHERE draft_token=$1 AND estado='APROBADO' ORDER BY verificado_en NULLS LAST, creado_en LIMIT 1`, [draftToken])).rows[0];
   const plan = pago?.plan_codigo ?? d.plan_codigo;
   const n = d.negocio ?? {};
   await reserveSlug(tx, n.slug, draftToken, 30);
@@ -245,7 +248,7 @@ export async function provisionDraft(tx: Tx, draftToken: string, correlacion: st
         adicionales: (d.clasificacion.actividades_adicionales ?? []).map((a: any) => ({ sector: a.sector, tipo_negocio: a.tipo_negocio })) },
       suscripcion: pago ? {
         modalidad: pago.modalidad, accesoDias: pago.acceso_dias ?? null, precioPagado: Number(pago.monto),
-        montoReferencia: pago.monto_referencia == null ? null : Number(pago.monto_referencia), paymentId: pago.id,
+        montoReferencia: pago.monto_referencia == null ? null : Number(pago.monto_referencia), paymentId: pago.id, ciclo: pago.ciclo === 'ANUAL' ? 'ANUAL' : 'MENSUAL',
       } : null,
     },
     async (e) => { etapas.push({ etapa: e, en: new Date().toISOString() }); },

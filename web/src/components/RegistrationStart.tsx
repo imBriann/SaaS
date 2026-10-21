@@ -5,7 +5,7 @@ import { PublicoLayout, useBorrador } from '../pages/public/Publico';
 import { AiOrb } from './AiOrb';
 import { AiVoice } from './AiVoice';
 import { PropuestaIA, TAMANOS, VOLUMENES } from './PropuestaIA';
-import { Quote } from './Quote';
+import { ResumenAlta } from './Quote';
 import { ErrorCarga } from './ui';
 import { Icon } from './icons';
 
@@ -80,6 +80,13 @@ export function RegistrationStart() {
       if (Array.isArray(elegidas)) {
         r = await api.patch(`/api/onboarding/borradores/${r.token}`, { clasificacion: { modulos_sugeridos: elegidas } });
         sessionStorage.removeItem('funciones_elegidas');
+      }
+      // El plan elegido en la página de planes (sitio público) se aplica al borrador: la recomendación no lo reemplaza.
+      let elegido: { plan?: string; ciclo?: string } | null = null;
+      try { const raw = sessionStorage.getItem('plan_elegido'); if (raw) elegido = JSON.parse(raw); } catch { /* sin plan elegido */ }
+      if (elegido && ['esencial', 'negocio', 'pro'].includes(elegido.plan ?? '')) {
+        r = await api.patch(`/api/onboarding/borradores/${r.token}`, { plan_codigo: elegido.plan, ciclo: elegido.ciclo === 'ANUAL' ? 'ANUAL' : 'MENSUAL' });
+        try { sessionStorage.removeItem('plan_elegido'); } catch { /* sin almacenamiento */ }
       }
       if (vigente.current) setD(r);
     } catch (e) { if (vigente.current) setError((e as Error).message); }
@@ -165,7 +172,7 @@ export function RegistrationStart() {
         {c && <div className={`registration-proposal ${actual ? '' : 'is-stale'}`} aria-busy={!actual}>
           <PropuestaIA c={c} ocupado={guardando || !actual} cambiar={cambiar} />
           {fallback && actual && <button type="button" className="btn" onClick={() => analizar(texto)} disabled={ocupado}>Volver a intentar con IA</button>}
-          <Quote quote={d.cotizacion} loading={guardando || !actual} modalidad={d.modalidad} />
+          <ResumenAlta d={d} setD={setD} loading={guardando || !actual} />
           <button type="button" className="btn primario grande registration-continue" disabled={guardando || !listo} onClick={() => nav('/empezar/datos')}>Continuar con esta configuración <Icon n="flecha" size={17} /></button>
           {actual && !listo && <p className="tenue peq-txt">Completa tu actividad para continuar. Lo demás se puede ajustar después.</p>}
         </div>}

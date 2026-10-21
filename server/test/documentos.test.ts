@@ -484,6 +484,6 @@ describe('Animación del recibo', () => {
     for (const m of bloque.matchAll(/@keyframes [\w-]+ \{([^@]*?)\}\s*\}/g)) expect(m[1]).not.toMatch(/\b(top|left|height|width|margin)\s*:/);
     const tsx = readFileSync(join(import.meta.dirname, '../../web/src/components/ReciboImpresion.tsx'), 'utf8');
     expect(tsx).toMatch(/role="status" aria-live="polite"/);
-    expect(tsx).toMatch(/className="impresion-salida" aria-hidden="true"/);
+    expect(tsx).toMatch(/className="recibo-papel" aria-hidden="true"/);
   });
 });

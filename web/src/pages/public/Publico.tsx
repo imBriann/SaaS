@@ -11,7 +11,7 @@ import { faseRecibo, reciboEnCurso, type FaseRecibo } from './recibo';
 import { useFaseMinima, useRevelado } from './ritmo';
 import { ReciboImpresion } from '../../components/ReciboImpresion';
 import { Campo, Cargando, ErrorCarga, Estado, CicloFiscal, useAccion, Vacio, CodigoOtp, useCuentaAtras } from '../../components/ui';
-import { Quote } from '../../components/Quote';
+import { ResumenAlta } from '../../components/Quote';
 import { PagoDirecto } from '../../components/PagoDirecto';
 import { MarketingExperience } from '../../components/MarketingExperience';
 import { SiteHeader, SiteFooter } from '../../components/SiteChrome';
@@ -295,7 +295,7 @@ export function Pago() {
   return <PublicoLayout paso={4}><section className="proposal-summary">
     <h1 className="onb-titulo">Revisa tu propuesta</h1>
     <p className="sec">Esta es la plataforma de {d.negocio?.nombre ?? 'tu negocio'}. Revisa las funciones y el desglose antes de continuar.</p>
-    <Quote quote={d.cotizacion} modalidad={d.modalidad} />
+    <ResumenAlta d={d} setD={setD} />
     {faltanDatos.length > 0 && <div className="aviso" role="alert"><Icon n="alerta" className="" size={16} /><span><b>Antes de pagar necesitamos {faltanDatos.map((k) => ETIQUETA[k]).join(', ')}.</b> Complétalo en el paso de datos y vuelve aquí: lo que ya escribiste se conserva. <Link className="enlace" to="/empezar/datos">Completar mis datos</Link></span></div>}
     {institucional && <dl className="resumen-pago" aria-label="Resumen de la contratación">
       <div><dt>Modalidad</dt><dd>Institucional</dd></div>
@@ -618,7 +618,7 @@ export function Aprovisionamiento() {
             <p className="sec">Tu espacio de trabajo <b>{st.tenant.nombre}</b> está creado. Entra para revisar tus módulos y completar las conexiones pendientes.</p>
             <section className="col" style={{ gap: 10 }} aria-label="Recibo y documentos del pago">
               <ReciboImpresion fase={recibo} numero={st.documentos?.numero} monto={st.pago?.monto} concepto={st.pago?.modalidad === 'INSTITUCIONAL' ? `Acceso institucional ${st.pago?.acceso_dias ?? ''} días` : 'Plan Omnegia'}
-                empresa={st.tenant?.nombre} fiscal={st.documentos?.estado_fiscal_texto} validez={!!st.documentos?.validez_fiscal} />
+                empresa={st.tenant?.nombre} fiscal={st.documentos?.estado_fiscal_texto} validez={!!st.documentos?.validez_fiscal} pago={st.pago} />
               <div className="fila envolver" style={{ gap: 8 }}>
                 <button className="btn primario" disabled={reciboReal !== 'listo' || bajando} onClick={bajarDocumentos}><Icon n="descargar" className="" size={16} />{bajando ? 'Preparando la descarga…' : 'Descargar documentos (.zip)'}</button>
                 {recibo === 'pendiente' && st.documentos?.estado !== 'SIN_DATOS' && <button className="btn" disabled={ocupado} onClick={reintentarDocumentos}>Reintentar la generación</button>}
@@ -629,7 +629,7 @@ export function Aprovisionamiento() {
             </section>
             {st.acceso && <dl className="resumen-pago" aria-label="Tu acceso">
               {st.acceso.monto_pagado != null && <div><dt>Pago confirmado</dt><dd>{cop(st.acceso.monto_pagado)} COP{st.acceso.referencia ? ` · ref. ${st.acceso.referencia}` : ''}</dd></div>}
-              {st.acceso.modalidad && <div><dt>Modalidad</dt><dd>{st.acceso.modalidad === 'INSTITUCIONAL' ? 'Institucional · sin cobros automáticos' : 'Comercial · mensual'}</dd></div>}
+              {st.acceso.modalidad && <div><dt>Modalidad</dt><dd>{st.acceso.modalidad === 'INSTITUCIONAL' ? 'Institucional · sin cobros automáticos' : `Comercial · ${st.pago?.ciclo === 'ANUAL' ? 'anual (12 meses)' : 'mensual'} · sin cobros automáticos`}</dd></div>}
               {st.acceso.vigente_hasta && <div><dt>Acceso hasta</dt><dd>{new Date(st.acceso.vigente_hasta).toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'long', year: 'numeric' })}</dd></div>}
               {st.acceso.url && <div><dt>Dirección</dt><dd><a href={st.acceso.url} className="mono">{st.acceso.url.replace(/^https?:\/\//, '')}</a></dd></div>}
             </dl>}

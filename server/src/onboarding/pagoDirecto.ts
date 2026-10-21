@@ -9,9 +9,8 @@ import {
   aceptacionWompi, bancosPse, crearTransaccionWompi, leerTransaccionWompi, METODOS_DIRECTOS, type AccionPago, type DatosMetodo,
 } from '../adapters/wompiDirecto.js';
 import { procesarEventoPago } from '../modules/billing.js';
-import { quoteClassification } from './pricing.js';
 import { ofertaAlta, puedeContratar } from './oferta.js';
-import { startCheckout } from './service.js';
+import { cotizacionAlta, startCheckout } from './service.js';
 
 /**
  * Pago con formulario propio. Reutiliza el pago pendiente que crea `startCheckout` (misma referencia, mismo monto,
@@ -38,7 +37,7 @@ export async function configPagoDirecto(db: Database, tk: string) {
   if (cuenta.proveedor === 'simulada') {
     return { disponible: true as const, simulado: true as const, metodos: METODOS_DIRECTOS.map((codigo) => ({ codigo, nombre: NOMBRE_METODO[codigo] })), bancos: [{ codigo: '1007', nombre: 'Banco de pruebas' }] };
   }
-  const monto = ofertaAlta((d.recomendacion?.cotizacion ?? quoteClassification(d.clasificacion)).total).monto;
+  const monto = ofertaAlta(cotizacionAlta(d).total).monto;
   const medios = await mediosPagoWompi(cuenta, monto);
   const metodos = medios.medios.filter((m) => (METODOS_DIRECTOS as readonly string[]).includes(m.codigo)).map((m) => ({ codigo: m.codigo, nombre: NOMBRE_METODO[m.codigo] ?? m.nombre }));
   const aceptacion = metodos.length ? await aceptacionWompi(cuenta) : null;

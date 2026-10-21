@@ -184,3 +184,44 @@ describe('Precio pactado y gracia', () => {
     expect(c.tipo).toBe('RENOVAR');
   });
 });
+
+describe('Primera contratación con un plan estándar', () => {
+  it('cobra el plan y el ciclo elegidos, respeta la elección y crea la empresa con 12 meses', async () => {
+    const { verificarAlta } = await import('./helpers.js');
+    const { digitoVerificacionNit } = await import('../src/adapters/fiscal.js');
+    const post = (url: string, payload?: unknown) => E.app.inject({ method: 'POST', url, payload: payload as any });
+    const patch = (url: string, payload: unknown) => E.app.inject({ method: 'PATCH', url, payload: payload as any });
+    const d = (await post('/api/onboarding/borradores', { descripcion: 'Tengo una barbería pequeña en Ocaña, atiendo yo solo con citas por WhatsApp.' })).json();
+    expect(d.planes.map((p: any) => [p.codigo, p.mensual, p.anual])).toEqual([['esencial', 99_000, 990_000], ['negocio', 229_000, 2_290_000], ['pro', 549_000, 5_490_000]]);
+    expect(d.cotizacion).toMatchObject({ demostracion: false, ciclo: 'MENSUAL', total: d.planes.find((p: any) => p.codigo === d.plan_codigo).mensual });
+
+    let r = (await patch(`/api/onboarding/borradores/${d.token}`, { plan_codigo: 'pro', ciclo: 'ANUAL' })).json();
+    expect(r).toMatchObject({ plan_codigo: 'pro', ciclo: 'ANUAL', plan_elegido: true });
+    expect(r.cotizacion).toMatchObject({ total: 5_490_000, periodo: 'año', plan: { codigo: 'pro' } });
+    // Corregir la clasificación no reemplaza el plan que eligió la persona.
+    r = (await patch(`/api/onboarding/borradores/${d.token}`, { clasificacion: { tamano: '2_5' } })).json();
+    expect(r.plan_codigo).toBe('pro');
+    expect((await patch(`/api/onboarding/borradores/${d.token}`, { plan_codigo: 'gratis' })).statusCode).toBe(400);
+
+    await patch(`/api/onboarding/borradores/${d.token}`, { negocio: { nombre: 'Barbería Anual', email: 'dueno@anual.test', slug: 'anual', nit: '901999777', nit_dv: String(digitoVerificacionNit('901999777')) } });
+    await verificarAlta(E, d.token);
+    const pago = (await post(`/api/onboarding/borradores/${d.token}/pago`, { monto: 1 })).json();
+    expect(pago).toMatchObject({ monto: 5_490_000, plan: 'pro', ciclo: 'ANUAL' });
+    // Cambiar a mensual antes de pagar deja de ofrecer el checkout anterior.
+    await patch(`/api/onboarding/borradores/${d.token}`, { ciclo: 'MENSUAL' });
+    const mensual = (await post(`/api/onboarding/borradores/${d.token}/pago`, {})).json();
+    expect(mensual.monto).toBe(549_000);
+    expect(mensual.referencia).not.toBe(pago.referencia);
+    await patch(`/api/onboarding/borradores/${d.token}`, { ciclo: 'ANUAL' });
+    const final = (await post(`/api/onboarding/borradores/${d.token}/pago`, {})).json();
+    expect(final.monto).toBe(5_490_000);
+    await pagar(final.referencia);
+
+    const t = await E.db.withPlatform(async (tx) => (await tx.query(
+      `SELECT t.plan_codigo, s.ciclo, s.periodo_fin, s.precio_pactado FROM tenant t JOIN subscription s ON s.tenant_id=t.id WHERE t.slug='anual'`)).rows[0]);
+    expect(t).toMatchObject({ plan_codigo: 'pro', ciclo: 'ANUAL', precio_pactado: null });
+    expect(new Date(t.periodo_fin).getTime()).toBeGreaterThan(Date.now() + 364 * DIA);
+    const anteriores = await E.db.withPlatform(async (tx) => (await tx.query(`SELECT estado FROM payment WHERE referencia = ANY($1)`, [[pago.referencia, mensual.referencia]])).rows.map((x: any) => x.estado));
+    expect(anteriores).toEqual(['REEMPLAZADO', 'REEMPLAZADO']);
+  });
+});
