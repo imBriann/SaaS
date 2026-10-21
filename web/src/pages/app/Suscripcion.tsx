@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { api, cop, descargarDocumentos, fecha, fechaCompleta, num } from '../../api';
-import { Cabecera } from '../../components/Layout';
+import { Cabecera, useSesion } from '../../components/Layout';
 import { Cargando, ErrorCarga, useApi } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import { AnilloGracia, AvisoDeshacer, BarraDias, Cascada, CodigoBarras, Confeti, Impresora, Pila, Rodillo } from '../../components/facturacion/piezas';
@@ -50,9 +50,11 @@ function Panel({ info, recargar }: { info: any; recargar: () => void }) {
     try { await api.del('/api/t/suscripcion/cambio'); setAviso({ id: Date.now(), texto: 'Listo: conservas tu plan actual' }); recargar(); }
     catch (e) { setAviso({ id: Date.now(), texto: (e as Error).message }); }
   };
+  const { recargar: recargarSesion } = useSesion();
   const alCambiar = (r: Resultado) => {
     setAviso({ id: Date.now(), texto: textoResultado(r), accion: r.tipo === 'PROGRAMADO' ? { texto: 'Deshacer', fn: deshacer } : undefined });
     recargar();
+    if (r.tipo === 'APLICADO') recargarSesion();
   };
   // Un cambio hecho desde la pantalla de planes llega con su resultado.
   useEffect(() => {
@@ -430,6 +432,9 @@ function Caja({ referencia, idTransaccion, onSalir }: { referencia: string; idTr
   }, [referencia, idTransaccion]);
 
   const aprobado = pago?.estado === 'APROBADO';
+  // Con el pago aprobado cambian el plan y sus módulos: el menú y los permisos del panel se vuelven a leer.
+  const { recargar: recargarSesion } = useSesion();
+  useEffect(() => { if (aprobado) recargarSesion(); }, [aprobado]); // eslint-disable-line react-hooks/exhaustive-deps
   // Orden: sello → el recibo empieza a imprimirse → confeti.
   useEffect(() => {
     if (!aprobado) return;

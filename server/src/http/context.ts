@@ -69,6 +69,9 @@ export async function memberships(tx: Tx, userId: string) {
   )).rows;
 }
 
+/** Rutas que siguen abiertas con la suscripción cancelada (sin el asistente de IA, que consume el plan). */
+const PERMITIDO_CANCELADA = /^\/api\/t\/(cancelada(\/solicitud)?|soporte(\/(?!asistente)[\w-]+(\/(mensajes|resolver))?)?)(\?|$)/;
+
 /** preHandler: exige sesión + tenant resuelto + pertenencia. Construye el Ctx validado. */
 export function tenantGuard(db: Database) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
@@ -94,7 +97,8 @@ export function tenantGuard(db: Database) {
       return { t, m };
     });
     if (!data.t || !data.m) throw new AppError('NOT_FOUND', MSG_NO_ENCONTRADO);
-    if (data.t.estado === 'CANCELADA') throw new AppError('SUSPENDED', 'La suscripción de esta empresa fue cancelada.');
+    // Cancelada: el panel se cierra, salvo la pantalla de la cancelación y el soporte humano (para pedir la reactivación).
+    if (data.t.estado === 'CANCELADA' && !PERMITIDO_CANCELADA.test(req.url)) throw new AppError('SUSPENDED', 'La suscripción de esta empresa fue cancelada.', { cancelada: true });
     req.user = user;
     // El propietario conserva siempre todos los permisos de su empresa, cualquiera sea su rol.
     const propietario = data.t.propietario_id === user.id;
@@ -106,7 +110,7 @@ export function tenantGuard(db: Database) {
       propietario,
       origen: 'PANEL',
       correlacion: req.correlacion,
-      soloLectura: data.t.estado === 'SUSPENDIDA',
+      soloLectura: data.t.estado === 'SUSPENDIDA' || data.t.estado === 'CANCELADA',
     };
     void reply;
   };

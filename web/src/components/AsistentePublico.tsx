@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { api, ApiError } from '../api';
 import { Icon } from './icons';
@@ -21,6 +21,7 @@ type Rol = 'persona' | 'asistente';
 interface Msg { id: number; rol: Rol; texto: string; enlaces?: { ruta: string; texto: string }[]; sugerencias?: string[]; siguiente?: string; asesor?: boolean }
 
 const CLAVE_BIENVENIDA = 'omnegia_ia_bienvenida';
+const SIN_BIENVENIDA = /^\/(entrar|empresas|recuperar|restablecer|invitacion|operador)/;
 const CLAVE_CHAT = 'omnegia_ia_chat';
 const INICIALES = ['¿Cuánto cuesta?', '¿Qué plan me conviene?', '¿Cómo empiezo?', 'Hablar con un asesor'];
 const PRESENTACION = [
@@ -35,7 +36,9 @@ const almacen = () => (typeof window === 'undefined' ? undefined : window);
 
 export function AsistentePublico() {
   const w = almacen();
-  const [fase, setFase] = useState<'oculta' | 'bienvenida' | 'lista'>(() => (leer(CLAVE_BIENVENIDA, w?.localStorage) ? 'lista' : 'oculta'));
+  // En las pantallas de acceso (entrar, elegir empresa…) la persona ya sabe a qué viene: solo queda el botón de ayuda.
+  const acceso = SIN_BIENVENIDA.test(useLocation().pathname);
+  const [fase, setFase] = useState<'oculta' | 'bienvenida' | 'lista'>(() => (acceso || leer(CLAVE_BIENVENIDA, w?.localStorage) ? 'lista' : 'oculta'));
   const [abierto, setAbierto] = useState(false);
   // La bienvenida espera a que la página cargue y se ve una sola vez por navegador.
   useEffect(() => {

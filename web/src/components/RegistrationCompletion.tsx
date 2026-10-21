@@ -91,6 +91,9 @@ export function RegistrationCompletion() {
   const paid = status?.pago?.estado === 'APROBADO';
   const ready = status?.estado === 'APROVISIONADO';
   const needsPassword = !!status?.requiere_contrasena;
+  // La sesión abierta ya es la de la cuenta de este correo: no se vuelve a pedir la contraseña.
+  const sessionOwner = !!status?.sesion_titular;
+  const existingAccount = !!status?.cuenta_existente;
   const creationError = status?.creacion?.estado === 'error' ? status.creacion.error : status?.error_aprovisionamiento;
   const working = ['en_cola', 'analizando', 'aplicando'].includes(status?.creacion?.estado);
   const creating = !creationError && (working || started) && !challenge;
@@ -107,6 +110,7 @@ export function RegistrationCompletion() {
       try { await api.post(`/api/onboarding/borradores/${tk}/contrasena`, { password }); }
       catch (e) { if ((e as ApiError).status !== 409) throw e; }
     }
+    if (!authenticated.current && sessionOwner) authenticated.current = true;
     if (!authenticated.current) {
       const login = await api.post('/api/auth/login', { email, password });
       if (login.segundo_factor) { setChallenge(login); countdown.iniciar(60); setStarted(false); return; }
@@ -120,11 +124,11 @@ export function RegistrationCompletion() {
   // Se entra al panel cuando el espacio existe y la vista previa terminó de mostrarlo completo.
   const [presentado, setPresentado] = useState(false);
   useEffect(() => {
-    if (!ready || !started || !presentado || !password || authAttempt.current || challenge) return;
+    if (!ready || !started || !presentado || !(password || sessionOwner) || authAttempt.current || challenge) return;
     authAttempt.current = true;
     setBusy(true);
     enterWorkspace().catch((e) => { setAccessError(e.message); setStarted(false); }).finally(() => setBusy(false));
-  }, [ready, started, presentado, password, challenge]); // Auth attempt is explicit and one-shot; failed login requires retry.
+  }, [ready, started, presentado, password, sessionOwner, challenge]); // Auth attempt is explicit and one-shot; failed login requires retry.
 
   const create = async (event?: FormEvent, confirmedSession = false) => {
     event?.preventDefault();
@@ -132,7 +136,7 @@ export function RegistrationCompletion() {
     submitLock.current = true; setBusy(true); setAccessError(''); authAttempt.current = false;
     try {
       if (ready) { setStarted(true); authAttempt.current = true; await enterWorkspace(); return; }
-      const response = await api.post(`/api/onboarding/borradores/${tk}/crear`, confirmedSession ? {} : { password });
+      const response = await api.post(`/api/onboarding/borradores/${tk}/crear`, confirmedSession || sessionOwner ? {} : { password });
       if (response.segundo_factor) { setChallenge(response); setCode(''); countdown.iniciar(60); return; }
       setStatus((s: any) => ({ ...s, creacion: response.creacion, error_aprovisionamiento: null }));
       setStarted(true); setRevision((n) => n + 1);
@@ -199,7 +203,7 @@ export function RegistrationCompletion() {
     </section>}
     {paid && tk && !loadError && creating && <PreparandoEspacio nombre={name} titulo={creation.title} detalle={creation.detail} listo={ready}
       pasos={STEPS.map(([clave, nombre]) => ({ clave, nombre, hecho: completed.has(clave) }))}
-      aviso={!password && !busy ? 'La creación sigue en curso. Cuando termine, introduce tu contraseña para abrir tu espacio.' : accessError || null}
+      aviso={!password && !sessionOwner && !busy ? 'La creación sigue en curso. Cuando termine, introduce tu contraseña para abrir tu espacio.' : accessError || null}
       onDescargar={download} descargando={downloading} reciboListo={receiptReal === 'listo'}
       onCompleto={() => setPresentado(true)} />}
     {paid && tk && !loadError && !creating && <div className="registration-finish">
@@ -228,12 +232,12 @@ export function RegistrationCompletion() {
           {creationError && <p className="finish-error" role="alert">{creationError} Tu pago está confirmado; puedes reintentar sin pagar de nuevo.</p>}
           <form className="finish-create-form" onSubmit={challenge ? verify : create}>
             {challenge ? <><CodigoOtp valor={code} onCambio={setCode} autoFocus /><button className="finish-create-button" disabled={busy || code.length !== 6}>{busy ? 'Verificando…' : 'Verificar y continuar'}</button><button type="button" className="finish-resend" disabled={countdown.restante > 0 || busy} onClick={resend}>{countdown.restante ? `Reenviar en ${countdown.restante} s` : 'Reenviar código'}</button></> : <>
-              <Campo etiqueta={needsPassword ? 'Crea tu contraseña' : 'Contraseña del administrador'} ayuda={needsPassword ? 'Mínimo 10 caracteres. Será la contraseña para entrar a tu espacio.' : email}>
+              {sessionOwner ? <p className="finish-session"><Icon n="ok" size={15} className="" /><span>Ya entraste como <b>{email}</b>. Esta empresa quedará en tu misma cuenta: no necesitas otra contraseña.</span></p> : <Campo etiqueta={needsPassword ? 'Crea tu contraseña' : existingAccount ? 'Tu contraseña actual' : 'Contraseña del administrador'} ayuda={needsPassword ? 'Mínimo 10 caracteres. Será la contraseña para entrar a tu espacio.' : existingAccount ? `${email} ya tiene cuenta: usa la contraseña con la que ya entras. La nueva empresa quedará junto a las otras.` : email}>
                 <div className="finish-password"><input className="input" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={needsPassword ? 'new-password' : 'current-password'} minLength={needsPassword ? 10 : undefined} required /><button type="button" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-pressed={showPassword}>{showPassword ? 'Ocultar' : 'Mostrar'}</button></div>
-              </Campo>
+              </Campo>}
               {accessError && <p className="finish-error" role="alert">{accessError}</p>}
-              <button className="finish-create-button" disabled={busy || (needsPassword ? password.length < 10 : !password)}><ThinkingOrb state={busy ? 'connecting' : 'shaping'} size={20} theme="light" aria-hidden="true" />{busy ? 'Conectando…' : ready ? 'Abrir mi espacio' : creationError ? 'Reintentar con IA' : 'Crear mi espacio con IA'}<Icon n="flecha" size={18} className="" /></button>
-              {!needsPassword && <Link className="finish-recover" to="/recuperar">¿Olvidaste tu contraseña?</Link>}
+              <button className="finish-create-button" disabled={busy || (!sessionOwner && (needsPassword ? password.length < 10 : !password))}><ThinkingOrb state={busy ? 'connecting' : 'shaping'} size={20} theme="light" aria-hidden="true" />{busy ? 'Conectando…' : ready ? 'Abrir mi espacio' : creationError ? 'Reintentar con IA' : 'Crear mi espacio con IA'}<Icon n="flecha" size={18} className="" /></button>
+              {!needsPassword && !sessionOwner && <Link className="finish-recover" to="/recuperar">¿Olvidaste tu contraseña?</Link>}
             </>}
           </form>
           {challenge && accessError && <p className="finish-error" role="alert">{accessError}</p>}

@@ -25,6 +25,10 @@ export interface CuentaPasarela {
   llavePrivada?: string;
   secretoIntegridad?: string;
   secretoEventos?: string;
+  /** 3D Secure en tarjeta (Wompi). Sin definir: activo. */
+  tresDS?: boolean;
+  /** Escenario de 3DS que exige el sandbox de Wompi. */
+  tresDSPrueba?: string;
 }
 
 export interface EventoPago {
@@ -58,7 +62,7 @@ const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 export function cuentaPlataforma(): CuentaPasarela | null {
   if (config.pagos.proveedor === 'wompi') {
     const w = config.pagos.wompi;
-    return { proveedor: 'wompi', entorno: w.entorno, llavePublica: w.llavePublica, llavePrivada: w.llavePrivada, secretoIntegridad: w.secretoIntegridad, secretoEventos: w.secretoEventos };
+    return { proveedor: 'wompi', entorno: w.entorno, llavePublica: w.llavePublica, llavePrivada: w.llavePrivada, secretoIntegridad: w.secretoIntegridad, secretoEventos: w.secretoEventos, tresDS: config.pagos.tresDS, tresDSPrueba: config.pagos.tresDSPrueba };
   }
   if (config.pagos.proveedor === 'simulada') return { proveedor: 'simulada', entorno: 'sandbox' };
   return null;

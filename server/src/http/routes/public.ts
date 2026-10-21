@@ -162,7 +162,7 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   app.post('/api/onboarding/borradores/:tk/pago/directo', async (req: any) => iniciarPagoDirecto(db, req.params.tk, req.body, { ip: req.ip, correlacion: req.correlacion }));
   app.get('/api/onboarding/borradores/:tk/pago/directo/estado', async (req: any) => estadoPagoDirecto(db, req.params.tk, req.query?.tx, req.correlacion));
   app.post('/api/onboarding/borradores/:tk/pago', async (req: any) => onboarding.startCheckout(db, req.params.tk, req.correlacion, req.body?.retorno));
-  app.get('/api/onboarding/borradores/:tk/estado', async (req: any) => onboarding.draftStatus(db, req.params.tk, req.correlacion));
+  app.get('/api/onboarding/borradores/:tk/estado', async (req: any) => onboarding.draftStatus(db, req.params.tk, req.correlacion, req.user));
   app.post('/api/onboarding/borradores/:tk/reintentar', async (req: any) => onboarding.retryProvisioning(db, req.params.tk, req.correlacion));
   // Documentos del pago: enlace temporal para quien pagó (portador del borrador) y reintento si fallaron.
   app.post('/api/onboarding/borradores/:tk/documentos/enlace', async (req: any) => documentos.enlaceDocumentosBorrador(db, String(req.params.tk ?? '')));

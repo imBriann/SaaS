@@ -85,6 +85,13 @@ function Recorrido({ id, onFin }: { id: string; onFin: () => void }) {
     return () => window.clearTimeout(t);
   }, [paso, estado, loc.pathname, loc.search]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // El paso en curso queda en el documento: así la pastilla de la IA (escondida durante la guía) se muestra cuando la guía la señala.
+  useEffect(() => {
+    const raiz = document.documentElement;
+    if (paso) raiz.dataset.guiaPaso = paso.ancla;
+    return () => { delete raiz.dataset.guiaPaso; };
+  }, [paso]);
+
   // Sigue al elemento mientras se desplaza la página, cambia el tamaño o se anima un formulario.
   useEffect(() => {
     if (!el) return;
@@ -236,7 +243,7 @@ function Recorrido({ id, onFin }: { id: string; onFin: () => void }) {
           {estado === 'perdido'
             ? <button type="button" className="btn peq primario" onClick={onFin}>Cerrar guía</button>
             : <button type="button" key={`${k}-${tiempo}-${auto}`} className={`btn peq primario guia-sig ${auto && tiempo && !ultimo ? 'contando' : ''}`} style={{ '--dura': `${tiempo}ms` } as CSSProperties}
-                disabled={estado !== 'listo'} onClick={siguiente}>{ultimo ? 'Listo' : paso?.abrir ? 'Ábrelo' : 'Siguiente'}{!ultimo && <Icon n="derecha" className="" size={14} />}</button>}
+                disabled={estado !== 'listo'} onClick={siguiente}>{ultimo ? (paso?.abrir ? 'Abrir el chat' : 'Listo') : paso?.abrir ? 'Ábrelo' : 'Siguiente'}{!ultimo && <Icon n="derecha" className="" size={14} />}</button>}
         </div>
       </motion.div>
     </div>,

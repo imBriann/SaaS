@@ -24,7 +24,7 @@ export const GUIAS: Record<string, Guia> = {
       { ancla: 'menu/clientes', titulo: 'Clientes', texto: 'Tus clientes con su historial. Los que escriben por WhatsApp se crean solos.', opcional: true },
       { ancla: 'menu/inventario', titulo: 'Catálogo', texto: 'Productos y servicios con su precio. La IA de WhatsApp los ofrece tal como están aquí.', opcional: true },
       { ancla: 'menu/configuracion', titulo: 'Configuración', texto: 'Tu equipo, horarios, datos de la empresa, WhatsApp y cobros.', opcional: true },
-      { ancla: 'ia/pildora', titulo: 'Pregúntame', texto: 'Cuando quieras, pregúntame por tus cifras o pídeme que te muestre cómo hacer algo: te lo señalo así, paso a paso.' },
+      { ancla: 'ia/pildora', titulo: 'Pregúntame', texto: 'Aquí estoy siempre. Pregúntame por tus cifras o pídeme que te muestre cómo hacer algo y te lo señalo así, paso a paso. Te abro el chat.', abrir: true },
     ],
   },
   registrar_venta: {

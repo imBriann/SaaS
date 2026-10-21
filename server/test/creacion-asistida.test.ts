@@ -90,6 +90,23 @@ describe('Registro con creación explícita', () => {
     expect(await login(E.app, 'admin@elparche.test', 'demo-parche-2026')).toContain('sid=');
   });
 
+  it('con la sesión abierta de esa misma cuenta no vuelve a pedir la contraseña; con otra cuenta sí', async () => {
+    const tk = await draft('sesion-titular-creacion', 'andres@elparche.test');
+    await pay(tk);
+    const titular = await login(E.app, 'andres@elparche.test', 'demo-equipo-2026');
+    const otra = await login(E.app, 'laura@elparche.test', 'demo-equipo-2026');
+    const estado = async (cookie?: string) => (await E.app.inject({ method: 'GET', url: `/api/onboarding/borradores/${tk}/estado`, headers: cookie ? { cookie } : {} })).json();
+    expect(await estado()).toMatchObject({ cuenta_existente: true, sesion_titular: false, requiere_contrasena: false });
+    expect((await estado(otra)).sesion_titular).toBe(false);
+    expect((await estado(titular)).sesion_titular).toBe(true);
+    expect((await post(`/api/onboarding/borradores/${tk}/crear`, {}, otra)).statusCode).toBe(401);
+    expect((await post(`/api/onboarding/borradores/${tk}/crear`, {}, titular)).statusCode).toBe(200);
+    await drain(E.db);
+    expect((await status(tk)).estado).toBe('APROVISIONADO');
+    const empresas = (await E.app.inject({ method: 'GET', url: '/api/auth/sesion', headers: { cookie: titular } })).json().empresas.map((e: any) => e.slug);
+    expect(empresas).toEqual(expect.arrayContaining(['sesion-titular-creacion']));
+  });
+
   it('un fallo real de la IA queda visible y se puede reintentar sin cobrar otra vez', async () => {
     const tk = await draft('reintento-creacion');
     await pay(tk);

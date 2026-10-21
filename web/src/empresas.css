@@ -141,6 +141,24 @@
   .perfil-sesiones li { flex-wrap: wrap; }
 }
 
+/* Elegir empresa (después de entrar) */
+.elegir-empresa { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 480px; margin: 48px auto; padding: 28px; box-sizing: border-box; min-width: 0; }
+.elegir-empresa .onb-titulo { font-size: 24px; overflow-wrap: anywhere; }
+.elegir-empresa-lista { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.elegir-empresa-op { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--borde);
+  background: var(--superficie); font: inherit; text-align: left; cursor: pointer; color: var(--tinta);
+  transition: border-color 160ms, transform 160ms var(--ease-out), box-shadow 160ms; animation: empresa-entra 260ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 50ms); }
+.elegir-empresa-op:hover { border-color: var(--acento-op); transform: translateY(-1px); box-shadow: 0 10px 24px -18px var(--acento-op); }
+.elegir-empresa-op:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.elegir-empresa-op > svg { flex: none; color: var(--tinta-3); }
+.elegir-empresa-op .empresa-txt b, .elegir-empresa-op .empresa-txt small { white-space: normal; overflow-wrap: anywhere; }
+.elegir-empresa-dir { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px !important; }
+.elegir-empresa-crear { white-space: normal; height: auto; min-height: 44px; text-align: center; }
+@media (max-width: 560px) {
+  .elegir-empresa { margin: 16px auto; padding: 20px 16px; border-radius: 18px; }
+  .elegir-empresa .onb-titulo { font-size: 21px; }
+}
+
 /* Cortina al cambiar de empresa: el color de la empresa destino se abre desde el centro. */
 .cambio-empresa { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: var(--acento-op);
   clip-path: circle(0% at 50% 50%); animation: cortina-abre 520ms cubic-bezier(.7, 0, .2, 1) forwards; }
@@ -172,8 +190,44 @@ tr.fila-propietario td { background: color-mix(in srgb, var(--atencion) 5%, tran
   .empresa-mono.grande, .insignia-propietario svg { animation: none; }
   .empresa-op:hover .empresa-mono { transform: none; }
   .perfil-avatar { animation: none; }
+  .elegir-empresa-op { animation: none; }
   .perfil-indice a:hover, .perfil-foto-btn:hover { transform: none; }
   .perfil-barra i { transition: none; }
   .cuenta-cabeza:hover .ver-perfil, .perfil-empresa:hover:not(:disabled) { transform: none; }
 }
 .perfil-mas { align-self: flex-start; }
+
+/* Suscripción cancelada */
+.cancelada-fondo { min-height: 100dvh; padding: 32px 16px; box-sizing: border-box; }
+.cancelada { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.cancelada .tarjeta { padding: 24px; box-sizing: border-box; min-width: 0; }
+.cancelada-cab { display: flex; flex-direction: column; gap: 10px; }
+.cancelada-cab h1 { margin: 4px 0 0; font-size: 24px; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.cancelada-cab p { margin: 0; line-height: 1.5; }
+.cancelada-ico { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; color: var(--error, #b3261e);
+  background: color-mix(in srgb, var(--error, #b3261e) 10%, transparent); }
+.cancelada-acc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.cancelada-acc .btn { white-space: normal; }
+.cancelada-reactivar { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 14px; border-radius: 14px; background: var(--superficie-2); margin-top: 4px; }
+.cancelada-reactivar .campo { width: 100%; margin: 0; }
+.cancelada-solicitud { display: flex; gap: 8px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--acento-tinte); font-size: 14px; }
+.cancelada-solicitud svg { flex: none; margin-top: 2px; }
+.cancelada-tickets h2, .cancelada-nuevo h2 { margin: 0 0 12px; font-size: 17px; }
+.cancelada-tickets ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cancelada-ticket { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; width: 100%; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--borde); background: var(--superficie); font: inherit; text-align: left; cursor: pointer; color: var(--tinta); }
+.cancelada-ticket.on { border-color: var(--acento); }
+.cancelada-ticket b { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.cancelada-ticket small { grid-column: 2 / -1; color: var(--tinta-3); font-size: 12px; }
+.cancelada-estado { font-size: 12px; font-weight: 600; color: var(--tinta-2); white-space: nowrap; }
+.cancelada-hilo { padding: 10px 4px 4px; display: flex; flex-direction: column; gap: 10px; }
+.cancelada-responder { display: flex; gap: 8px; align-items: flex-end; }
+.cancelada-responder textarea { flex: 1; min-width: 0; }
+.cancelada-nuevo { display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 560px) {
+  .cancelada .tarjeta { padding: 18px 16px; }
+  .cancelada-cab h1 { font-size: 21px; }
+  .cancelada-ticket { grid-template-columns: minmax(0, 1fr) auto; }
+  .cancelada-ticket .mono { grid-column: 1 / -1; font-size: 12px; }
+  .cancelada-responder { flex-direction: column; align-items: stretch; }
+}

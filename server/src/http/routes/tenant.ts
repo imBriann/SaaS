@@ -33,6 +33,7 @@ import { verificarWhatsapp } from '../../modules/channelStatus.js';
 import { askAssistant, confirmarAccionAsistente } from '../../ai/runtime.js';
 import * as copiloto from '../../ai/copiloto.js';
 import * as perfilMod from '../../modules/perfil.js';
+import * as cancelada from '../../modules/cancelada.js';
 import { depurar } from '../../lib/depurar.js';
 import { signMeta, whatsapp } from '../../adapters/channel.js';
 import { applyMapping, inferMapping, readSheet } from '../../onboarding/importer.js';
@@ -374,6 +375,9 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('post', '/soporte/asistente/:id/escalar', (tx, ctx, req) => soporteIA.escalarPorPersona(tx, ctx, req.params.id, req.body));
   r('post', '/soporte/:id/resolver', (tx, ctx, req) => soporte.marcarResuelta(tx, ctx, req.params.id));
   r('post', '/soporte', (tx, ctx, req) => soporte.crearTicket(tx, ctx, req.body));
+  // Suscripción cancelada: lo único abierto además del soporte (pedir la reactivación).
+  r('get', '/cancelada', (tx, ctx) => cancelada.estadoCancelada(tx, ctx));
+  r('post', '/cancelada/solicitud', (tx, ctx, req) => cancelada.solicitarReactivacion(tx, ctx, req.body));
   r('get', '/soporte/:id', (tx, ctx, req) => soporte.verTicket(tx, ctx, req.params.id));
   r('post', '/soporte/:id/mensajes', (tx, ctx, req) => soporte.responderTicket(tx, ctx, req.params.id, req.body));
 }

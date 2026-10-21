@@ -97,6 +97,10 @@ export const config = {
       secretoIntegridad: v('WOMPI_SECRETO_INTEGRIDAD'),
       secretoEventos: v('WOMPI_SECRETO_EVENTOS'),
     },
+    /** 3D Secure en pagos con tarjeta de Wompi (por defecto sí). WOMPI_3DS=off si la cuenta no lo tiene habilitado. */
+    tresDS: v('WOMPI_3DS') !== 'off',
+    /** Escenario de 3DS en sandbox (Wompi lo exige en pruebas; en producción no se envía). */
+    tresDSPrueba: v('WOMPI_3DS_SANDBOX') ?? 'no_challenge_success',
     /** Precios comerciales confirmados por el operador (habilita la contratación comercial). */
     tarifasConfirmadas: v('TARIFAS_CONFIRMADAS') === '1',
   },

@@ -452,7 +452,7 @@ const ultimoPago = (db: Database, tk: string) => db.withPlatform(async (tx) => (
    FROM payment p LEFT JOIN plan pl ON pl.codigo=p.plan_codigo WHERE p.draft_token=$1
    ORDER BY (p.estado='APROBADO') DESC, (p.estado='REEMPLAZADO') ASC, p.creado_en DESC LIMIT 1`, [tk])).rows[0]);
 
-export async function draftStatus(db: Database, tk: string, correlacion = uuidv7()) {
+export async function draftStatus(db: Database, tk: string, correlacion = uuidv7(), usuario?: { id: string; rol_plataforma?: string | null; segundo_factor?: boolean } | null) {
   let d = await loadDraft(db, tk);
   let pago = await ultimoPago(db, tk);
   // Webhook retrasado: tras unos segundos se pregunta a Wompi por la referencia (limitado por pago).
@@ -467,10 +467,13 @@ export async function draftStatus(db: Database, tk: string, correlacion = uuidv7
   const t = c ? { slug: c.slug, nombre: c.nombre }
     : d.tenant_id ? await db.withPlatform(async (tx) => (await tx.query(`SELECT slug, nombre FROM tenant WHERE id=$1`, [d.tenant_id])).rows[0]) : null;
   const panel = c ? { tema: c.tema, logo_data_url: c.logo_data_url, modulos: c.modulos, catalogo: c.catalogo, personalizacion: c.personalizacion ?? null } : null;
-  const cuentaExistente = !!d.negocio?.email && await db.withPlatform(async tx => (await tx.query('SELECT 1 FROM users WHERE email=$1', [d.negocio.email])).rows.length > 0);
+  const titular = d.negocio?.email ? await db.withPlatform(async tx => (await tx.query('SELECT id FROM users WHERE email=$1', [d.negocio.email])).rows[0] as { id: string } | undefined) : undefined;
+  const cuentaExistente = !!titular;
+  // La sesión abierta es la de esa misma cuenta: crear el espacio no vuelve a pedir la contraseña (igual que en /crear).
+  const sesionTitular = !!titular && usuario?.id === titular.id && (!usuario?.rol_plataforma || !!usuario?.segundo_factor);
   return {
     estado: d.estado, etapas: d.etapas,
-    creacion_diferida: !!d.creacion_diferida, creacion: d.creacion, cuenta_existente: cuentaExistente,
+    creacion_diferida: !!d.creacion_diferida, creacion: d.creacion, cuenta_existente: cuentaExistente, sesion_titular: sesionTitular,
     // Lo que la IA ya redactó para el inicio: la vista previa lo muestra en cuanto existe, antes de crear la empresa.
     personalizacion: d.personalizacion ? { titulo: d.personalizacion.titulo, descripcion: d.personalizacion.descripcion, prioridades: d.personalizacion.prioridades, motor: d.personalizacion.motor } : null,
     negocio: { nombre: d.negocio?.nombre ?? null, slug: d.negocio?.slug ?? null },

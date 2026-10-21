@@ -293,6 +293,7 @@
 .pildora-ia:active { transform: scale(0.97); }
 .pildora-ia:focus-visible { outline: 2px solid var(--ia-1); outline-offset: 3px; }
 .pildora-ia[data-oculta] { opacity: 0; transform: translateY(14px) scale(0.9); pointer-events: none; }
+html[data-guia-paso='ia/pildora'] .pildora-ia[data-oculta] { opacity: 1; transform: none; pointer-events: auto; }
 .con-panel-ia .pildora-ia { opacity: 0; pointer-events: none; }
 
 /* El contenido final de cada pantalla no queda debajo de la pastilla. */

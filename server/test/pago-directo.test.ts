@@ -139,6 +139,8 @@ describe('Crear la transacción', () => {
     const c = llamadas.find((l) => l.metodo === 'POST' && l.url.endsWith('/transactions'))!.cuerpo;
     expect(c.payment_method).toEqual({ type: 'CARD', token: 'tok_test_1234_abcdEFGH', installments: 3 });
     expect(c.is_three_ds).toBe(true);
+    // El sandbox de Wompi exige el escenario de 3DS; sin él la tarjeta no se procesa.
+    expect(c.three_ds_auth_type).toBe('no_challenge_success');
     expect(c.customer_data.browser_info).toEqual(navegador);
     expect(r.json().accion).toEqual({ tipo: 'esperar', mensaje: 'Verificando tu tarjeta con tu banco…' });
   });
@@ -251,5 +253,20 @@ describe('Cuerpo de la transacción', () => {
       aceptacion: { terminos: { token: 't', permalink: 'https://x.test' }, datos: { token: 'd', permalink: 'https://x.test' } } };
     const a = cuerpoTransaccion(cuenta, base).signature, b = cuerpoTransaccion(cuenta, { ...base, montoCentavos: 101 }).signature;
     expect(a).not.toBe(b);
+  });
+
+  it('tarjeta: el escenario de 3DS va solo en sandbox, y sin 3DS si la cuenta no lo tiene', () => {
+    const navegador = { browser_color_depth: '24', browser_screen_height: '900', browser_screen_width: '1440', browser_language: 'es-CO', browser_user_agent: 'x', browser_tz: '300' };
+    const t = { referencia: 'SUB-2', montoCentavos: 100, descripcion: 'x', redirectUrl: 'https://a.test/b', cliente: { email: 'a@b.co', nombre: 'A B', telefono: '3001112233' },
+      datos: { metodo: 'CARD' as const, token: 'tok_test_1_x', cuotas: 1, navegador }, aceptacion: { terminos: { token: 't', permalink: 'https://x.test' }, datos: { token: 'd', permalink: 'https://x.test' } } };
+    const base = { proveedor: 'wompi' as const, llavePublica: 'pub_x', secretoIntegridad: SECRETO_INTEGRIDAD };
+    expect(cuerpoTransaccion({ ...base, entorno: 'sandbox', tresDSPrueba: 'challenge_v2' }, t)).toMatchObject({ is_three_ds: true, three_ds_auth_type: 'challenge_v2' });
+    expect(cuerpoTransaccion({ ...base, entorno: 'sandbox', tresDSPrueba: 'inventado' }, t).three_ds_auth_type).toBe('no_challenge_success');
+    const prod = cuerpoTransaccion({ ...base, entorno: 'produccion' }, t);
+    expect(prod.is_three_ds).toBe(true);
+    expect(prod).not.toHaveProperty('three_ds_auth_type');
+    const sin = cuerpoTransaccion({ ...base, entorno: 'produccion', tresDS: false }, t);
+    expect(sin).not.toHaveProperty('is_three_ds');
+    expect((sin.customer_data as any).browser_info).toBeUndefined();
   });
 });

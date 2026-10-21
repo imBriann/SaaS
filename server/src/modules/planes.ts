@@ -151,12 +151,19 @@ export async function cotizar(tx: Tx, tenantId: string, plan: string, cicloPedid
     explicacion: `Sigues con ${s.plan_nombre} hasta el fin del periodo que ya pagaste; el cambio se aplica en tu próxima renovación. Puedes deshacerlo antes.` };
 }
 
-/** Cambia el plan de la empresa y ajusta sus módulos: apaga lo que el plan nuevo no incluye y enciende lo nuevo. */
+/**
+ * Cambia el plan de la empresa y ajusta sus módulos: apaga lo que el plan nuevo no incluye y enciende lo que
+ * trae de nuevo, también si ya existía apagado (de un plan anterior). Lo que ambos planes incluyen conserva
+ * el interruptor que la empresa eligió.
+ */
 async function ponerPlan(tx: Tx, tenantId: string, destino: FilaPlan) {
+  const previos: string[] = (await tx.query(`SELECT p.modulos FROM tenant t JOIN plan p ON p.codigo=t.plan_codigo WHERE t.id=$1`, [tenantId])).rows[0]?.modulos ?? [];
+  const nuevos = destino.modulos.filter((m) => !previos.includes(m));
   await tx.query(`UPDATE tenant SET plan_codigo=$2 WHERE id=$1`, [tenantId, destino.codigo]);
   await tx.query(`UPDATE subscription SET plan_codigo=$2, precio_pactado=NULL, cambio_programado=NULL, actualizado_en=now() WHERE tenant_id=$1`, [tenantId, destino.codigo]);
   await tx.query(`UPDATE tenant_module SET activo=false WHERE tenant_id=$1 AND NOT (modulo = ANY($2::text[])) AND NOT (modulo = ANY($3::text[]))`, [tenantId, destino.modulos, SIEMPRE_ACTIVOS]);
   await tx.query(`INSERT INTO tenant_module (tenant_id, modulo, activo) SELECT $1, m.codigo, true FROM module m WHERE m.codigo = ANY($2::text[]) ON CONFLICT (tenant_id, modulo) DO NOTHING`, [tenantId, destino.modulos]);
+  if (nuevos.length) await tx.query(`UPDATE tenant_module SET activo=true WHERE tenant_id=$1 AND modulo = ANY($2::text[])`, [tenantId, nuevos]);
 }
 
 /**

@@ -65,6 +65,9 @@ export interface TransaccionNueva {
   referencia: string; montoCentavos: number; descripcion: string; redirectUrl: string; cliente: ClienteDirecto; datos: DatosMetodo; aceptacion: AceptacionWompi;
 }
 
+/** Escenarios de 3DS v2 del sandbox de Wompi. */
+const ESCENARIOS_3DS = ['no_challenge_success', 'challenge_denied', 'challenge_v2', 'supported_version_error', 'authentication_error'];
+
 /** Cuerpo de POST /transactions según el método. La firma de integridad usa referencia + monto + moneda + secreto. */
 export function cuerpoTransaccion(cuenta: CuentaPasarela, t: TransaccionNueva): Record<string, unknown> {
   if (!cuenta.secretoIntegridad) throw new Error('Cuenta de Wompi incompleta');
@@ -78,10 +81,14 @@ export function cuerpoTransaccion(cuenta: CuentaPasarela, t: TransaccionNueva): 
   };
   const d = t.datos;
   switch (d.metodo) {
-    case 'CARD':
-      // Sin is_three_ds + browser_info Wompi procesa sin autenticación: aquí siempre se pide. En producción ignora three_ds_auth_type.
-      return { ...base, payment_method: { type: 'CARD', token: d.token, installments: d.cuotas }, is_three_ds: true,
-        customer_data: { ...(base.customer_data as object), browser_info: d.navegador } };
+    case 'CARD': {
+      const tarjeta = { ...base, payment_method: { type: 'CARD', token: d.token, installments: d.cuotas } };
+      // Sin is_three_ds + browser_info Wompi procesa sin autenticación; se pide salvo que la cuenta no tenga 3DS (WOMPI_3DS=off).
+      if (cuenta.tresDS === false) return tarjeta;
+      // El sandbox exige three_ds_auth_type (el escenario de prueba); en producción no se envía.
+      const prueba = cuenta.entorno === 'sandbox' ? { three_ds_auth_type: ESCENARIOS_3DS.includes(cuenta.tresDSPrueba ?? '') ? cuenta.tresDSPrueba : 'no_challenge_success' } : {};
+      return { ...tarjeta, is_three_ds: true, ...prueba, customer_data: { ...(base.customer_data as object), browser_info: d.navegador } };
+    }
     case 'NEQUI':
       return { ...base, payment_method: { type: 'NEQUI', phone_number: d.celular } };
     case 'PSE':

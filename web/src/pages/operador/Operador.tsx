@@ -627,7 +627,7 @@ export const ESTADO_TICKET: Record<string, string> = { ABIERTO: 'Abierto', EN_PR
 export function OpSoporte() {
   const [estado, setEstado] = useState('');
   const [canal, setCanal] = useState('');
-  const { data, error, cargando, recargar } = useApi<any>(() => api.get(`/api/operador/soporte?estado=${estado}&canal=${canal}`), [estado, canal]);
+  const { data, error, cargando, recargar } = useApi<any>(() => api.get(`/api/operador/soporte?estado=${estado}&canal=${canal}`), [estado, canal], { cada: 15000 });
   const nav = useNavigate();
   return (
     <>
@@ -663,7 +663,7 @@ export function OpSoporte() {
 export function OpTicket() {
   const { id } = useParams();
   const { puede } = useYo();
-  const { data, error, cargando, recargar } = useApi<any>(() => api.get(`/api/operador/soporte/${id}`), [id]);
+  const { data, error, cargando, recargar } = useApi<any>(() => api.get(`/api/operador/soporte/${id}`), [id], { cada: 4000 });
   const [texto, setTexto] = useState('');
   const [siguiente, setSiguiente] = useState('ESPERANDO_CLIENTE');
   const { run, ocupado, error: errEnvio } = useAccion();

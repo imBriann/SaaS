@@ -752,19 +752,21 @@ export function Empresas() {
   if (!s) return null;
   return (
     <PublicoLayout>
-      <div className="tarjeta col" style={{ maxWidth: 480, margin: '48px auto', gap: 12, padding: 28 }}>
-        <h1 className="onb-titulo" style={{ fontSize: 24 }}>Hola, {s.usuario.nombre.split(' ')[0]}. ¿En qué empresa vas a trabajar?</h1>
+      <div className="tarjeta elegir-empresa">
+        <h1 className="onb-titulo">Hola, {s.usuario.nombre.split(' ')[0]}. ¿En qué empresa vas a trabajar?</h1>
         <p className="tenue">Tu rol puede ser distinto en cada una. Elegir una empresa solo cambia lo que ves: el servidor valida tu acceso.</p>
         {s.empresas.length === 0 && !s.usuario.rol_plataforma && <Vacio titulo="Tu cuenta no pertenece a ninguna empresa">Pide a un administrador que te invite, o crea tu plataforma.</Vacio>}
-        {s.empresas.map((e: any) => (
-          <button key={e.id} className="btn fila" style={{ justifyContent: 'flex-start', height: 'auto', padding: '10px 14px', gap: 12 }} onClick={() => irAEmpresa(e.slug, volver ?? '/', nav)}>
-            <span style={{ width: 32, height: 32, borderRadius: 8, background: e.tema?.acento ?? 'var(--tinta-3)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 600, fontSize: 13, flex: 'none' }} aria-hidden="true">{e.tema?.monograma}</span>
-            <span style={{ textAlign: 'left', minWidth: 0 }}><b>{e.nombre}</b><br /><span className="tenue peq-txt">{e.propietario ? 'Propietario' : e.rol} · {direccionEmpresa(e.slug)}</span></span>
-            <Icon n="derecha" className="" size={16} />
-          </button>
-        ))}
+        <div className="elegir-empresa-lista">
+          {s.empresas.map((e: any, i: number) => (
+            <button key={e.id} type="button" className="elegir-empresa-op" style={{ '--acento-op': e.tema?.acento ?? 'var(--tinta-3)', '--i': i } as any} onClick={() => irAEmpresa(e.slug, volver ?? '/', nav)}>
+              <span className="empresa-mono" aria-hidden="true">{e.tema?.monograma ?? e.nombre.slice(0, 2)}</span>
+              <span className="empresa-txt"><b>{e.nombre}</b><small>{e.propietario ? <><Icon n="corona" className="" size={11} />Propietario</> : e.rol}</small><small className="elegir-empresa-dir">{direccionEmpresa(e.slug)}</small></span>
+              <Icon n="derecha" className="" size={16} />
+            </button>
+          ))}
+        </div>
         {s.usuario.rol_plataforma && s.usuario.segundo_factor && <Link className="btn" to="/operador">Panel del operador de {MARCA.nombre}</Link>}
-        {!s.usuario.rol_plataforma && <Link className="btn sutil" to="/empezar"><Icon n="mas" className="" size={16} />Crear otra empresa con esta cuenta</Link>}
+        {!s.usuario.rol_plataforma && <Link className="btn sutil elegir-empresa-crear" to="/empezar"><Icon n="mas" className="" size={16} />Crear otra empresa con esta cuenta</Link>}
       </div>
     </PublicoLayout>
   );

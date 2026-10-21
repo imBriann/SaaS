@@ -225,3 +225,26 @@ describe('Primera contratación con un plan estándar', () => {
     expect(anteriores).toEqual(['REEMPLAZADO', 'REEMPLAZADO']);
   });
 });
+
+describe('Subir de plan enciende los módulos del plan nuevo', () => {
+  it('los módulos que el plan anterior tenía apagados se encienden al pagar la mejora; los de ambos planes conservan su interruptor', async () => {
+    const esencial = (await E.db.withPlatform((tx) => tx.query(`SELECT modulos FROM plan WHERE codigo='esencial'`))).rows[0].modulos as string[];
+    await E.db.withPlatform(async (tx) => {
+      await tx.query(`UPDATE tenant SET plan_codigo='esencial' WHERE id=$1`, [E.B]);
+      await tx.query(`UPDATE subscription SET plan_codigo='esencial', ciclo='MENSUAL', precio_pactado=NULL, cambio_programado=NULL WHERE tenant_id=$1`, [E.B]);
+      await tx.query(`UPDATE tenant_module SET activo=false WHERE tenant_id=$1 AND NOT (modulo = ANY($2::text[]))`, [E.B, esencial]);
+      // La empresa apagó a propósito un módulo que ambos planes incluyen.
+      await tx.query(`UPDATE tenant_module SET activo=false WHERE tenant_id=$1 AND modulo='agenda'`, [E.B]);
+    });
+    await periodo(E.B, 15, 15);
+    expect((await gym.get('/yo')).body.modulos).not.toContain('facturacion');
+    const c = (await gym.get('/suscripcion/cambio?plan=negocio&ciclo=MENSUAL')).body;
+    expect(c.tipo).toBe('INMEDIATO');
+    const r = await gym.post('/suscripcion/cambio', { plan: 'negocio', ciclo: 'MENSUAL', cargo: c.cargo });
+    expect(r.body.tipo).toBe('PAGO');
+    await pagar(r.body.referencia);
+    const modulos = (await gym.get('/yo')).body.modulos as string[];
+    expect(modulos).toEqual(expect.arrayContaining(['facturacion', 'inventario', 'comisiones']));
+    expect(modulos).not.toContain('agenda');
+  });
+});

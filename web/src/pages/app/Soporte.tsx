@@ -24,7 +24,7 @@ const ESTADO_TICKET: Record<string, string> = { ABIERTO: 'Abierto', EN_PROCESO: 
 export const AVISO_DATOS = 'No incluyas contraseñas, claves de API, códigos de verificación, números de tarjeta ni datos de tus clientes. El equipo de soporte nunca te los pedirá.';
 
 export function Soporte() {
-  const { data, error, cargando, recargar } = useApi<any>(() => api.get('/api/t/soporte'), []);
+  const { data, error, cargando, recargar } = useApi<any>(() => api.get('/api/t/soporte'), [], { cada: 15000 });
   const [nuevo, setNuevo] = useState(false);
   const nav = useNavigate();
   return (
@@ -191,7 +191,7 @@ function Revision({ x, i, onIr }: { x: any; i: number; onIr: () => void }) {
 
 export function SoporteDetalle() {
   const { id } = useParams();
-  const { data, error, cargando, recargar } = useApi<any>(() => api.get(`/api/t/soporte/${id}`), [id]);
+  const { data, error, cargando, recargar } = useApi<any>(() => api.get(`/api/t/soporte/${id}`), [id], { cada: 4000 });
   const [texto, setTexto] = useState('');
   const { run, ocupado, error: errEnvio } = useAccion();
   if (error) return <><Cabecera titulo="Soporte" /><ErrorCarga error={error} reintentar={recargar} /></>;

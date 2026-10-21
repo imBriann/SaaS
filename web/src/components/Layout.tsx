@@ -1,6 +1,6 @@
 import { cloneElement, createContext, useContext, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { api, fecha, guardar, setZona, tenantSlug, urlPrincipal } from '../api';
+import { api, ApiError, fecha, guardar, setZona, tenantSlug, urlPrincipal } from '../api';
 import { useApi, Medidor, Cargando, Modal, Campo, useAccion, CodigoOtp, useCuentaAtras, useToast } from './ui';
 import { Icon } from './icons';
 import { MARCA } from '../brand';
@@ -11,6 +11,7 @@ import { GuiaEnPantalla } from './ia/GuiaEnPantalla';
 import { BarraSuperior } from './ia/BarraSuperior';
 import { SelectorEmpresa } from './SelectorEmpresa';
 import { Avatar, inicialesDe } from './Perfil';
+import { Cancelada } from './Cancelada';
 import { sonar } from '../lib/sonido';
 import { SonidoBoton } from './SonidoBoton';
 
@@ -216,6 +217,8 @@ export function PanelLayout() {
 
   if (!slug) return <Navigate to={`/entrar?volver=${encodeURIComponent(loc.pathname + loc.search)}`} replace />;
   if (error?.status === 401) return <Navigate to={`/entrar?volver=${encodeURIComponent(loc.pathname + loc.search)}`} replace />;
+  // Suscripción cancelada: en vez del panel, la pantalla para pedir la reactivación y hablar con soporte.
+  if (error?.status === 423 && (error as ApiError).details?.cancelada) return <div className="publico cancelada-fondo"><Cancelada /></div>;
   if (error?.status === 404) {
     return (
       <div className="publico" style={{ display: 'grid', placeItems: 'center', padding: 24 }}>
