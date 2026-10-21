@@ -1,4 +1,5 @@
 import { PLANES } from '../../onboarding/planRules.js';
+import { detectarGuia } from '../guias.js';
 import type { ChatTurn, LlmClient, LoopInput, LoopOutput, StructuredInput, ToolCallOutcome } from './types.js';
 import { normalizeText } from '../../lib/util.js';
 import { MODULE_CATALOG } from '../../onboarding/pricing.js';
@@ -90,18 +91,6 @@ const has = (t: string, re: RegExp) => re.test(normalizeText(t));
 const TEMAS_MOCK: [RegExp, string][] = [[/factur|dian|nota credito/, 'facturacion'], [/agenda|cita/, 'agenda'], [/efectivo|caja|cobr|registrar (un |el )?pago|metodo de pago|datafono|transferencia/, 'cobros'], [/catalogo|producto|precio|import/, 'catalogo'], [/conversacion|chat|radicado/, 'conversaciones'], [/usuario|persona|rol|equipo/, 'usuarios'], [/\bia\b|agente|herramienta/, 'ia'], [/suscrip|pago|plan/, 'suscripcion'], [/whatsapp/, 'whatsapp']];
 
 /** Intención → guía en pantalla (texto normalizado, sin tildes). El orden importa: «registrar un pago» antes que «registrar una venta». */
-const GUIAS_MOCK: [RegExp, string][] = [
-  [/recorrido|conocer el panel|como funciona (el|este) panel|tour/, 'recorrido_panel'],
-  [/(registr|cobr)\w* (un |el )?pago|cobrar (una |la )?venta|venta (pendiente|por cobrar)/, 'registrar_pago'],
-  [/(registr|hag|hace|crea)\w* (una |la )?venta|\bvender\b/, 'registrar_venta'],
-  [/(agend|reserv|crea)\w* (una |la )?cita|\bagendar\b/, 'agendar_cita'],
-  [/import/, 'importar_catalogo'],
-  [/(anad|agreg|crea|registr)\w* (un |una |el |la |nuevo |nueva )?(producto|servicio|item)/, 'nuevo_item_catalogo'],
-  [/(anad|agreg|crea|registr)\w* (un |el |nuevo )?cliente/, 'nuevo_cliente'],
-  [/numero|conect\w* (el |mi )?whatsapp/, 'numero_whatsapp'],
-  [/respond|contest|atiend\w* (una |la |un )?(conversacion|cliente|chat)/, 'responder_conversacion'],
-  [/invit|dar acceso|agreg\w* (a )?(alguien|una persona)/, 'invitar_persona'],
-];
 
 export class MockLlm implements LlmClient {
   nombre = 'simulador';
@@ -240,7 +229,7 @@ export class MockLlm implements LlmClient {
     }
     // «¿Cómo…?» con una guía en pantalla: la IA lo muestra sobre los botones reales (y, si la guía
     // verificada del panel lo cubre, también lo explica por escrito).
-    const guia = /\b(como|ensena|ensename|muestrame|guia|paso a paso|donde|recorrido|tour)\b/.test(t) ? GUIAS_MOCK.find(([re]) => re.test(t))?.[1] : undefined;
+    const guia = detectarGuia(texto) ?? undefined;
     if (guia && tools.has('mostrar_guia')) {
       const tema = TEMAS_MOCK.find(([re]) => re.test(t))?.[1];
       const texto = tema && tools.has('ayuda_plataforma') ? ((await tc('ayuda_plataforma', { tema })).content as any).guia as string : '';

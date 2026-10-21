@@ -23,3 +23,27 @@ export const GUIAS: Record<IdGuia, { titulo: string; para: string; permiso?: str
   invitar_persona: { titulo: 'Invitar a alguien del equipo', para: 'dar acceso al panel a otra persona con un rol', permiso: 'user:manage' },
   numero_whatsapp: { titulo: 'Conectar el número de WhatsApp', para: 'conectar el número propio o adquirir uno nuevo para WhatsApp', permiso: 'tenant:configure' },
 };
+
+/** Normaliza para comparar sin tildes ni mayúsculas. */
+const normal = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+/** Qué guía corresponde a una pregunta «¿cómo hago…?». El orden importa: lo más específico primero. */
+const PATRONES: [RegExp, IdGuia][] = [
+  [/recorrido|conocer el panel|como funciona (el|este) panel|tour/, 'recorrido_panel'],
+  [/(registr|cobr)\w* (un |el )?pago|cobrar (una |la )?venta|venta (pendiente|por cobrar)/, 'registrar_pago'],
+  [/(registr|hag|hace|crea|anot|ingres)\w* (una |la |mis |las )?ventas?|\bvender\b/, 'registrar_venta'],
+  [/(agend|reserv|crea|program)\w* (una |la )?cita|\bagendar\b/, 'agendar_cita'],
+  [/import/, 'importar_catalogo'],
+  [/(anad|agreg|crea|registr|subo|subir)\w* (un |una |el |la |nuevo |nueva )?(producto|servicio|item)/, 'nuevo_item_catalogo'],
+  [/(anad|agreg|crea|registr)\w* (un |el |nuevo )?cliente/, 'nuevo_cliente'],
+  [/numero|conect\w* (el |mi )?whatsapp/, 'numero_whatsapp'],
+  [/respond|contest|atiend\w* (una |la |un )?(conversacion|cliente|chat)/, 'responder_conversacion'],
+  [/invit|dar acceso|agreg\w* (a )?(alguien|una persona)/, 'invitar_persona'],
+];
+
+/** Una pregunta de «cómo se hace» que alguna guía cubre (o null). */
+export function detectarGuia(pregunta: string): IdGuia | null {
+  const t = normal(pregunta);
+  if (!/\b(como|ensena|ensename|muestrame|guia|paso a paso|donde|recorrido|tour|explicame|ayudame a)\b/.test(t)) return null;
+  return PATRONES.find(([re]) => re.test(t))?.[1] ?? null;
+}

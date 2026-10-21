@@ -105,6 +105,15 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
     return { usuario: req.user, empresas };
   });
 
+  app.get('/api/auth/perfil', async (req) => {
+    if (!req.user) throw new AppError('UNAUTHENTICATED', 'Tu sesión terminó. Inicia sesión de nuevo.');
+    return auth.perfil(db, req.user);
+  });
+  app.patch('/api/auth/perfil', async (req: any) => {
+    if (!req.user) throw new AppError('UNAUTHENTICATED', 'Tu sesión terminó. Inicia sesión de nuevo.');
+    return auth.actualizarPerfil(db, req.user, req.body ?? {}, req.correlacion);
+  });
+
   app.post('/api/auth/recuperar', async (req: any) => auth.requestPasswordReset(db, String(req.body?.email ?? ''), req.correlacion));
   app.post('/api/auth/restablecer', async (req: any) => auth.resetPassword(db, String(req.body?.token ?? ''), String(req.body?.password ?? ''), req.correlacion));
   app.post('/api/auth/cambiar-contrasena', async (req: any) => {

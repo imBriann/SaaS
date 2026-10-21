@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
@@ -7,6 +7,7 @@ import { useIA } from './contexto';
 import { GUIAS } from './guias';
 import { Icon } from '../icons';
 import { sonar } from '../../lib/sonido';
+import { callar, hablar } from '../../lib/voz';
 
 /** Busca el elemento señalado que de verdad se ve (el menú móvil escondido o un rol sin permiso no cuentan). */
 function buscar(ancla: string): HTMLElement | null {
@@ -139,6 +140,31 @@ function Recorrido({ id, onFin }: { id: string; onFin: () => void }) {
     ir(k + 1);
   };
 
+  // Modo automático: la IA lee cada paso en voz alta (si el sonido está activo) y pasa sola al siguiente,
+  // con calma. «Pausar» la deja quieta en el paso; el último paso espera a la persona.
+  const [auto, setAuto] = useState(true);
+  const [tiempo, setTiempo] = useState(0);
+  const avanzar = useRef(siguiente);
+  avanzar.current = siguiente;
+  useEffect(() => {
+    if (estado !== 'listo' || !paso || !auto) return;
+    let vivo = true;
+    let t = 0;
+    const lectura = Math.max(3200, paso.texto.length * 52 + 900);
+    const seguir = () => { if (vivo && k < g.pasos.length - 1) t = window.setTimeout(() => vivo && avanzar.current(), reducido ? 400 : 700); };
+    setTiempo(0);
+    hablar(`${paso.titulo}. ${paso.texto}`).then((r) => {
+      if (!vivo) return;
+      if (r === 'ok') { seguir(); return; }
+      if (r === 'cancelado') return;
+      // Sin voz: se da tiempo de leer (la barra del botón lo muestra).
+      setTiempo(lectura);
+      t = window.setTimeout(() => { if (vivo && k < g.pasos.length - 1) avanzar.current(); }, lectura);
+    });
+    return () => { vivo = false; window.clearTimeout(t); callar(); };
+  }, [estado, k, auto]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => callar(), []);
+
   // ---------------------------------------------------------------- posiciones
   const movil = vp.w < 640;
   const anchoGlobo = Math.min(340, vp.w - 24);
@@ -203,9 +229,14 @@ function Recorrido({ id, onFin }: { id: string; onFin: () => void }) {
         <div className="guia-pie">
           <span className="guia-puntos" aria-hidden="true">{g.pasos.map((_, i) => <i key={i} className={i === k ? 'on' : i < k ? 'hecho' : ''} />)}</span>
           {k > 0 && estado !== 'buscando' && <button type="button" className="btn peq sutil" onClick={() => ir(k - 1)}>Anterior</button>}
+          {!ultimo && estado === 'listo' && (
+            <button type="button" className="btn peq sutil guia-auto" onClick={() => { if (auto) callar(); setAuto(!auto); }} aria-pressed={!auto}
+              aria-label={auto ? 'Pausar la guía' : 'Seguir solo'} title={auto ? 'Pausar' : 'Seguir solo'}><Icon n={auto ? 'pause' : 'play'} className="" size={13} /></button>
+          )}
           {estado === 'perdido'
             ? <button type="button" className="btn peq primario" onClick={onFin}>Cerrar guía</button>
-            : <button type="button" className="btn peq primario" disabled={estado !== 'listo'} onClick={siguiente}>{ultimo ? 'Listo' : paso?.abrir ? 'Ábrelo' : 'Siguiente'}{!ultimo && <Icon n="derecha" className="" size={14} />}</button>}
+            : <button type="button" key={`${k}-${tiempo}-${auto}`} className={`btn peq primario guia-sig ${auto && tiempo && !ultimo ? 'contando' : ''}`} style={{ '--dura': `${tiempo}ms` } as CSSProperties}
+                disabled={estado !== 'listo'} onClick={siguiente}>{ultimo ? 'Listo' : paso?.abrir ? 'Ábrelo' : 'Siguiente'}{!ultimo && <Icon n="derecha" className="" size={14} />}</button>}
         </div>
       </motion.div>
     </div>,

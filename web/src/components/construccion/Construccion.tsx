@@ -16,8 +16,12 @@ import { sonar } from '../../lib/sonido';
  * Lo que se ve son datos ya cargados del servidor: las fases son presentación, nunca progreso inventado.
  */
 export type Fase = 'shell' | 'esqueleto' | 'revelado' | 'listo';
-interface Estado { fase: Fase; activa: boolean; ciclo: number; reconstruir: () => void; avisarListo: (ciclo: number) => void }
-const Ctx = createContext<Estado>({ fase: 'listo', activa: false, ciclo: 0, reconstruir: () => {}, avisarListo: () => {} });
+interface Estado {
+  fase: Fase; activa: boolean; ciclo: number; reconstruir: () => void; avisarListo: (ciclo: number) => void;
+  /** Durante «esqueleto» la IA arma tarjeta por tarjeta: cuáles ya nacieron y cuáles ya muestran su contenido. */
+  nacida: (i: number) => boolean; revelada: (i: number) => boolean;
+}
+const Ctx = createContext<Estado>({ fase: 'listo', activa: false, ciclo: 0, reconstruir: () => {}, avisarListo: () => {}, nacida: () => true, revelada: () => true });
 export const useConstruccion = () => useContext(Ctx);
 
 /** La pantalla que se construye avisa cuando sus datos reales ya están (o cuando falló la carga). */
@@ -26,9 +30,11 @@ export function useListoParaConstruir(listo: boolean) {
   useEffect(() => { if (listo) avisarListo(ciclo); }, [listo, ciclo, avisarListo]);
 }
 
-const MIN_SHELL = 520;
-const DURA_ESQUELETO = 820;
-const DURA_REVELADO = 1150;
+/** Sin afán: la IA entra y saluda, recorre el menú y luego arma cada tarjeta a la vista. */
+const MIN_SHELL = 1500;
+const DURA_REVELADO = 1100;
+/** Si algo falla, la obra nunca se queda a medias. */
+const TOPE_OBRA = 30000;
 
 export function Construccion({ nombre, children }: { nombre: string; children: ReactNode }) {
   const loc = useLocation();
@@ -59,6 +65,11 @@ export function Construccion({ nombre, children }: { nombre: string; children: R
   }, [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const avisarListo = useCallback((c: number) => setListoCiclo((x) => Math.max(x, c)), []);
+  const [nacidas, setNacidas] = useState<ReadonlySet<number>>(new Set());
+  const [reveladas, setReveladas] = useState<ReadonlySet<number>>(new Set());
+  const nacer = useCallback((i: number) => setNacidas((x) => new Set(x).add(i)), []);
+  const revelar = useCallback((i: number) => setReveladas((x) => new Set(x).add(i)), []);
+  const terminarObra = useCallback(() => setFase((f) => (f === 'esqueleto' ? 'revelado' : f)), []);
 
   // La construcción en vivo tiene su sonido: arranca, se arma y queda lista.
   useEffect(() => {
@@ -73,7 +84,7 @@ export function Construccion({ nombre, children }: { nombre: string; children: R
       if (listoCiclo >= ciclo) t = window.setTimeout(() => setFase('esqueleto'), Math.max(0, MIN_SHELL - (performance.now() - inicio.current)));
       else t = window.setTimeout(() => setFase('esqueleto'), 7000); // los datos no llegan: no se queda vacío para siempre
     }
-    if (fase === 'esqueleto') t = window.setTimeout(() => setFase('revelado'), DURA_ESQUELETO);
+    if (fase === 'esqueleto') t = window.setTimeout(() => setFase('revelado'), TOPE_OBRA);
     if (fase === 'revelado') t = window.setTimeout(() => setFase('listo'), DURA_REVELADO);
     return () => window.clearTimeout(t);
   }, [fase, activa, listoCiclo, ciclo]);
@@ -81,6 +92,7 @@ export function Construccion({ nombre, children }: { nombre: string; children: R
   const reconstruir = useCallback(() => {
     if (loc.pathname !== '/') { ruta.current = '/'; nav('/'); }
     inicio.current = performance.now();
+    setNacidas(new Set()); setReveladas(new Set());
     setCiclo((c) => c + 1);
     setCierre(true);
     setFase(reducido ? 'listo' : 'shell');
@@ -93,84 +105,141 @@ export function Construccion({ nombre, children }: { nombre: string; children: R
     return () => window.removeEventListener('keydown', tecla);
   }, [reconstruir]);
 
-  const valor = useMemo(() => ({ fase, activa, ciclo, reconstruir, avisarListo }), [fase, activa, ciclo, reconstruir, avisarListo]);
+  // En el esqueleto cada tarjeta espera su turno; en las demás fases todo se ve completo.
+  const nacida = useCallback((i: number) => !activa || fase === 'revelado' || (fase === 'esqueleto' && nacidas.has(i)), [activa, fase, nacidas]);
+  const revelada = useCallback((i: number) => !activa || fase === 'revelado' || (fase === 'esqueleto' && reveladas.has(i)), [activa, fase, reveladas]);
+  const valor = useMemo(() => ({ fase, activa, ciclo, reconstruir, avisarListo, nacida, revelada }), [fase, activa, ciclo, reconstruir, avisarListo, nacida, revelada]);
   return (
     <Ctx.Provider value={valor}>
       <div className={`construccion ${activa ? 'construyendo' : ''}`} data-fase={fase} aria-busy={activa || undefined}>
         {children}
       </div>
-      <AnimatePresence>{(activa || cierre) && <OrbeConstructor key={ciclo} nombre={nombre} fase={fase} cierre={cierre} onFin={() => setCierre(false)} />}</AnimatePresence>
+      <AnimatePresence>{(activa || cierre) && <OrbeConstructor key={ciclo} nombre={nombre} fase={fase} cierre={cierre} onFin={() => setCierre(false)}
+        nacer={nacer} revelar={revelar} terminar={terminarObra} saltar={() => { setFase('listo'); setCierre(false); }} />}</AnimatePresence>
     </Ctx.Provider>
   );
 }
 
 // ---------------------------------------------------------------- la IA que construye
-const TEXTO: Record<Fase, string> = {
-  shell: 'Abriendo tu espacio…', esqueleto: 'Armando tu panel', revelado: 'Poniendo tus cifras reales', listo: '',
-};
+const ORBE = 56;
+const espera = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
+const nombreDe = (el: HTMLElement) => (el.getAttribute('aria-label') || el.querySelector('.nav-txt')?.textContent
+  || el.querySelector('h1, h2, h3, h4, .tv-cab b, .tv-titulo, .tv-etq')?.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 42);
 
-/** La IA durante la construcción: entra flotando, recorre las tarjetas que nacen, se presenta y se recoge en su pastilla. */
-function OrbeConstructor({ nombre, fase, cierre, onFin }: { nombre: string; fase: Fase; cierre: boolean; onFin: () => void }) {
+/**
+ * La IA durante la construcción. Entra flotando y saluda; luego, con calma, recorre el menú (cada módulo
+ * aparece cuando ella pasa a su lado y dice su nombre) y después arma las tarjetas del inicio una por una:
+ * se posa sobre la tarjeta, la tarjeta nace vacía, se llena con los datos reales y ella pasa a la siguiente.
+ * Al final se presenta y se recoge en su pastilla. «Saltar» termina todo de inmediato.
+ */
+function OrbeConstructor({ nombre, fase, cierre, onFin, nacer, revelar, terminar, saltar }: {
+  nombre: string; fase: Fase; cierre: boolean; onFin: () => void;
+  nacer: (i: number) => void; revelar: (i: number) => void; terminar: () => void; saltar: () => void;
+}) {
   const { iniciarGuia } = useIA();
   const reducido = useReducedMotion();
-  const [pos, setPos] = useState(() => ({ x: window.innerWidth / 2 - 28, y: window.innerHeight + 40, escala: 1 }));
+  const [pos, setPos] = useState(() => ({ x: window.innerWidth / 2 - ORBE / 2, y: window.innerHeight + 40, escala: 1 }));
   const [cara, setCara] = useState<Cara>('normal');
+  const [globo, setGlobo] = useState<string | null>(null);
   const [recogiendo, setRecogiendo] = useState(false);
-  const paso = useRef(0);
+  const estrecha = window.innerWidth < 640;
 
-  // Sobre qué tarjeta está la IA mientras se construye (en orden de aparición).
+  const centro = () => {
+    const marco = document.querySelector('.marco')?.getBoundingClientRect();
+    const x = marco ? marco.left + marco.width / 2 : window.innerWidth / 2;
+    return { x: x - ORBE / 2, y: Math.min(window.innerHeight * 0.36, 300), escala: 1 };
+  };
+
+  // Entrada: sube desde abajo hasta el centro y saluda mientras llegan los datos.
   useEffect(() => {
-    const centro = () => {
-      const marco = document.querySelector('.marco')?.getBoundingClientRect();
-      const x = marco ? marco.left + marco.width / 2 : window.innerWidth / 2;
-      return { x: x - 28, y: Math.min(window.innerHeight * 0.38, 320), escala: 1 };
-    };
-    if (fase === 'shell') { setCara('atenta'); const t = window.setTimeout(() => setPos(centro()), 60); return () => window.clearTimeout(t); }
-    if (fase === 'esqueleto' || fase === 'revelado') {
-      setCara(fase === 'revelado' ? 'hablando' : 'pensando');
+    if (fase !== 'shell') return;
+    setCara('feliz'); setGlobo(`Hola, voy a armar el espacio de ${nombre}`);
+    const t = window.setTimeout(() => setPos(centro()), 60);
+    return () => window.clearTimeout(t);
+  }, [fase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // La obra, paso a paso. Cada espera es para que se vea: nada aparece sin que la IA esté ahí.
+  useEffect(() => {
+    if (fase !== 'esqueleto') return;
+    let vivo = true;
+    const lento = (ms: number) => espera(reducido ? 0 : ms);
+    (async () => {
+      // 1) Los módulos del menú (en el teléfono el menú es la barra inferior: aparece al final).
+      const menu = estrecha ? [] : [...document.querySelectorAll<HTMLElement>('.lateral .nav-titulo, .lateral .nav-item')];
+      if (menu.length) {
+        setCara('hablando'); setGlobo('Primero, tus módulos');
+        await lento(700);
+      }
+      for (const el of menu) {
+        if (!vivo) return;
+        const r = el.getBoundingClientRect();
+        setPos({ x: r.right + 14, y: r.top + r.height / 2 - ORBE / 2, escala: 0.72 });
+        await lento(el.matches('.nav-item') ? 150 : 60);
+        el.classList.add('obra-ok');
+        if (el.matches('.nav-item')) { setGlobo(nombreDe(el)); sonar('tick'); }
+        await lento(el.matches('.nav-item') ? 190 : 60);
+      }
+      // 2) Las tarjetas del inicio, en su orden de aparición. La página baja con la IA para que se vea cada una
+      // (hasta 8; el resto aparece al final) y vuelve arriba cuando termina.
       const tarjetas = [...document.querySelectorAll<HTMLElement>('[data-construible]')]
         .sort((a, b) => Number(a.dataset.construible) - Number(b.dataset.construible))
-        .filter((el) => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < window.innerHeight; });
-      if (!tarjetas.length) { setPos(centro()); return; }
-      const ir = () => {
-        const el = tarjetas[paso.current % tarjetas.length];
-        paso.current++;
-        const r = el.getBoundingClientRect();
-        // Ubicaciones cercanas pero no idénticas en cada tarjeta, como si la fuera dibujando.
-        const x = r.left + r.width * (0.35 + Math.random() * 0.4) - 28;
-        const y = r.top + Math.min(r.height, 220) * (0.3 + Math.random() * 0.35) - 28;
-        setPos({ x: Math.max(8, Math.min(window.innerWidth - 64, x)), y: Math.max(8, Math.min(window.innerHeight - 140, y)), escala: 1 });
-      };
-      ir();
-      const t = window.setInterval(ir, fase === 'esqueleto' ? 240 : 300);
-      return () => window.clearInterval(t);
+        .slice(0, 8);
+      if (vivo && tarjetas.length) { setCara('hablando'); setGlobo('Ahora, tu inicio con tus datos reales'); setPos(centro()); await lento(900); }
+      for (const el of tarjetas) {
+        if (!vivo) return;
+        const i = Number(el.dataset.construible);
+        let r = el.getBoundingClientRect();
+        if (r.bottom > window.innerHeight - 30 || r.top < 70) {
+          el.scrollIntoView({ behavior: reducido ? 'auto' : 'smooth', block: 'center' });
+          await lento(520);
+          r = el.getBoundingClientRect();
+        }
+        setCara('pensando');
+        setPos({ x: Math.max(8, Math.min(window.innerWidth - ORBE - 8, r.left + Math.min(r.width - ORBE, 28))), y: Math.max(8, Math.min(window.innerHeight - 160, r.top - ORBE / 2)), escala: 0.85 });
+        setGlobo(nombreDe(el) || 'Una tarjeta más');
+        await lento(460);
+        nacer(i); sonar('pop');
+        el.classList.add('obra-destello');
+        await lento(480);
+        revelar(i); setCara('hablando');
+        await lento(560);
+        el.classList.remove('obra-destello');
+      }
+      if (!vivo) return;
+      setGlobo('¡Listo!');
+      window.scrollTo({ top: 0, behavior: reducido ? 'auto' : 'smooth' });
+      await lento(600);
+      terminar();
+    })();
+    return () => { vivo = false; };
+  }, [fase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (fase === 'revelado') { setCara('feliz'); setGlobo('Poniendo los últimos detalles'); setPos(centro()); }
+    if (fase === 'listo') {
+      document.querySelectorAll('.obra-ok, .obra-destello').forEach((el) => el.classList.remove('obra-ok', 'obra-destello'));
+      setGlobo(null);
+      if (cierre) { setCara('feliz'); setPos(centro()); const t = window.setTimeout(() => setCara('normal'), 1400); return () => window.clearTimeout(t); }
     }
-    if (fase === 'listo' && cierre) {
-      setCara('feliz');
-      const t = window.setTimeout(() => setCara('normal'), 1400);
-      setPos(centro());
-      return () => window.clearTimeout(t);
-    }
-  }, [fase, cierre]);
+  }, [fase, cierre]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Termina recogiéndose en la pastilla de la esquina (que la reemplaza).
   const recoger = useCallback(() => {
     if (recogiendo) return;
     setRecogiendo(true);
     const destino = document.querySelector('.pildora-ia .orbe-cara')?.getBoundingClientRect();
-    if (destino) setPos({ x: destino.left + destino.width / 2 - 28, y: destino.top + destino.height / 2 - 28, escala: destino.width / 56 });
+    if (destino) setPos({ x: destino.left + destino.width / 2 - ORBE / 2, y: destino.top + destino.height / 2 - ORBE / 2, escala: destino.width / ORBE });
     window.setTimeout(onFin, reducido ? 0 : 620);
   }, [recogiendo, onFin, reducido]);
   useEffect(() => {
     if (fase !== 'listo' || !cierre) return;
-    const t = window.setTimeout(recoger, 9000);
+    const t = window.setTimeout(recoger, 12000);
     return () => window.clearTimeout(t);
   }, [fase, cierre, recoger]);
 
-  const estrecha = window.innerWidth < 640;
   const lado = pos.x > window.innerWidth - 300 ? 'izquierda' : pos.x < 240 ? 'derecha' : 'arriba';
   const presentandose = fase === 'listo' && cierre && !recogiendo;
-  const texto = presentandose ? null : TEXTO[fase];
+  const enObra = fase !== 'listo';
   const presentacion = (
     <motion.div key="hola" className={`globo-ia presentacion ${estrecha ? 'hoja' : `lado-${lado}`}`} initial={{ opacity: 0, y: 8, scale: 0.92 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={{ type: 'spring', stiffness: 260, damping: 22 }}>
       <span>Soy <b className="nombre-ia">Omnegia IA</b>. Armé el panel de {nombre} con tus datos reales.</span>
@@ -185,18 +254,20 @@ function OrbeConstructor({ nombre, fase, cierre, onFin }: { nombre: string; fase
       initial={{ opacity: 0 }} animate={{ opacity: recogiendo ? 0.001 : 1 }} exit={{ opacity: 0, transition: { duration: 0.2 } }}>
       <motion.div className="oc-volador" initial={false}
         animate={{ x: pos.x, y: pos.y, scale: pos.escala }}
-        transition={reducido ? { duration: 0 } : recogiendo ? { type: 'spring', stiffness: 170, damping: 24 } : { type: 'spring', stiffness: 120, damping: 17, mass: 0.9 }}>
-        <span className="oc-flota"><OrbeCara tamano={56} cara={cara} etiqueta={presentandose ? 'Omnegia IA' : undefined} /></span>
+        transition={reducido ? { duration: 0 } : recogiendo ? { type: 'spring', stiffness: 170, damping: 24 } : { type: 'spring', stiffness: 70, damping: 15, mass: 1 }}>
+        <span className="oc-estela" aria-hidden="true" />
+        <span className="oc-flota"><OrbeCara tamano={ORBE} cara={cara} etiqueta={presentandose ? 'Omnegia IA' : undefined} /></span>
         <AnimatePresence mode="wait">
-          {texto && !recogiendo && (
-            <motion.span key={texto} className={`globo-ia mini lado-${lado}`} initial={{ opacity: 0, y: 6, scale: 0.94 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.96 }} transition={{ duration: 0.22 }}>
-              {texto}
+          {enObra && globo && !recogiendo && (
+            <motion.span key={globo} className={`globo-ia mini lado-${lado}`} initial={{ opacity: 0, y: 6, scale: 0.94 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.96 }} transition={{ duration: 0.25 }}>
+              {globo}
             </motion.span>
           )}
           {presentandose && !estrecha && presentacion}
         </AnimatePresence>
       </motion.div>
       <AnimatePresence>{presentandose && estrecha && presentacion}</AnimatePresence>
+      {enObra && <button type="button" className="obra-saltar" onClick={saltar} data-sin-tap>Saltar</button>}
     </motion.div>
   );
 }

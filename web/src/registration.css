@@ -232,3 +232,21 @@
 .ia-conflicto-lista > div { display: grid; gap: 2px; }
 .ia-conflicto-lista dt { font-weight: 600; font-size: 14px; }
 .ia-conflicto-lista dd { margin: 0; display: grid; gap: 1px; font-size: 14.5px; line-height: 1.5; }
+
+/* Espera de la creación (el espectáculo ocurre en el panel) */
+.preparando { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px; max-width: 520px; margin: clamp(24px, 6vh, 64px) auto; padding: 0 16px; }
+.preparando h1 { margin: 6px 0 0; font-size: clamp(26px, 4vw, 34px); letter-spacing: -0.02em; }
+.preparando-detalle { margin: 0; color: var(--tinta-2); }
+.preparando-barra { width: 100%; height: 8px; border-radius: 99px; background: color-mix(in srgb, #5b4cf0 12%, var(--superficie-2, #f1f1f4)); overflow: hidden; }
+.preparando-barra span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #5b4cf0, #a78bfa); transform-origin: left; }
+.preparando-pasos { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; text-align: left; width: 100%; }
+.preparando-pasos li { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--tinta-3); transition: color 0.3s; }
+.preparando-pasos li > span:first-child { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--superficie-2, #f1f1f4); }
+.preparando-pasos li > span:first-child i { width: 7px; height: 7px; border-radius: 50%; background: #b9b4ff; animation: prep-parpadeo 1.4s infinite; }
+@keyframes prep-parpadeo { 50% { opacity: 0.3; } }
+.preparando-pasos li.hecho { color: var(--tinta); }
+.preparando-pasos li.hecho > span:first-child { background: #5b4cf0; color: #fff; }
+.preparando-nota { display: flex; align-items: center; gap: 10px; line-height: 1.45; margin: 6px 0 0; font-size: 13.5px; color: var(--tinta-2); background: color-mix(in srgb, #5b4cf0 7%, #fff); border-radius: 12px; padding: 10px 14px; text-align: left; }
+.preparando-nota > svg { flex: none; color: #5b4cf0; }
+@media (max-width: 560px) { .preparando-pasos { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .preparando-pasos li > span:first-child i { animation: none; } }

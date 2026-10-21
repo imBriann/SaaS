@@ -1,3 +1,4 @@
+import { detectarGuia } from './guias.js';
 import { SECTOR_CATALOG } from '../onboarding/sectors.js';
 import { z } from 'zod';
 import type { Database, Tx } from '../db/index.js';
@@ -472,6 +473,14 @@ export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string,
       return outcomeFor(r, 'panel');
     },
   );
+  // «¿Cómo registro una venta?»: si hay una guía para eso y el modelo no la pidió, se ofrece igual (por el
+  // mismo gateway, con sus permisos y su auditoría): la IA recorre la pantalla mientras su respuesta queda en el chat.
+  const guiaPedida = detectarGuia(pregunta);
+  if (guiaPedida && !ejecuciones.some((e) => e.herramienta === 'mostrar_guia') && prep.tools.some((t) => t.nombre === 'mostrar_guia')) {
+    const r = await db.withTenant(userCtx.tenantId, (tx) => evaluateAndExecute(
+      { tx, ctx, conversationId: null, customerId: null, solicitante: userCtx.actor.id, hiloId: prep.hilo?.id ?? null, permisosSolicitante: userCtx.permisos }, prep.agent, { nombre: 'mostrar_guia', argumentos: { guia: guiaPedida } }));
+    ejecuciones.push(r);
+  }
   avisar({ tipo: 'estado', fase: 'redactando' });
   const recibos: Recibo[] = ejecuciones.map((e) => ({
     id: e.executionId, herramienta: e.herramienta, decision: e.decision, motivo: e.motivo, riesgo: e.riesgo,

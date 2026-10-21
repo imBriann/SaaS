@@ -10,6 +10,7 @@ import { PanelIA, PildoraIA } from './ia/PanelIA';
 import { GuiaEnPantalla } from './ia/GuiaEnPantalla';
 import { BarraSuperior } from './ia/BarraSuperior';
 import { SelectorEmpresa } from './SelectorEmpresa';
+import { PerfilModal, inicialesDe } from './Perfil';
 import { sonar } from '../lib/sonido';
 import { SonidoBoton } from './SonidoBoton';
 
@@ -205,6 +206,7 @@ export function PanelLayout() {
   useEffect(() => { if (data) document.title = `${pendientes ? `(${pendientes}) ` : ''}${data.tenant.nombre} · ${MARCA.nombre}`; }, [pendientes, data]);
   const [navAbierta, setNavAbierta] = useState(false);
   const [contrasena, setContrasena] = useState(false);
+  const [perfil, setPerfil] = useState(false);
   useEffect(() => setNavAbierta(false), [loc.pathname]);
   useEffect(() => {
     if (!navAbierta) return;
@@ -250,7 +252,7 @@ export function PanelLayout() {
   // Dentro de un chat, en el teléfono, el hilo ocupa toda la pantalla (como en WhatsApp): sin barras.
   const enChat = /^\/conversaciones\/[^/]+/.test(loc.pathname);
   const piloto = puede('conversation:read') && data.simuladores;
-  const iniciales = data.usuario.nombre.split(' ').map((w) => w[0]).slice(0, 2).join('');
+  const iniciales = inicialesDe(data.usuario.nombre);
   const salir = async (todas = false) => { await api.post(todas ? '/api/auth/logout-todas' : '/api/auth/logout').catch(() => {}); guardar('empresa', null); window.location.href = '/entrar'; };
   const marca = <span className="marca-negocio" aria-hidden="true">{t.logo_data_url ? <img src={t.logo_data_url} alt="" /> : t.tema?.monograma ?? t.nombre.slice(0, 2)}</span>;
   const enlace = (i: Item) => (
@@ -273,7 +275,8 @@ export function PanelLayout() {
         </header>
 
         <aside className="lateral" id="nav-lateral" aria-label="Navegación del panel">
-          <SelectorEmpresa slug={t.slug} nombre={t.nombre} rol={data.usuario.rol_nombre} marca={marca} />
+          <SelectorEmpresa slug={t.slug} nombre={t.nombre} rol={data.usuario.rol_nombre} marca={marca}
+            cuenta={{ nombre: data.usuario.nombre, email: data.usuario.email, iniciales, onPerfil: () => setPerfil(true), onContrasena: () => setContrasena(true), onSalir: () => salir(false) }} />
           <nav className="nav-grupo" aria-label="Operación">
             <span className="nav-titulo">Operación</span>
             {OPERACION.filter(visible).map(enlace)}
@@ -304,6 +307,7 @@ export function PanelLayout() {
                 </div>
                 {data.consumo && <div className="bloque"><Medidor c={data.consumo.tokens_ia} etiqueta="Consumo de IA del mes" oscuro /></div>}
                 <div className="sep" />
+                <button className="opcion" role="menuitem" onClick={() => { cerrar(); setPerfil(true); }}><Icon n="persona" className="" size={16} /> Mi perfil</button>
                 <a className="opcion" role="menuitem" href={urlPrincipal('/empresas')} onClick={cerrar}><Icon n="plataforma" className="" size={16} /> Todas tus empresas</a>
                 <button className="opcion" role="menuitem" onClick={() => { cerrar(); setContrasena(true); }}><Icon n="candado" className="" size={16} /> Cambiar contraseña</button>
                 <button className="opcion" role="menuitem" onClick={() => salir(false)}><Icon n="salir" className="" size={16} /> Cerrar sesión</button>
@@ -338,6 +342,7 @@ export function PanelLayout() {
         </nav>
       </div>
       {contrasena && <CambiarContrasena onCerrar={() => setContrasena(false)} />}
+      {perfil && <PerfilModal slug={t.slug} onCerrar={() => setPerfil(false)} onContrasena={() => setContrasena(true)} onSalirTodas={() => salir(true)} onCambio={recargar} />}
       {veConversaciones && av && <AvisoEntrante ultima={av.ultima} />}
       <PildoraIA />
       <PanelIA />

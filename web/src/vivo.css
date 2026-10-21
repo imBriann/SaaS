@@ -129,7 +129,7 @@
 .construyendo[data-fase='shell'] .lateral .nav-item, .construyendo[data-fase='shell'] .lateral .nav-titulo, .construyendo[data-fase='shell'] .tabbar .tab,
 .construyendo[data-fase='esqueleto'] .lateral .nav-item, .construyendo[data-fase='esqueleto'] .lateral .nav-titulo, .construyendo[data-fase='esqueleto'] .tabbar .tab { opacity: 0; transform: translateX(-10px) scale(0.92); }
 .construyendo[data-fase='shell'] .lateral .cuenta, .construyendo[data-fase='esqueleto'] .lateral .cuenta { opacity: 0; }
-.construyendo[data-fase='revelado'] .lateral .nav-item, .construyendo[data-fase='revelado'] .lateral .nav-titulo, .construyendo[data-fase='revelado'] .tabbar .tab { animation: obra-acceso 460ms var(--ease-suave) both; }
+.construyendo[data-fase='revelado'] .lateral .nav-item:not(.obra-ok), .construyendo[data-fase='revelado'] .lateral .nav-titulo:not(.obra-ok), .construyendo[data-fase='revelado'] .tabbar .tab { animation: obra-acceso 460ms var(--ease-suave) both; }
 .construyendo[data-fase='revelado'] .lateral .cuenta { animation: obra-acceso 460ms 520ms var(--ease-suave) both; }
 .construyendo .lateral .nav-grupo > :nth-child(2) { animation-delay: 40ms; }
 .construyendo .lateral .nav-grupo > :nth-child(3) { animation-delay: 90ms; }
@@ -451,8 +451,30 @@
   .ia-raiz .lateral .cuenta-btn .avatar { width: 40px; height: 40px; }
   .ia-raiz .lateral .firma-marca { display: none; }
   /* Ventanas bajas: el riel se compacta y, si aun así no cabe, se desplaza (las etiquetas se ocultan). */
-  @media (max-height: 940px) { .ia-raiz .app .lateral, .ia-raiz .lateral .nav-grupo { gap: 3px; } .ia-raiz .lateral .nav-item { width: 40px; height: 40px; } .ia-raiz .lateral .marca-negocio { width: 40px; height: 40px; } }
-  @media (max-height: 800px) { .ia-raiz .app .lateral { overflow-y: auto; scrollbar-width: none; } .ia-raiz .lateral .nav-item { width: 36px; height: 36px; } .ia-raiz .lateral .nav-txt { display: none; } }
+  /* El riel nunca se desplaza: los íconos toman el tamaño que cabe en la altura de la ventana (hasta 17 accesos). */
+  .ia-raiz .app .lateral { --rail-i: clamp(28px, calc((100dvh - 230px) / 17 - 3px), 44px); overflow: visible; }
+  .ia-raiz .app .lateral, .ia-raiz .lateral .nav-grupo { gap: clamp(2px, 0.5dvh, 6px); }
+  .ia-raiz .lateral .nav-item { width: var(--rail-i); height: var(--rail-i); }
+  .ia-raiz .lateral .nav-item svg { width: clamp(15px, calc(var(--rail-i) * 0.42), 18px); height: auto; }
+  .ia-raiz .lateral .marca-negocio { width: clamp(34px, calc(var(--rail-i) + 0px), 44px); height: clamp(34px, calc(var(--rail-i) + 0px), 44px); }
+  .ia-raiz .lateral .cuenta-btn { width: clamp(34px, var(--rail-i), 44px); height: clamp(34px, var(--rail-i), 44px); }
+  .ia-raiz .lateral .cuenta-btn .avatar { width: clamp(30px, calc(var(--rail-i) - 4px), 40px); height: clamp(30px, calc(var(--rail-i) - 4px), 40px); }
+
+  /* Etiqueta al pasar el cursor: sale del ícono con un rebote, se enfoca y la cruza un brillo. */
+  .ia-raiz .lateral .nav-txt { left: calc(100% + 16px); padding: 8px 14px; border-radius: 12px; font-size: 13.5px; font-weight: 600; letter-spacing: 0.01em; overflow: hidden;
+    background: linear-gradient(135deg, #1b1a33, #352a9c); color: #fff; box-shadow: 0 12px 28px -12px rgb(40 25 140 / 65%), inset 0 0 0 1px rgb(255 255 255 / 10%);
+    transform-origin: left center; transform: translate(-12px, -50%) scale(0.72); filter: blur(4px);
+    transition: opacity 180ms ease-out, transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1), filter 240ms ease-out; }
+  .ia-raiz .lateral .nav-txt::before { background: #1b1a33; }
+  .ia-raiz .lateral .nav-txt::after { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 35%, rgb(255 255 255 / 35%) 50%, transparent 65%); transform: translateX(-120%); }
+  .ia-raiz .lateral .nav-item:hover .nav-txt, .ia-raiz .lateral .nav-item:focus-visible .nav-txt { opacity: 1; transform: translate(0, -50%) scale(1); filter: none; }
+  .ia-raiz .lateral .nav-item:hover .nav-txt::after { animation: nav-brillo 700ms 120ms ease-out both; }
+  .ia-raiz .lateral .nav-item:hover > svg { animation: nav-salto 520ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .ia-raiz .lateral .nav-item::before { content: ''; position: absolute; left: -14px; top: 50%; width: 4px; height: 0; border-radius: 4px; background: linear-gradient(#7c6cff, #c084fc); transform: translateY(-50%); transition: height 260ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .ia-raiz .lateral .nav-item:hover::before { height: 60%; }
+  .ia-raiz .lateral .nav-item.activo::before { height: 70%; }
+  @keyframes nav-brillo { to { transform: translateX(120%); } }
+  @keyframes nav-salto { 0% { transform: none; } 35% { transform: translateY(-3px) rotate(-10deg) scale(1.15); } 65% { transform: translateY(1px) rotate(6deg) scale(0.96); } 100% { transform: none; } }
 
   /* Barra superior: la empresa, la pregunta rápida a la IA, el chat y la campana. */
   .barra-superior { display: flex; align-items: center; gap: 16px; padding: 18px 32px 0; width: 100%; max-width: 1440px; margin: 0 auto; }
@@ -490,3 +512,39 @@
 .panel-ia .as-consultas-cab { flex-wrap: wrap; row-gap: 2px; }
 .panel-ia .as-consultas-meta { flex-basis: 100%; margin-left: 30px; }
 .panel-ia .as-consultas-cab b { white-space: nowrap; }
+
+/* ---- Obra sin afán: los módulos aparecen cuando la IA pasa a su lado y cada tarjeta brilla al nacer */
+.construyendo[data-fase='esqueleto'] .lateral .nav-item.obra-ok, .construyendo[data-fase='esqueleto'] .lateral .nav-titulo.obra-ok { opacity: 1; transform: none; animation: obra-acceso 520ms var(--ease-suave) both; }
+.construyendo[data-fase='esqueleto'] .lateral .nav-item.obra-ok { animation: obra-modulo 640ms var(--ease-suave) both; }
+@keyframes obra-modulo {
+  0% { opacity: 0; transform: translateX(-12px) scale(0.6); filter: blur(4px); }
+  55% { opacity: 1; transform: translateX(2px) scale(1.12); filter: blur(0); box-shadow: 0 0 0 6px rgb(120 110 255 / 22%); }
+  100% { opacity: 1; transform: none; box-shadow: 0 0 0 0 rgb(120 110 255 / 0%); }
+}
+.tv-card.obra-destello { position: relative; }
+.tv-card.obra-destello::after { content: ''; position: absolute; inset: -2px; border-radius: inherit; pointer-events: none; z-index: 3;
+  background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / 70%) 48%, rgb(160 150 255 / 35%) 52%, transparent 70%) no-repeat;
+  background-size: 250% 100%; animation: obra-barrido 1s var(--ease-suave) both; box-shadow: 0 0 0 2px rgb(120 110 255 / 45%), 0 18px 40px -18px rgb(90 70 230 / 55%); }
+@keyframes obra-barrido { from { background-position: 120% 0; opacity: 1; } to { background-position: -40% 0; opacity: 0.2; } }
+.oc-estela { position: absolute; inset: -14px; border-radius: 50%; background: radial-gradient(circle, rgb(140 125 255 / 45%), transparent 65%); filter: blur(6px); pointer-events: none; animation: oc-estela 1.6s ease-in-out infinite; }
+@keyframes oc-estela { 50% { transform: scale(1.18); opacity: 0.7; } }
+.obra-saltar { position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom)); translate: -50% 0; pointer-events: auto; border: 0; border-radius: 999px; padding: 9px 18px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  color: var(--tinta); background: rgb(255 255 255 / 86%); backdrop-filter: blur(8px); box-shadow: 0 8px 24px -12px rgb(30 20 90 / 40%), inset 0 0 0 1px rgb(30 20 90 / 8%); }
+@media (max-width: 640px) { .obra-saltar { bottom: calc(86px + env(safe-area-inset-bottom)); } }
+@media (prefers-reduced-motion: reduce) {
+  .oc-estela, .tv-card.obra-destello::after, .construyendo[data-fase='esqueleto'] .lateral .nav-item.obra-ok { animation: none !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ia-raiz .lateral .nav-item:hover > svg, .ia-raiz .lateral .nav-item:hover .nav-txt::after { animation: none !important; }
+  .ia-raiz .lateral .nav-txt { transition: opacity 150ms; transform: translate(0, -50%); filter: none; }
+}
+
+/* La cara de la IA siempre es un círculo de su tamaño: ninguna grilla ni flex puede estirarla. */
+.orbe-cara { width: var(--t) !important; height: var(--t) !important; min-width: var(--t); max-width: var(--t); aspect-ratio: 1; flex: none; justify-self: start; align-self: center; box-sizing: content-box; }
+
+/* Guía en modo automático: la barra del botón muestra cuánto falta para pasar solo al siguiente paso. */
+.guia-sig { position: relative; overflow: hidden; }
+.guia-sig.contando::after { content: ''; position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: rgb(255 255 255 / 70%); transform-origin: left; animation: guia-cuenta var(--dura) linear both; }
+@keyframes guia-cuenta { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.guia-auto { padding-inline: 9px; }
+@media (prefers-reduced-motion: reduce) { .guia-sig.contando::after { animation: none; } }

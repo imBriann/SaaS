@@ -102,6 +102,23 @@ describe('Recuperación de acceso', () => {
     expect((await api(E.app, otra, 'fuerzanorte').get('/yo')).status).toBe(401);
     await E.app.inject({ method: 'POST', url: '/api/auth/cambiar-contrasena', payload: { actual: 'clave-gym-nueva-2026', nueva: CRED.gym[1] }, headers: { cookie: esta } });
   });
+
+  it('perfil: muestra los datos propios y cambia el nombre, que se refleja en la sesión', async () => {
+    const c = cliente(E.app);
+    await c.call('POST', '/api/auth/login', { email: CRED.laura[0], password: CRED.laura[1] });
+    const p = await c.call('GET', '/api/auth/perfil');
+    expect(p.status).toBe(200);
+    expect(p.body).toMatchObject({ email: CRED.laura[0] });
+    expect(p.body.sesiones).toBeGreaterThanOrEqual(1);
+    const anterior = p.body.nombre;
+    expect((await c.call('PATCH', '/api/auth/perfil', { nombre: 'x' })).status).toBe(400);
+    expect((await c.call('PATCH', '/api/auth/perfil', { nombre: '<b>Laura</b>' })).status).toBe(400);
+    const ok = await c.call('PATCH', '/api/auth/perfil', { nombre: '  Laura   Pabón R. ', email: 'otro@correo.test' });
+    expect(ok.status).toBe(200);
+    expect((await c.call('GET', '/api/auth/sesion')).body.usuario).toMatchObject({ nombre: 'Laura Pabón R.', email: CRED.laura[0] });
+    await c.call('PATCH', '/api/auth/perfil', { nombre: anterior });
+    expect((await cliente(E.app).call('GET', '/api/auth/perfil')).status).toBe(401);
+  });
 });
 
 describe('Invitaciones al equipo', () => {

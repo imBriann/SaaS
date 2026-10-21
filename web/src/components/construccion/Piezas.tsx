@@ -1,14 +1,20 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { animate, AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useConstruccion } from './Construccion';
 import { useIA } from '../ia/contexto';
 
 const SUAVE = [0.22, 1, 0.36, 1] as const;
 
-/** ¿La pieza todavía espera su turno? (marco vacío o esqueleto durante una construcción). */
+/** Índice de la tarjeta que contiene una pieza (cifras y gráficas esperan a que su tarjeta se revele). */
+const TarjetaCtx = createContext<number | null>(null);
+
+/** ¿La pieza todavía espera su turno? (marco vacío, o su tarjeta aún no se llenó durante la obra). */
 function useEsperando() {
-  const { fase, activa } = useConstruccion();
-  return activa && (fase === 'shell' || fase === 'esqueleto');
+  const { fase, activa, revelada } = useConstruccion();
+  const i = useContext(TarjetaCtx);
+  if (!activa) return false;
+  if (fase === 'shell') return true;
+  return fase === 'esqueleto' && (i === null || !revelada(i));
 }
 
 /**
@@ -18,23 +24,24 @@ function useEsperando() {
  * tarjeta se desliza a su nuevo lugar.
  */
 export function Construible({ i = 0, className = '', children, etiqueta, guia }: { i?: number; className?: string; children: ReactNode; etiqueta?: string; guia?: string }) {
-  const { fase, activa } = useConstruccion();
+  const { fase, activa, nacida, revelada } = useConstruccion();
   useIA(); // vuelve a medir la grilla cuando el panel de la IA se abre o se cierra
   const reducido = useReducedMotion();
-  const vacia = activa && fase === 'shell';
-  const esqueleto = activa && (fase === 'shell' || fase === 'esqueleto');
+  // Durante la obra la tarjeta espera a que la IA llegue: primero nace vacía y luego se llena.
+  const vacia = activa && (fase === 'shell' || !nacida(i));
+  const esqueleto = activa && (fase === 'shell' || !revelada(i));
   return (
     <motion.section layout={!reducido} className={`tv-card ${className} ${esqueleto ? 'es-esqueleto' : ''}`} data-construible={i} data-guia={guia} aria-label={etiqueta}
       initial={false}
       animate={vacia ? { opacity: 0, y: 16, scale: 0.97 } : { opacity: 1, y: 0, scale: 1 }}
-      transition={{ default: { duration: 0.5, ease: SUAVE, delay: activa && fase === 'esqueleto' ? Math.min(i, 12) * 0.07 : 0 }, layout: { duration: 0.5, ease: SUAVE } }}>
+      transition={{ default: { duration: 0.6, ease: SUAVE }, layout: { duration: 0.5, ease: SUAVE } }}>
       <motion.div layout={!reducido ? 'position' : false} className="tv-contenido" initial={false}
         animate={esqueleto ? { opacity: 0, y: 12, filter: 'blur(8px)' } : { opacity: 1, y: 0, filter: 'blur(0px)' }}
-        transition={{ duration: 0.55, ease: SUAVE, delay: activa && fase === 'revelado' ? Math.min(i, 12) * 0.08 : 0 }}>
-        {children}
+        transition={{ duration: 0.6, ease: SUAVE, delay: activa && fase === 'revelado' ? Math.min(i, 12) * 0.05 : 0 }}>
+        <TarjetaCtx.Provider value={i}>{children}</TarjetaCtx.Provider>
       </motion.div>
       <AnimatePresence>
-        {esqueleto && <motion.span className="tv-esqueleto" aria-hidden="true" initial={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.45, delay: Math.min(i, 12) * 0.08 } }} />}
+        {esqueleto && <motion.span className="tv-esqueleto" aria-hidden="true" initial={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.45 } }} />}
       </AnimatePresence>
     </motion.section>
   );

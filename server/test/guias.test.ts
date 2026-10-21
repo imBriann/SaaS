@@ -2,7 +2,9 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { setup, login, api, CRED, type Env } from './helpers.js';
-import { IDS_GUIA } from '../src/ai/guias.js';
+import { IDS_GUIA, detectarGuia } from '../src/ai/guias.js';
+import { setLlm } from '../src/ai/llm/index.js';
+import { MockLlm } from '../src/ai/llm/mock.js';
 
 /**
  * Guías en pantalla: el asistente elige una guía del catálogo y el panel mueve a la IA por los
@@ -57,6 +59,24 @@ describe('Asistente: «¿cómo hago…?» con guía en pantalla', () => {
     expect(r.body.texto).toMatch(/en pantalla/);
     const hilo = (await admin.get(`/asistente/hilos/${r.body.hilo_id}`)).body;
     expect(hilo.mensajes.at(-1).ejecuciones.find((e: any) => e.herramienta === 'mostrar_guia').guia).toBe('registrar_venta');
+  });
+
+  it('aunque el modelo solo responda en el chat, una pregunta «¿cómo…?» con guía la muestra en pantalla', async () => {
+    // Un modelo que contesta con texto y no usa herramientas.
+    setLlm({ nombre: 'solo-texto', structured: async () => ({ data: null, raw: null, tokens: 0 }),
+      runLoop: async () => ({ text: 'Ve a Ventas y pulsa «Registrar venta».', tokens: 10, toolCalls: 0, stopReason: 'end_turn' }) } as any);
+    try {
+      const r = await admin.post('/asistente', { pregunta: 'como hago para registrar una venta' });
+      expect(r.status).toBe(200);
+      expect(r.body.texto).toMatch(/Registrar venta/);
+      expect(r.body.ejecuciones.find((e: any) => e.herramienta === 'mostrar_guia')).toMatchObject({ decision: 'PERMITIDA', guia: 'registrar_venta' });
+      // Una pregunta que no es «cómo» no lanza guías.
+      const otra = await admin.post('/asistente', { pregunta: 'cuánto vendimos hoy' });
+      expect(otra.body.ejecuciones.some((e: any) => e.herramienta === 'mostrar_guia')).toBe(false);
+    } finally { setLlm(new MockLlm(() => '2026-10-21')); }
+    expect(detectarGuia('¿Cómo agendo una cita?')).toBe('agendar_cita');
+    expect(detectarGuia('Enséñame a registrar el pago de una venta')).toBe('registrar_pago');
+    expect(detectarGuia('registrar una venta')).toBeNull();
   });
 
   it('una duda que también cubre la guía del panel trae el texto y la guía', async () => {

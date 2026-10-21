@@ -9,7 +9,7 @@ import { Campo, CodigoOtp, useCuentaAtras } from './ui';
 import { ReciboImpresion } from './ReciboImpresion';
 import { Icon } from './icons';
 import { AiOrb } from './AiOrb';
-import { CreationTheater } from './CreationTheater';
+import { PreparandoEspacio } from './PreparandoEspacio';
 
 const RECEIPT_ORDER = ['validando', 'generando', 'listo'] as const;
 const RECEIPT_TIME: Partial<Record<FaseRecibo, number>> = { validando: 300, generando: 1500 };
@@ -197,11 +197,11 @@ export function RegistrationCompletion() {
         {accessError && <p role="alert" className="bloqueado">{accessError}</p>}
       </>}
     </section>}
-    {paid && tk && !loadError && creating && <CreationTheater d={d} status={status} titulo={creation.title} detalle={creation.detail} orbe={creation.orb} listo={ready}
+    {paid && tk && !loadError && creating && <PreparandoEspacio nombre={name} titulo={creation.title} detalle={creation.detail} listo={ready}
       pasos={STEPS.map(([clave, nombre]) => ({ clave, nombre, hecho: completed.has(clave) }))}
       aviso={!password && !busy ? 'La creación sigue en curso. Cuando termine, introduce tu contraseña para abrir tu espacio.' : accessError || null}
       onDescargar={download} descargando={downloading} reciboListo={receiptReal === 'listo'}
-      enCurso={CREATION.aplicando} onCompleto={() => setPresentado(true)} />}
+      onCompleto={() => setPresentado(true)} />}
     {paid && tk && !loadError && !creating && <div className="registration-finish">
       <section className="finish-receipt" aria-labelledby="receipt-title">
         <div className="finish-paid"><Icon n="ok" size={17} className="" />Pago confirmado</div>
