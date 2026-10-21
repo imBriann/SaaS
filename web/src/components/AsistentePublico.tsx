@@ -7,7 +7,8 @@ import { Icon } from './icons';
 import { Markdown } from './Markdown';
 import { OrbeCara, useCaraIA, type Cara } from './ia/OrbeCara';
 import '../asistente-publico.css';
-import { sonar } from '../lib/sonido';
+import { sonar, useSonido } from '../lib/sonido';
+import { callar, hablar, vozDisponible } from '../lib/voz';
 import { SonidoBoton } from './SonidoBoton';
 
 /**
@@ -63,18 +64,23 @@ function Bienvenida({ onTerminar }: { onTerminar: (abrir: boolean) => void }) {
   const [saliendo, setSaliendo] = useState(false);
   const [destino, setDestino] = useState({ x: 0, y: 0 });
   const zona = useRef<HTMLDivElement>(null);
-  const cara: Cara = saliendo ? 'feliz' : paso === 0 ? 'feliz' : paso === PRESENTACION.length - 1 ? 'atenta' : 'hablando';
+  const ultimoPaso = PRESENTACION.length - 1;
+  // Voz: se intenta hablar cada frase; si el navegador no lo permite (sin gesto previo) o no hay voz en
+  // español, la bienvenida sigue con texto y ofrece «Escúchame».
+  const [sonidoOn] = useSonido();
+  const [sinVoz, setSinVoz] = useState(() => !vozDisponible() || !sonidoOn);
+  const [bloqueada, setBloqueada] = useState(false);
+  const [hablando, setHablando] = useState(false);
+  const turno = useRef(0);
+  const cara: Cara = saliendo ? 'feliz' : hablando ? 'hablando' : paso === 0 ? 'feliz' : paso === ultimoPaso ? 'atenta' : 'hablando';
   // Entrada con brillo y una burbuja por cada frase (el navegador solo deja sonar tras el primer gesto).
-  useEffect(() => { sonar('magia'); }, []);
+  useEffect(() => { sonar('magia'); return () => callar(); }, []);
   useEffect(() => { if (paso > 0) sonar('burbuja'); }, [paso]);
-  useEffect(() => {
-    if (saliendo) return;
-    if (paso >= PRESENTACION.length - 1) return;
-    const t = window.setTimeout(() => setPaso((p) => p + 1), reducido ? 1400 : 1900 + PRESENTACION[paso].length * 18);
-    return () => window.clearTimeout(t);
-  }, [paso, saliendo, reducido]);
+  useEffect(() => { if (!sonidoOn) { callar(); setHablando(false); setSinVoz(true); } }, [sonidoOn]);
+
   const salir = (abrir: boolean) => {
     if (saliendo) return;
+    turno.current++; callar(); setHablando(false);
     // Vuela al lugar del lanzador (abajo a la derecha): del centro del orbe al centro del botón.
     const r = zona.current?.getBoundingClientRect();
     const cx = r ? r.left + r.width / 2 : window.innerWidth / 2, cy = r ? r.top + r.height / 2 : window.innerHeight / 2;
@@ -83,12 +89,33 @@ function Bienvenida({ onTerminar }: { onTerminar: (abrir: boolean) => void }) {
     sonar('swoosh');
     window.setTimeout(() => onTerminar(abrir), reducido ? 150 : 900);
   };
-  // Tras la última frase, se despide solo si la persona no hace nada.
+
   useEffect(() => {
-    if (paso !== PRESENTACION.length - 1 || saliendo) return;
-    const t = window.setTimeout(() => salir(false), 5200);
+    if (saliendo) return;
+    let t2 = 0;
+    if (!sinVoz) {
+      const n = ++turno.current;
+      const t = window.setTimeout(() => {
+        hablar(PRESENTACION[paso], { alEmpezar: () => { if (n === turno.current) setHablando(true); } }).then((r) => {
+          if (n !== turno.current) return;
+          setHablando(false);
+          if (r === 'ok') t2 = window.setTimeout(() => (paso < ultimoPaso ? setPaso((p) => p + 1) : salir(false)), paso < ultimoPaso ? 420 : 1700);
+          else if (r !== 'cancelado') { setBloqueada(r === 'bloqueado'); setSinVoz(true); }
+        });
+      }, paso === 0 && !reducido ? 900 : 200);
+      return () => { window.clearTimeout(t); window.clearTimeout(t2); };
+    }
+    // Sin voz: las frases avanzan solas y, tras la última, se despide si la persona no hace nada.
+    const t = window.setTimeout(() => (paso < ultimoPaso ? setPaso((p) => p + 1) : salir(false)),
+      paso < ultimoPaso ? (reducido ? 1400 : 1900 + PRESENTACION[paso].length * 18) : 5200);
     return () => window.clearTimeout(t);
-  }, [paso, saliendo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [paso, saliendo, sinVoz]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Con un toque (gesto) el navegador ya deja hablar: retoma la voz desde la frase actual. */
+  const escuchar = () => {
+    if (!sonidoOn) return;
+    setBloqueada(false); setSinVoz(false);
+  };
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => { if (e.key === 'Escape') salir(false); };
     window.addEventListener('keydown', tecla);
@@ -99,6 +126,7 @@ function Bienvenida({ onTerminar }: { onTerminar: (abrir: boolean) => void }) {
   return (
     <motion.div className="apub-velo" role="dialog" aria-modal="false" aria-label="Bienvenida de Omnegia IA"
       initial={{ opacity: 0 }} animate={{ opacity: saliendo ? 0 : 1 }} exit={{ opacity: 0 }} transition={{ duration: saliendo ? 0.7 : 0.4 }}>
+      {!saliendo && <SonidoBoton className="apub-sonido-esquina" size={17} />}
       <div className="apub-escena">
         <motion.div className="apub-orbe-zona" ref={zona}
           initial={reducido ? { opacity: 0 } : { y: 260, scale: 0.2, rotate: -200, opacity: 0 }}
@@ -118,7 +146,8 @@ function Bienvenida({ onTerminar }: { onTerminar: (abrir: boolean) => void }) {
                 transition={{ duration: 1.5, delay: 0.3 + (i % 6) * 0.03, ease: 'easeOut' }} />
             ))}
           </>}
-          <motion.div animate={reducido || saliendo ? {} : { y: [0, -10, 0], rotate: [0, -3, 3, 0] }} transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut', delay: 1 }}>
+          {hablando && !reducido && <span className="apub-voz-ondas" aria-hidden="true"><i /><i /><i /></span>}
+          <motion.div className={hablando ? 'apub-habla' : ''} animate={reducido || saliendo ? {} : { y: [0, -10, 0], rotate: [0, -3, 3, 0] }} transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut', delay: 1 }}>
             <OrbeCara tamano={128} cara={cara} etiqueta="Omnegia IA" />
           </motion.div>
         </motion.div>
@@ -129,7 +158,11 @@ function Bienvenida({ onTerminar }: { onTerminar: (abrir: boolean) => void }) {
               initial={reducido ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.92, filter: 'blur(6px)' }} animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
               exit={reducido ? { opacity: 0 } : { opacity: 0, y: -10, scale: 0.96, filter: 'blur(4px)' }} transition={{ duration: 0.45, delay: paso === 0 && !reducido ? 0.7 : 0 }}>
               <Escrito texto={PRESENTACION[paso]} />
-              <div className="apub-puntos" aria-hidden="true">{PRESENTACION.map((_, i) => <i key={i} className={i <= paso ? 'on' : ''} />)}</div>
+              <div className="apub-globo-pie">
+                <div className="apub-puntos" aria-hidden="true">{PRESENTACION.map((_, i) => <i key={i} className={i <= paso ? 'on' : ''} />)}</div>
+                {hablando ? <span className="apub-hablando" aria-label="Omnegia IA está hablando"><i /><i /><i /><i /></span>
+                  : bloqueada && sonidoOn ? <button type="button" className="apub-escuchame" onClick={escuchar} data-sin-tap><Icon n="volume" className="" size={14} />Escúchame</button> : null}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -185,11 +218,19 @@ function Chat({ onCerrar }: { onCerrar: () => void }) {
   const [texto, setTexto] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [respuestas, setRespuestas] = useState(0);
+  const [leyendo, setLeyendo] = useState<number | null>(null);
+  const leerEnVoz = (m: Msg) => {
+    if (leyendo === m.id) { callar(); setLeyendo(null); return; }
+    setLeyendo(m.id);
+    hablar(m.texto).then(() => setLeyendo((x) => (x === m.id ? null : x)));
+  };
+  useEffect(() => () => callar(), []);
   const [fallos, setFallos] = useState(0);
   const lista = useRef<HTMLDivElement>(null);
   const entrada = useRef<HTMLTextAreaElement>(null);
   const ultimo = msgs[msgs.length - 1];
-  const cara = useCaraIA({ ocupado, escribiendo: texto.trim().length > 0, respuesta: respuestas, fallo: fallos, largo: ultimo?.texto.length ?? 0 });
+  const caraBase = useCaraIA({ ocupado, escribiendo: texto.trim().length > 0, respuesta: respuestas, fallo: fallos, largo: ultimo?.texto.length ?? 0 });
+  const cara: Cara = leyendo !== null ? 'hablando' : caraBase;
 
   useEffect(() => { guardar(CLAVE_CHAT, JSON.stringify(msgs.slice(-30)), w?.sessionStorage); }, [msgs]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { lista.current?.scrollTo({ top: lista.current.scrollHeight, behavior: reducido ? 'auto' : 'smooth' }); }, [msgs, ocupado, reducido]);
@@ -238,10 +279,17 @@ function Chat({ onCerrar }: { onCerrar: () => void }) {
       </header>
       <div className="apub-lista" ref={lista} aria-live="polite">
         {msgs.map((m, i) => (
-          <motion.div key={m.id} className={`apub-msg ${m.rol}`} initial={reducido ? false : { opacity: 0, y: 10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.25 }}>
+          <motion.div key={m.id} className={`apub-msg ${m.rol} ${m.asesor ? 'formulario' : ''}`} initial={reducido ? false : { opacity: 0, y: 10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.25 }}>
             {m.asesor ? <FormAsesor conversacion={msgs.filter((x) => !x.asesor).map((x) => ({ rol: x.rol, texto: x.texto }))} mensaje={[...msgs].reverse().find((x) => x.rol === 'persona')?.texto ?? ''}
                 onEnviado={(texto) => setMsgs((l) => l.map((x) => (x.id === m.id ? { id: x.id, rol: 'asistente', texto } : x)))} />
-              : <div className="apub-burbuja">{m.rol === 'asistente' ? <Markdown texto={m.texto} /> : m.texto}</div>}
+              : <div className="apub-burbuja">{m.rol === 'asistente' ? <Markdown texto={m.texto} /> : m.texto}
+                {m.rol === 'asistente' && vozDisponible() && (
+                  <button type="button" className={`apub-escuchar ${leyendo === m.id ? 'on' : ''}`} onClick={() => leerEnVoz(m)} data-sin-tap
+                    aria-label={leyendo === m.id ? 'Detener la lectura' : 'Escuchar esta respuesta'} title={leyendo === m.id ? 'Detener' : 'Escuchar'}>
+                    <Icon n={leyendo === m.id ? 'pause' : 'volume'} className="" size={13} />
+                  </button>
+                )}
+              </div>}
             {!!m.enlaces?.length && <div className="apub-enlaces">{m.enlaces.map((e) => <Link key={e.ruta} to={e.ruta} className="apub-enlace" onClick={() => { if (window.innerWidth < 640) onCerrar(); }}>{e.texto}<Icon n="derecha" className="" size={12} /></Link>)}</div>}
             {m.siguiente === 'ofrecer_asesor' && i === msgs.length - 1 && <button type="button" className="apub-chip fuerte" onClick={abrirAsesor}><Icon n="persona" className="" size={13} />Hablar con un asesor</button>}
             {i === msgs.length - 1 && !!m.sugerencias?.length && !ocupado && (
@@ -278,18 +326,21 @@ function FormAsesor({ conversacion, mensaje, onEnviado }: { conversacion: { rol:
     } catch (err) { setEstado({ error: (err as Error).message }); sonar('error'); }
   };
   return (
-    <form className="apub-asesor" onSubmit={enviar}>
-      <b>Hablar con un asesor comercial</b>
-      <div className="apub-campos">
-        <label>Nombre<input required minLength={2} maxLength={80} value={f.nombre} onChange={cambiar('nombre')} autoComplete="name" /></label>
-        <label>Correo<input required type="email" maxLength={120} value={f.email} onChange={cambiar('email')} autoComplete="email" /></label>
-        <label>Teléfono <small>opcional</small><input type="tel" maxLength={20} value={f.telefono} onChange={cambiar('telefono')} autoComplete="tel" /></label>
-        <label>Negocio <small>opcional</small><input maxLength={80} value={f.empresa} onChange={cambiar('empresa')} autoComplete="organization" /></label>
+    <form className="apub-asesor" onSubmit={enviar} noValidate={false}>
+      <div className="apub-asesor-cab">
+        <span className="apub-asesor-ico" aria-hidden="true"><Icon n="persona" className="" size={18} /></span>
+        <div><b>Habla con un asesor</b><small>Te escribe a tu correo, sin compromiso.</small></div>
       </div>
-      <label>¿En qué te ayudamos?<textarea required minLength={5} maxLength={1000} rows={3} value={f.mensaje} onChange={cambiar('mensaje')} /></label>
+      <div className="apub-campos">
+        <label className="apub-campo"><span className="apub-et">Nombre</span><input required minLength={2} maxLength={80} value={f.nombre} onChange={cambiar('nombre')} autoComplete="name" placeholder="Tu nombre" /></label>
+        <label className="apub-campo"><span className="apub-et">Correo</span><input required type="email" maxLength={120} value={f.email} onChange={cambiar('email')} autoComplete="email" placeholder="tu@correo.com" inputMode="email" /></label>
+        <label className="apub-campo"><span className="apub-et">Teléfono <small>opcional</small></span><input type="tel" maxLength={20} value={f.telefono} onChange={cambiar('telefono')} autoComplete="tel" placeholder="300 123 4567" inputMode="tel" /></label>
+        <label className="apub-campo"><span className="apub-et">Negocio <small>opcional</small></span><input maxLength={80} value={f.empresa} onChange={cambiar('empresa')} autoComplete="organization" placeholder="Nombre del negocio" /></label>
+        <label className="apub-campo ancho"><span className="apub-et">¿En qué te ayudamos?</span><textarea required minLength={5} maxLength={1000} rows={3} value={f.mensaje} onChange={cambiar('mensaje')} placeholder="Cuéntale al asesor qué necesitas" /></label>
+      </div>
       <label className="apub-check"><input type="checkbox" checked={f.acepta} onChange={cambiar('acepta')} required /><span>Autorizo a Omnegia a usar estos datos para contactarme, según la <Link to="/privacidad">política de datos</Link>.</span></label>
       {estado.error && <p className="apub-error" role="alert">{estado.error}</p>}
-      <button type="submit" className="apub-btn primario" disabled={estado.enviando}>{estado.enviando ? 'Enviando…' : 'Enviar al asesor'}</button>
+      <button type="submit" className="apub-btn primario apub-asesor-enviar" disabled={estado.enviando} data-sin-tap>{estado.enviando ? 'Enviando…' : <>Enviar al asesor <Icon n="enviar" className="" size={15} /></>}</button>
     </form>
   );
 }
