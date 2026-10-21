@@ -531,7 +531,7 @@ export async function estadoIntegraciones(db: Database, op: Operador) {
 export async function listarTickets(db: Database, op: Operador, q: any) {
   exigir(op, 'plataforma:ver');
   const estado = String(q?.estado ?? '');
-  const canal = ['PANEL', 'WHATSAPP'].includes(String(q?.canal)) ? String(q.canal) : '';
+  const canal = ['PANEL', 'WHATSAPP', 'WEB'].includes(String(q?.canal)) ? String(q.canal) : '';
   return db.withOperador(async (tx) => ({
     // Las solicitudes de WhatsApp no tienen empresa verificada: se muestra la relacionada por el teléfono, si hay una.
     tickets: (await tx.query(
@@ -589,7 +589,8 @@ export async function responderTicket(db: Database, op: Operador, id: string, bo
   });
   // El aviso por correo sale con el remitente global y responder-a soporte.
   await db.withPlatform((tx) => encolarCorreo(tx, { tenantId: k.tenant_id, para: k.solicitante_email,
-    correo: plantillas.ticketRespuesta({ nombre: k.solicitante_nombre, numero: k.numero, asunto: k.asunto, respuesta: d.cuerpo, url: `${config.publicUrl}/soporte/${id}` }) }));
+    // Quien escribió desde el sitio no tiene panel: responde al correo.
+    correo: plantillas.ticketRespuesta({ nombre: k.solicitante_nombre, numero: k.numero, asunto: k.asunto, respuesta: d.cuerpo, url: k.canal === 'WEB' ? null : `${config.publicUrl}/soporte/${id}` }) }));
   return { ok: true };
 }
 

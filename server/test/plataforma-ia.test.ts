@@ -57,15 +57,14 @@ const respuestas = async (from: string) => E.db.withPlatform(async (tx) => (awai
    WHERE c.telefono=$1 AND m.remitente='ASISTENTE' ORDER BY m.creado_en`, [`+${from}`])).rows as { contenido: string; metadatos: any }[]);
 
 describe('Base de conocimiento', () => {
-  it('trae los módulos con sus precios, los niveles reales de la base, las guías y solo páginas que existen', async () => {
+  it('trae los planes reales con su precio mensual y anual, los módulos, las guías y solo páginas que existen', async () => {
     const k = await conocimientoOmnegia(E.db);
-    expect(k).toContain('$29.000 al mes e incluye Clientes y Catálogo');
-    expect(k).toMatch(/Agenda y reservas: .*\$18\.000 al mes/);
-    expect(k).toMatch(/Asistente inteligente: .*requiere WhatsApp y atención/);
-    const negocio = (await E.db.withPlatform((tx) => tx.query(`SELECT precio_mensual FROM plan WHERE codigo='negocio'`))).rows[0].precio_mensual;
-    expect(k).toContain(`Negocio: $${Math.round(Number(negocio)).toLocaleString('es-CO')} al mes`);
+    expect(k).toMatch(/Esencial \(.*\): \$99\.000 al mes o \$990\.000 al año/);
+    expect(k).toMatch(/Negocio \(.*\): \$229\.000 al mes o \$2\.290\.000 al año · hasta 6 personas/);
+    expect(k).toMatch(/Agenda y reservas: .*Incluido en: Esencial, Negocio, Pro/);
+    expect(k).toMatch(/12 meses por el precio de 10/);
     expect(k).toMatch(/Retracto: dentro de los 5 días hábiles/);
-    expect(k).toMatch(/de demostración/);
+    expect(k).not.toMatch(/configurador|de demostración/);
     expect(k).toContain(`${config.publicUrl}/planes`);
     expect(k).not.toMatch(/elparche|Barbería El Parche|fuerzanorte/i);
   });
@@ -73,12 +72,11 @@ describe('Base de conocimiento', () => {
 
 describe('La conversación de la captura, ahora con contexto', () => {
   const from = '573215550001';
-  it('«conocer los planes» explica cómo se calcula el valor con las tarifas reales', async () => {
+  it('«conocer los planes» responde con los planes y precios reales', async () => {
     await escribir(from, 'hola');
     const [r] = await escribir(from, 'conocer los planes que tiene omnegia');
-    expect(r.contenido).toMatch(/\$29\.000/);
-    expect(r.contenido).toMatch(/Agenda y reservas.*\$18\.000/);
-    expect(r.contenido).toMatch(/demostración/);
+    expect(r.contenido).toMatch(/Esencial\*: \$99\.000 al mes o \$990\.000 al año/);
+    expect(r.contenido).toMatch(/Negocio\*: \$229\.000/);
     expect(r.metadatos.ia).toMatchObject({ tokens: expect.any(Number) });
   });
 
@@ -96,7 +94,7 @@ describe('La conversación de la captura, ahora con contexto', () => {
 
   it('el modelo recibió la conversación completa, la base de conocimiento y las reglas de privacidad', () => {
     const i = llamadas.at(-1)!;
-    expect(i.user).toMatch(/<conocimiento>[\s\S]*Módulos y precio del alta/);
+    expect(i.user).toMatch(/<conocimiento>[\s\S]*Planes y precios/);
     expect(i.user).toMatch(/Persona: conocer los planes que tiene omnegia[\s\S]*Persona: si/);
     expect(i.system).toMatch(/Solo temas de Omnegia/);
     expect(i.system).toMatch(/Nunca digas si un correo o teléfono tiene cuenta/);

@@ -49,7 +49,7 @@ export interface StructuredInput<T> {
   user: string;
   schema: z.ZodType<T>;
   /** Tarea declarada para el simulador determinista. */
-  tarea: 'clasificar_negocio' | 'mapear_columnas' | 'resumir_caso' | 'sugerir_respuesta' | 'personalizar_espacio' | 'resumir_hilo' | 'atender_soporte' | 'mejorar_redaccion' | 'responder_plataforma';
+  tarea: 'clasificar_negocio' | 'mapear_columnas' | 'resumir_caso' | 'sugerir_respuesta' | 'personalizar_espacio' | 'resumir_hilo' | 'atender_soporte' | 'mejorar_redaccion' | 'responder_plataforma' | 'asistente_web';
   datos?: unknown;
 }
 

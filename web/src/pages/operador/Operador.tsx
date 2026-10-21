@@ -643,13 +643,13 @@ export function OpSoporte() {
       <Tarjeta sinCuerpo>
         <div className="filtros">
           <select className="input" value={estado} onChange={(e) => setEstado(e.target.value)} aria-label="Estado"><option value="">Todos los estados</option>{Object.entries(ESTADO_TICKET).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
-          <select className="input" value={canal} onChange={(e) => setCanal(e.target.value)} aria-label="Canal"><option value="">Todos los canales</option><option value="PANEL">Desde el panel</option><option value="WHATSAPP">Por WhatsApp</option></select>
+          <select className="input" value={canal} onChange={(e) => setCanal(e.target.value)} aria-label="Canal"><option value="">Todos los canales</option><option value="PANEL">Desde el panel</option><option value="WHATSAPP">Por WhatsApp</option><option value="WEB">Asesor comercial (sitio web)</option></select>
         </div>
         {error ? <div className="cuerpo"><ErrorCarga error={error} reintentar={recargar} /></div> : cargando && !data ? <div className="cuerpo"><Cargando /></div> : !data.tickets.length ? <div className="cuerpo"><Vacio titulo="Sin solicitudes" /></div> : (
           <div className="tabla-wrap"><table className="tabla tabla-movil"><thead><tr><th>Radicado</th><th>Empresa</th><th>Asunto</th><th>Categoría</th><th>Prioridad</th><th>Estado</th><th>Actividad</th></tr></thead>
             <tbody>{data.tickets.map((t: any) => (
               <tr key={t.id} className="enlace-fila" onClick={() => nav(`/operador/soporte/${t.id}`)}>
-                <td data-etiqueta="Radicado"><span className="fila" style={{ gap: 6 }}><Link className="mono" to={`/operador/soporte/${t.id}`}>{t.numero}</Link>{t.canal === 'WHATSAPP' && <Estado v="WHATSAPP" />}</span></td>
+                <td data-etiqueta="Radicado"><span className="fila" style={{ gap: 6 }}><Link className="mono" to={`/operador/soporte/${t.id}`}>{t.numero}</Link>{t.canal === 'WHATSAPP' && <Estado v="WHATSAPP" />}{t.canal === 'WEB' && <span className="estado neutro">Sitio web</span>}</span></td>
                 <td data-etiqueta="Empresa">{t.empresa ? <>{t.empresa}{t.empresa_sin_verificar && <span className="tenue peq-txt"> · sin verificar</span>}</> : <span className="tenue">Sin empresa</span>}</td><td data-etiqueta="Asunto">{t.asunto}</td>
                 <td data-etiqueta="Categoría">{t.categoria_nombre}</td><td data-etiqueta="Prioridad"><Estado v={t.prioridad} /></td><td data-etiqueta="Estado"><Estado v={t.estado} texto={ESTADO_TICKET[t.estado]} /></td><td data-etiqueta="Actividad">{hace(t.actualizado_en)}</td>
               </tr>))}
@@ -673,7 +673,7 @@ export function OpTicket() {
   const gestionar = puede('soporte:gestionar');
   return (
     <>
-      <Cabecera titulo={t.asunto} sub={<span className="fila" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mono">{t.numero}</span><span>·</span>{t.empresa_id ? <Link to={`/operador/empresas/${t.empresa_id}`}>{t.empresa}</Link> : <span className="tenue">Sin empresa</span>}{t.empresa_sin_verificar && <span className="tenue peq-txt">(relacionada por el teléfono, sin verificar)</span>}<span>·</span><span>{t.categoria_nombre}</span>{t.canal === 'WHATSAPP' && <Estado v="WHATSAPP" />}<Estado v={t.prioridad} /><Estado v={t.estado} texto={ESTADO_TICKET[t.estado]} /></span>}>
+      <Cabecera titulo={t.asunto} sub={<span className="fila" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mono">{t.numero}</span><span>·</span>{t.empresa_id ? <Link to={`/operador/empresas/${t.empresa_id}`}>{t.empresa}</Link> : <span className="tenue">Sin empresa</span>}{t.empresa_sin_verificar && <span className="tenue peq-txt">(relacionada por el teléfono, sin verificar)</span>}<span>·</span><span>{t.categoria_nombre}</span>{t.canal === 'WHATSAPP' && <Estado v="WHATSAPP" />}{t.canal === 'WEB' && <span className="estado neutro">Sitio web · {t.solicitante_email}</span>}<Estado v={t.prioridad} /><Estado v={t.estado} texto={ESTADO_TICKET[t.estado]} /></span>}>
         <Link className="btn" to="/operador/soporte"><Icon n="atras" className="" size={16} />Todas</Link>
         {t.canal === 'WHATSAPP' && t.conversacion_id && <Link className="btn primario" to={`/operador/conversaciones/${t.conversacion_id}`}><Icon n="conversaciones" className="" size={16} />Abrir la conversación</Link>}
         {data.compartida && <Link className="btn primario" to={`/operador/atencion/conversaciones/${data.compartida.conversation_id}`}><Icon n="conversaciones" className="" size={16} />{data.compartida.puede_responder ? 'Abrir la conversación del cliente y responder' : 'Leer la conversación compartida'}</Link>}
@@ -690,7 +690,7 @@ export function OpTicket() {
           {t.canal === 'WHATSAPP' && t.estado !== 'CERRADO' && <p className="aviso peq-txt" style={{ marginTop: 16 }}><Icon n="conversaciones" className="" size={14} /><span>Llegó por WhatsApp: respóndela desde su conversación para que la persona la reciba en el mismo chat.</span></p>}
           {gestionar && t.estado !== 'CERRADO' && t.canal !== 'WHATSAPP' && (
             <div className="col" style={{ gap: 10, marginTop: 16 }}>
-              <textarea className="input" rows={4} maxLength={4000} value={texto} onChange={(e) => setTexto(e.target.value)} aria-label="Respuesta" placeholder="Respuesta para la empresa. Nunca pidas contraseñas, claves ni datos de sus clientes." />
+              <textarea className="input" rows={4} maxLength={4000} value={texto} onChange={(e) => setTexto(e.target.value)} aria-label="Respuesta" placeholder={t.canal === 'WEB' ? 'Respuesta para la persona (le llega por correo). Nunca pidas contraseñas ni datos de tarjetas.' : 'Respuesta para la empresa. Nunca pidas contraseñas, claves ni datos de sus clientes.'} />
               <div className="fila" style={{ gap: 8, flexWrap: 'wrap' }}>
                 <select className="input" value={siguiente} onChange={(e) => setSiguiente(e.target.value)} aria-label="Estado después de responder"><option value="ESPERANDO_CLIENTE">Esperando a la empresa</option><option value="EN_PROCESO">En proceso</option><option value="RESUELTO">Resuelto</option></select>
                 <button className="btn primario" disabled={ocupado || texto.trim().length < 2} onClick={async () => { const r = await run(() => api.post(`/api/operador/soporte/${t.id}/responder`, { cuerpo: texto, estado: siguiente }), 'Respuesta enviada por el panel y por correo.', { silencioso: true }); if (r) { setTexto(''); recargar(); } }}>{ocupado ? 'Enviando…' : 'Responder'}</button>

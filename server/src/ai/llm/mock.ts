@@ -1,3 +1,4 @@
+import { PLANES } from '../../onboarding/planRules.js';
 import type { ChatTurn, LlmClient, LoopInput, LoopOutput, StructuredInput, ToolCallOutcome } from './types.js';
 import { normalizeText } from '../../lib/util.js';
 import { MODULE_CATALOG } from '../../onboarding/pricing.js';
@@ -335,6 +336,7 @@ export class MockLlm implements LlmClient {
     if (input.tarea === 'sugerir_respuesta') raw = suggestHeuristic(input.datos as any);
     if (input.tarea === 'mejorar_redaccion') raw = mejorarHeuristic(input.datos as any);
     if (input.tarea === 'responder_plataforma') raw = plataformaHeuristic(input.datos as any);
+    if (input.tarea === 'asistente_web') raw = asistenteWebHeuristic(input.datos as any);
     if (input.tarea === 'atender_soporte') raw = soporteHeuristic(input.datos as any);
     if (input.tarea === 'resumir_hilo') {
       const d = input.datos as { previo: string | null; mensajes: { rol: string; contenido: string }[] };
@@ -508,9 +510,27 @@ function plataformaHeuristic(d: any) {
   if (!modulos && !precios) return { respuesta: '' };
   const url = (fin: string) => (d?.paginas ?? []).find((p: any) => p.ruta.endsWith(fin))?.ruta ?? '';
   const saludo = d?.saludado ? '' : `${d?.visto ? 'Hola de nuevo' : 'Hola'}${d?.nombre ? `, ${d.nombre}` : ''}. Soy el asistente virtual de Omnegia.\n\n`;
-  const lineas = MODULE_CATALOG.map((m) => `• *${m.nombre}*: ${m.descripcion} ${m.precio ? `$${m.precio.toLocaleString('es-CO')} al mes.` : 'Incluido en la base.'}${m.id === 'facturacion' ? ' Requiere conectar un proveedor autorizado por la DIAN.' : ''}`);
-  const respuesta = `${saludo}${precios ? 'Así se calcula el valor en el configurador: una base de $29.000 al mes (incluye Clientes y Catálogo) más los módulos que elijas:' : 'Estos son los módulos de Omnegia (agenda, ventas, WhatsApp con IA y más), con su valor en el configurador sobre una base de $29.000 al mes:'}\n${lineas.join('\n')}\n\nLas tarifas del configurador son de demostración. Puedes armar tu configuración en ${url('/planes')} y ver el recorrido en ${url('/producto')}. ¿Cuáles te interesan para tu negocio?`;
+  const planesTxt = PLANES.map((p) => `• *${p.nombre}*: $${p.precio_mensual.toLocaleString('es-CO')} al mes o $${p.precio_anual.toLocaleString('es-CO')} al año. ${p.descripcion}`);
+  const modulosTxt = MODULE_CATALOG.map((m) => `• *${m.nombre}*: ${m.descripcion}${m.id === 'facturacion' ? ' Desde el plan Negocio; requiere conectar un proveedor autorizado por la DIAN.' : ''}`);
+  const respuesta = precios
+    ? `${saludo}Estos son los planes de Omnegia (el pago anual trae 2 meses gratis):\n${planesTxt.join('\n')}\n\nPuedes compararlos en ${url('/planes')}. ¿Cuántas personas atienden en tu negocio?`
+    : `${saludo}Estas son las funciones de Omnegia; todos los planes traen WhatsApp con IA, clientes, catálogo, agenda y ventas:\n${modulosTxt.join('\n')}\n\nMira el recorrido en ${url('/producto')} y los planes en ${url('/planes')}. ¿Cuáles te interesan para tu negocio?`;
   return { respuesta, tema: precios ? 'PLANES' : 'FUNCIONES', siguiente: 'conversar', motivo_persona: '' };
+}
+
+/** Simulador del asistente del sitio web: responde planes, funciones, acceso y asesor con datos reales del catálogo. */
+function asistenteWebHeuristic(d: any) {
+  const msgs: { rol: string; texto: string }[] = d?.mensajes ?? [];
+  const t = normalizeText([...msgs].reverse().find((m) => m.rol === 'persona')?.texto ?? '');
+  const pesos = (n: number) => `$${n.toLocaleString('es-CO')}`;
+  if (/asesor|vendedor|ventas|comercial|una persona|humano|llamar|demo/.test(t)) return { respuesta: 'Claro. Te dejo el formulario: un asesor comercial te escribe a tu correo.', siguiente: 'abrir_asesor', enlaces: [], sugerencias: [] };
+  if (/conviene|recomienda|cual plan|que plan/.test(t)) return { respuesta: 'Te ayudo a elegir. ¿Cuántas personas atienden en tu negocio y necesitas **factura electrónica** o **inventario**? Con eso te digo cuál encaja.', siguiente: 'conversar', enlaces: ['/planes'], sugerencias: ['Somos 2 personas', 'Necesito factura electrónica'] };
+  if (/factura|inventario|[3-9] personas|equipo/.test(t)) { const n = PLANES[1]; return { respuesta: `Te sirve **${n.nombre}**: ${pesos(n.precio_mensual)} al mes o ${pesos(n.precio_anual)} al año. Incluye factura electrónica, inventario y hasta ${n.max_usuarios} personas.`, siguiente: 'conversar', enlaces: ['/planes', '/empezar'], sugerencias: ['¿Cómo empiezo?', 'Quiero hablar con un asesor'] }; }
+  if (/precio|plan|cuanto|cuesta|vale|tarifa|costo|anual/.test(t)) return { respuesta: `Hay tres planes (el pago anual trae 2 meses gratis):\n${PLANES.map((p) => `- **${p.nombre}**: ${pesos(p.precio_mensual)} al mes o ${pesos(p.precio_anual)} al año`).join('\n')}\n¿Cuántas personas atienden en tu negocio?`, siguiente: 'conversar', enlaces: ['/planes'], sugerencias: ['¿Qué plan me conviene?', '¿Qué incluye cada uno?'] };
+  if (/empiezo|empezar|crear|registr|contratar/.test(t)) return { respuesta: 'Describes tu negocio con tus palabras, la IA te sugiere un plan, revisas el valor y pagas. Tu panel se crea al confirmarse el pago.', siguiente: 'conversar', enlaces: ['/empezar', '/planes'], sugerencias: ['¿Cuánto cuesta?'] };
+  if (/contrasena|entrar|acceso|ingresar|clave/.test(t)) return { respuesta: 'Entra con «Iniciar sesión». Si olvidaste la contraseña, crea una nueva con el enlace seguro que llega a tu correo.', siguiente: 'conversar', enlaces: ['/entrar', '/recuperar'], sugerencias: [] };
+  if (/whatsapp|ia|asistente|funcion|que hace|incluye/.test(t)) return { respuesta: 'Omnegia reúne en un panel la atención por **WhatsApp con IA**, clientes, catálogo, agenda, ventas y cobros; según el plan, también inventario, comisiones y factura electrónica.', siguiente: 'conversar', enlaces: ['/producto'], sugerencias: ['¿Cuánto cuesta?', '¿Cómo empiezo?'] };
+  return { respuesta: 'Puedo ayudarte con los planes, cómo empezar, cómo funciona Omnegia o tu acceso. ¿Qué te gustaría saber?', siguiente: 'conversar', enlaces: [], sugerencias: ['¿Cuánto cuesta?', '¿Cómo empiezo?', 'Quiero hablar con un asesor'] };
 }
 
 /** Simulador de «mejorar redacción»: corrige abreviaturas, mayúsculas y puntuación sin cambiar el contenido. */

@@ -10,6 +10,7 @@ import { debeConsultar, faseCierre, pasosCumplidos, type FaseCierre } from './ci
 import { faseRecibo, reciboEnCurso, type FaseRecibo } from './recibo';
 import { useFaseMinima, useRevelado } from './ritmo';
 import { ReciboImpresion } from '../../components/ReciboImpresion';
+import { AsistentePublico } from '../../components/AsistentePublico';
 import { Campo, Cargando, ErrorCarga, Estado, CicloFiscal, useAccion, Vacio, CodigoOtp, useCuentaAtras } from '../../components/ui';
 import { ResumenAlta } from '../../components/Quote';
 import { PagoDirecto } from '../../components/PagoDirecto';
@@ -52,6 +53,7 @@ export function PublicoLayout({ children, paso, hechos, transparente, estado, no
       )}
       <main id="public-content" tabIndex={-1}>{transparente ? children : <div className="centro">{children}</div>}</main>
       {transparente && <SiteFooter />}
+      {paso === undefined && <AsistentePublico />}
       {paso !== undefined && <div className="onboarding-help"><Link to="/ayuda"><Icon n="soporte" size={16} className="" />Ayuda con la configuración</Link><span>{notaAlta ?? 'Tu información se guarda como borrador al continuar.'}</span></div>}
     </div>
   );

@@ -380,10 +380,18 @@ export const ticketRecibido = (o: { nombre: string; numero: string; asunto: stri
   detalles: [['Radicado', o.numero], ['Asunto', o.asunto]], boton: { texto: 'Ver la solicitud', url: o.url },
 });
 
-export const ticketRespuesta = (o: { nombre: string; numero: string; asunto: string; respuesta: string; url: string }) => render({
+export const ticketRespuesta = (o: { nombre: string; numero: string; asunto: string; respuesta: string; url: string | null }) => render({
   tipo: 'soporte_respuesta', asunto: `Respuesta a tu solicitud ${o.numero}`, previa: 'El equipo de soporte respondió tu solicitud.',
-  titulo: `Respuesta a ${o.numero}`, saludo: `Hola ${primerNombre(o.nombre)},`, parrafos: [o.respuesta],
-  detalles: [['Asunto', o.asunto]], boton: { texto: 'Responder en el panel', url: o.url },
+  titulo: `Respuesta a ${o.numero}`, saludo: `Hola ${primerNombre(o.nombre)},`, parrafos: o.url ? [o.respuesta] : [o.respuesta, 'Para continuar, responde a este correo.'],
+  detalles: [['Asunto', o.asunto]], ...(o.url ? { boton: { texto: 'Responder en el panel', url: o.url } } : {}),
+});
+
+/** Confirmación a quien pidió un asesor comercial desde el sitio web. */
+export const asesorRecibido = (o: { nombre: string; numero: string }) => render({
+  tipo: 'asesor_recibido', asunto: `Un asesor de Omnegia te escribirá pronto (${o.numero})`, previa: 'Recibimos tu solicitud para hablar con un asesor.',
+  titulo: 'Recibimos tu solicitud', saludo: `Hola ${primerNombre(o.nombre)},`,
+  parrafos: ['Un asesor comercial de Omnegia revisará tu mensaje y te escribirá a este correo. Si quieres agregar algo, responde a este mensaje.', 'Nunca te pediremos contraseñas, códigos ni datos de tarjetas.'],
+  detalles: [['Radicado', o.numero]],
 });
 
 // ------------------------------------------------------------------ datos personales (Ley 1581 de 2012)

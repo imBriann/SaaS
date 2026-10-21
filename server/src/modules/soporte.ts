@@ -16,7 +16,7 @@ import { config } from '../config.js';
  */
 export const CATEGORIAS = ['CUENTA', 'FACTURACION', 'WHATSAPP', 'IA', 'TECNICO', 'OTRO'] as const;
 export const PRIORIDADES = ['BAJA', 'NORMAL', 'ALTA', 'URGENTE'] as const;
-export const ETIQUETA_CATEGORIA: Record<string, string> = { CUENTA: 'Cuenta y acceso', FACTURACION: 'Suscripción y pagos', WHATSAPP: 'WhatsApp', IA: 'Asistente de IA', TECNICO: 'Problema técnico', OTRO: 'Otro' };
+export const ETIQUETA_CATEGORIA: Record<string, string> = { CUENTA: 'Cuenta y acceso', FACTURACION: 'Suscripción y pagos', WHATSAPP: 'WhatsApp', IA: 'Asistente de IA', TECNICO: 'Problema técnico', OTRO: 'Otro', COMERCIAL: 'Comercial' };
 
 /** Claves, contraseñas y números de tarjeta no deben viajar en un ticket. */
 const PARECE_SECRETO = /(\bre_[A-Za-z0-9_]{8,}|\bsk-[A-Za-z0-9-]{10,}|\b(sk|pk|rk)_(live|test)_[A-Za-z0-9]{6,}|\bwhsec_[A-Za-z0-9+/=]{8,}|\bEAA[A-Za-z0-9]{20,}|\b(prv|pub)_(test|prod)_[A-Za-z0-9]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY|\b(contrase(ñ|n)a|password|clave|pin)\s*[:=]\s*\S{4,}|\b(?:\d[ -]?){13,19}\b)/i;

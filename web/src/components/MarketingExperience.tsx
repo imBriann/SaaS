@@ -24,7 +24,7 @@ export function MarketingExperience() {
         <h1 id="hero-title">Tu negocio,<br />en su mejor<br /><span>forma.</span></h1>
         <p>Conecta tus conversaciones, tu agenda y tus ventas. Atiende a tus clientes y organiza el trabajo de tu equipo desde un solo lugar.</p>
         <Link className="btn primario hero-primary" to="/empezar">Crear mi espacio <Icon n="flecha" size={19} className="" /></Link>
-        <span className="hero-assurance">Elige tus módulos y revisa la propuesta antes de contratar.</span>
+        <span className="hero-assurance">Elige tu plan y revisa el valor antes de contratar. Sin permanencia.</span>
       </div><SystemScene /></div>
       <div className="hero-baseline"><span>Todo tu negocio. Un solo lugar.</span><ProductTour /></div>
     </section>

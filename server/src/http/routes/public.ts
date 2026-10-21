@@ -4,6 +4,7 @@ import { availability, domainInfo } from '../../onboarding/subdomain.js';
 import { sendDraftCode, verifyDraftCode } from '../../onboarding/verification.js';
 import type { FastifyInstance } from 'fastify';
 import { MODULE_CATALOG, quoteModules, planesAlta } from '../../onboarding/pricing.js';
+import { responderAsistenteWeb, solicitarAsesor } from '../../modules/asistenteWeb.js';
 import type { Database } from '../../db/index.js';
 import { AppError, invalid, notFound } from '../../lib/errors.js';
 import { cop, token } from '../../lib/util.js';
@@ -47,6 +48,9 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
 
   // ------------------------------------------------------------------ zona legal
   app.get('/api/publico/legal', async () => infoLegal());
+  // Asistente de IA del sitio (sin sesión) y contacto con un asesor comercial.
+  app.post('/api/publico/asistente', async (req: any) => responderAsistenteWeb(db, req.body, req.ip));
+  app.post('/api/publico/asesor', async (req: any) => solicitarAsesor(db, req.body, req.ip));
   app.post('/api/publico/solicitudes-datos', async (req: any) => crearSolicitudDatos(db, req.body, req.ip));
   app.post('/api/publico/reembolsos', async (req: any) => solicitarReembolso(db, req.body, req.ip));
   app.post('/api/publico/reembolsos/consulta', async (req: any) => consultarReembolso(db, req.body?.radicado, req.body?.email));
