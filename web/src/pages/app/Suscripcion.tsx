@@ -9,6 +9,7 @@ import { AnilloGracia, AvisoDeshacer, BarraDias, Cascada, CodigoBarras, Confeti,
 import { DocumentosPagos, NumeroContratado, SuscripcionClasica } from './Gobierno';
 import { type Aviso, type Catalogo, type Ciclo, type Resultado, fechaCobro, irACheckout, textoConfirmar, textoResultado, tono, useCambioPlan } from './suscripcion/cambio';
 import '../../facturacion.css';
+import { sonar } from '../../lib/sonido';
 
 const DIA = 86_400_000;
 const VENCIDA = ['PAGO_PENDIENTE', 'EN_GRACIA', 'SUSPENDIDA'];
@@ -433,13 +434,14 @@ function Caja({ referencia, idTransaccion, onSalir }: { referencia: string; idTr
   useEffect(() => {
     if (!aprobado) return;
     if (reducido) { setFase(2); return; }
-    const a = window.setTimeout(() => setFase(1), 150);
+    const a = window.setTimeout(() => { setFase(1); sonar('sello'); }, 150);
     const b = window.setTimeout(() => setFase(2), 650);
     const c = window.setTimeout(() => setDisparo(Date.now()), 900);
     return () => { window.clearTimeout(a); window.clearTimeout(b); window.clearTimeout(c); };
   }, [aprobado, reducido]);
 
   const rechazado = pago && ['RECHAZADO', 'ERROR', 'ANULADO', 'REEMPLAZADO', 'VENCIDO'].includes(pago.estado);
+  useEffect(() => { if (rechazado) sonar('error'); }, [rechazado]);
   const metodo = pago?.metodo_detalle ?? metodoTexto(pago?.metodo_pago);
   const [marca, ultimos] = (() => { const m = /^(.*?)\s*•+\s*(\d{4})$/.exec(metodo ?? ''); return m ? [m[1], m[2]] : [metodo, null]; })();
   const prueba = pago?.proveedor && pago.proveedor !== 'wompi';

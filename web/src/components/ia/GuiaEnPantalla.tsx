@@ -6,6 +6,7 @@ import { OrbeCara } from './OrbeCara';
 import { useIA } from './contexto';
 import { GUIAS } from './guias';
 import { Icon } from '../icons';
+import { sonar } from '../../lib/sonido';
 
 /** Busca el elemento señalado que de verdad se ve (el menú móvil escondido o un rol sin permiso no cuentan). */
 function buscar(ancla: string): HTMLElement | null {
@@ -69,12 +70,12 @@ function Recorrido({ id, onFin }: { id: string; onFin: () => void }) {
       if (x) {
         const r = x.getBoundingClientRect();
         if (r.top < 72 || r.bottom > window.innerHeight - 96) x.scrollIntoView({ block: 'center', behavior: reducido ? 'auto' : 'smooth' });
-        setEl(x); setEstado('listo');
+        setEl(x); setEstado('listo'); sonar('guia');
         return;
       }
       // Un paso opcional que no está (p. ej. los métodos de pago antes de agregar un ítem) se salta rápido.
       if (performance.now() - t0 > (paso.opcional ? 1400 : 4500)) {
-        if (paso.opcional) { const n = k + sentido.current; if (n < 0) ir(k + 1); else ir(n); } else setEstado('perdido');
+        if (paso.opcional) { const n = k + sentido.current; if (n < 0) ir(k + 1); else ir(n); } else { setEstado('perdido'); sonar('error'); }
         return;
       }
       t = window.setTimeout(intento, 110);

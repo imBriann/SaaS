@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { OrbeCara, type Cara } from '../ia/OrbeCara';
 import { useIA } from '../ia/contexto';
+import { sonar } from '../../lib/sonido';
 
 /**
  * Construcción en vivo del espacio de una empresa (al estrenarlo después del pago, o al pedir «Reconstruir»).
@@ -58,6 +59,12 @@ export function Construccion({ nombre, children }: { nombre: string; children: R
   }, [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const avisarListo = useCallback((c: number) => setListoCiclo((x) => Math.max(x, c)), []);
+
+  // La construcción en vivo tiene su sonido: arranca, se arma y queda lista.
+  useEffect(() => {
+    if (fase === 'esqueleto') sonar('construir');
+    if (fase === 'revelado') sonar('magia');
+  }, [fase]);
 
   useEffect(() => {
     if (!activa) return;

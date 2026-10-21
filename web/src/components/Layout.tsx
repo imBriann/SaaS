@@ -10,6 +10,8 @@ import { PanelIA, PildoraIA } from './ia/PanelIA';
 import { GuiaEnPantalla } from './ia/GuiaEnPantalla';
 import { BarraSuperior } from './ia/BarraSuperior';
 import { SelectorEmpresa } from './SelectorEmpresa';
+import { sonar } from '../lib/sonido';
+import { SonidoBoton } from './SonidoBoton';
 
 export interface Sesion {
   usuario: { id: string; nombre: string; rol: string; rol_nombre: string; propietario: boolean; email: string | null; correo_verificado: boolean };
@@ -193,6 +195,13 @@ export function PanelLayout() {
     return () => document.removeEventListener('visibilitychange', volver);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const pendientes = avisos.data?.conversaciones.total ?? 0;
+  // Suena cuando llega algo nuevo (no al cargar la página).
+  const previos = useRef<number | null>(null);
+  useEffect(() => {
+    if (!avisos.data) return;
+    if (previos.current !== null && pendientes > previos.current) sonar('notificacion');
+    previos.current = pendientes;
+  }, [pendientes, avisos.data]);
   useEffect(() => { if (data) document.title = `${pendientes ? `(${pendientes}) ` : ''}${data.tenant.nombre} · ${MARCA.nombre}`; }, [pendientes, data]);
   const [navAbierta, setNavAbierta] = useState(false);
   const [contrasena, setContrasena] = useState(false);
@@ -260,6 +269,7 @@ export function PanelLayout() {
         <header className="barra-movil">
           <Link to="/" className="contexto" aria-label={`${t.nombre}, inicio`}>{marca}<span className="contexto-txt"><b>{t.nombre}</b><span>{data.usuario.rol_nombre}</span></span></Link>
           {pendientes > 0 && <Link to="/conversaciones" className={`aviso-movil ${urgente ? 'urgente' : ''}`} aria-label={`Conversaciones: ${textoAviso}`}><Icon n="conversaciones" className="" size={16} /><Insignia n={pendientes} urgente={urgente} /></Link>}
+          <SonidoBoton className="sonido-movil" size={17} />
         </header>
 
         <aside className="lateral" id="nav-lateral" aria-label="Navegación del panel">

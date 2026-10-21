@@ -154,3 +154,9 @@
 }
 
 @keyframes tabs-borde { 0%, 90% { opacity: 1; } 100% { opacity: 0; } }
+
+/* Interruptor de sonido en la cabecera del teléfono */
+.barra-movil .sonido-movil { display: inline-grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--superficie-2, #f1f1f4); color: var(--tinta-2); cursor: pointer; flex: none; }
+.barra-movil .aviso-movil + .sonido-movil { margin-left: 6px; }
+.barra-movil .contexto + .sonido-movil { margin-left: auto; }
+.barra-movil .sonido-movil[aria-pressed="false"] { color: var(--tinta-3); }

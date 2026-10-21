@@ -29,6 +29,8 @@ import { PanelLayout } from './components/Layout';
 import { slugDelHost, tenantSlug } from './api';
 import { CierreAlta, Catalogo, Datos, Describir, Empresas, Entrar, Invitacion, Landing, Pago, Pasarela, Recuperar, Restablecer, ResultadoPago } from './pages/public/Publico';
 import { Cargando } from './components/ui';
+import { instalarSonidosUI } from './lib/sonido';
+instalarSonidosUI();
 
 // El panel se carga aparte: quien visita la página pública no descarga el panel.
 const Inicio = lazy(() => import('./pages/app/Inicio').then((m) => ({ default: m.Inicio })));

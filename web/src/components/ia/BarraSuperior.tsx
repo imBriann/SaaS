@@ -5,6 +5,7 @@ import { Icon } from '../icons';
 import { OrbeCara } from './OrbeCara';
 import { useIA } from './contexto';
 import { usePuedeIA } from './PanelIA';
+import { SonidoBoton } from '../SonidoBoton';
 
 /**
  * Barra superior del panel (escritorio): la empresa a la izquierda y, a la derecha, la pregunta rápida
@@ -29,14 +30,15 @@ export function BarraSuperior({ marca, empresa, rol, pendientes, urgente, textoA
             <OrbeCara tamano={22} cara={q.trim() ? 'escuchando' : 'normal'} />
             <input value={q} onChange={(e) => setQ(e.target.value)} onFocus={() => setFoco(true)} onBlur={() => setFoco(false)} placeholder="Pregúntale a Omnegia IA…" aria-label="Pregunta a Omnegia IA" maxLength={1000} />
             {!q && <kbd>{mac ? '⌘' : 'Ctrl'} K</kbd>}
-            <button type="submit" className="bs-enviar" aria-label="Preguntar"><Icon n={q.trim() ? 'enviar' : 'buscar'} className="" size={15} /></button>
+            <button type="submit" className="bs-enviar" aria-label="Preguntar" data-sin-tap><Icon n={q.trim() ? 'enviar' : 'buscar'} className="" size={15} /></button>
           </form>
         )}
         {puedeIA && (
-          <button type="button" className={`bs-circulo ${panelAbierto ? 'on' : ''}`} onClick={() => abrirPanel()} aria-label="Abrir el chat de Omnegia IA" title="Chat con Omnegia IA">
+          <button type="button" className={`bs-circulo ${panelAbierto ? 'on' : ''}`} onClick={() => abrirPanel()} aria-label="Abrir el chat de Omnegia IA" title="Chat con Omnegia IA" data-sin-tap>
             <Icon n="ia" className="" size={18} />
           </button>
         )}
+        <SonidoBoton className="bs-circulo" />
         {veConversaciones && (
           <Link to="/conversaciones" className="bs-circulo" aria-label={pendientes ? `Avisos: ${textoAviso}` : 'Sin avisos nuevos'} title={pendientes ? textoAviso : 'Sin avisos nuevos'}>
             <Icon n="campana" className={pendientes ? 'bs-campana-suena' : ''} size={18} />

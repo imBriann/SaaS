@@ -8,6 +8,7 @@ import { OrbeCara, useCaraIA, type Cara } from './OrbeCara';
 import { useIA } from './contexto';
 import { useConstruccion } from '../construccion/Construccion';
 import { guiaDe, Respuesta, Trabajando, type Ejecucion, type Item, type Paso } from '../../pages/app/Asistente';
+import { sonar } from '../../lib/sonido';
 
 const MAX = 1000;
 const claveHilo = () => `omnegia-panel-hilo:${tenantSlug() ?? ''}`;
@@ -33,7 +34,7 @@ export function PildoraIA() {
   if (!puedeIA || loc.pathname.startsWith('/asistente')) return null;
   const oculta = panelAbierto || !!guia || activa;
   return (
-    <button type="button" className="pildora-ia" data-oculta={oculta || undefined} data-guia="ia/pildora" onClick={() => abrirPanel()} aria-label="Preguntar a Omnegia IA (Ctrl + K)" tabIndex={oculta ? -1 : 0}
+    <button type="button" className="pildora-ia" data-sin-tap data-oculta={oculta || undefined} data-guia="ia/pildora" onClick={() => abrirPanel()} aria-label="Preguntar a Omnegia IA (Ctrl + K)" tabIndex={oculta ? -1 : 0}
       onPointerEnter={() => setCara('atenta')} onPointerLeave={() => setCara('normal')} onFocus={() => setCara('atenta')} onBlur={() => setCara('normal')}>
       <OrbeCara tamano={30} cara={cara} />
       <span>Preguntar a <b>Omnegia IA</b></span>
@@ -103,6 +104,7 @@ export function PanelIA() {
     const t = texto.trim();
     if (!t || ocupado) return;
     setQ(''); setOcupado(true); setPasos([]); setFase('pensando');
+    sonar('enviar'); window.setTimeout(() => sonar('pensar'), 350);
     setMensajes((m) => [...m.map((x) => ({ ...x, nuevo: false })), { rol: 'user', contenido: t, creado_en: new Date().toISOString() }]);
     try {
       const r = await preguntarEnVivo<any>({ pregunta: t, hilo_id: hilo }, (e) => {
@@ -110,13 +112,13 @@ export function PanelIA() {
         if (e.tipo === 'estado') setFase(e.fase);
       });
       setMensajes((m) => [...m, { rol: 'assistant', contenido: r.texto, ejecuciones: r.ejecuciones, creado_en: new Date().toISOString(), nuevo: true }]);
-      setLargo(r.texto?.length ?? 0); setRespuestas((n) => n + 1);
+      setLargo(r.texto?.length ?? 0); setRespuestas((n) => n + 1); sonar('recibir');
       if (r.hilo_id) { setHilo(r.hilo_id); guardarHilo(r.hilo_id); }
       const g = guiaDe(r.ejecuciones);
       if (g) window.setTimeout(() => iniciarGuia(g), 1100);
     } catch (err) {
       setMensajes((m) => m.map((x, i) => (i === m.length - 1 ? { ...x, fallo: (err as ApiError).message } : x)));
-      setFallos((n) => n + 1);
+      setFallos((n) => n + 1); sonar('error');
     } finally { setOcupado(false); }
   };
 
@@ -159,7 +161,7 @@ export function PanelIA() {
               {mensajes.length > 0 && <button type="button" className="pia-icono" onClick={nueva} aria-label="Nueva conversación" title="Nueva conversación"><Icon n="mas" className="" size={16} /></button>}
               <button type="button" className="pia-icono" onClick={() => { cerrarPanel(); window.setTimeout(reconstruir, reducido ? 0 : 280); }} aria-label="Ver cómo la IA arma tu inicio" title="Reconstruir el inicio (Alt + Shift + R)"><Icon n="refrescar" className="" size={16} /></button>
               <button type="button" className="pia-icono" onClick={() => { cerrarPanel(); nav(hilo ? `/asistente/${hilo}` : '/asistente'); }} aria-label="Abrir en pantalla completa" title="Pantalla completa"><Icon n="externo" className="" size={16} /></button>
-              <button type="button" className="pia-icono" onClick={cerrarPanel} aria-label="Cerrar Omnegia IA" title="Cerrar (Esc)"><Icon n="x" className="" size={16} /></button>
+              <button type="button" className="pia-icono" data-sin-tap onClick={cerrarPanel} aria-label="Cerrar Omnegia IA" title="Cerrar (Esc)"><Icon n="x" className="" size={16} /></button>
             </span>
           </header>
 
@@ -198,7 +200,7 @@ export function PanelIA() {
           <form className="pia-composer" onSubmit={enviar}>
             <div className="as-caja">
               <textarea ref={campo} rows={1} value={q} onChange={(e) => setQ(e.target.value.slice(0, MAX))} onKeyDown={teclas} maxLength={MAX} placeholder="Pregunta por ventas, citas, clientes… o «¿cómo hago…?»" aria-label="Pregunta a Omnegia IA" />
-              <button type="submit" className="composer-send" disabled={ocupado || !q.trim()} aria-label={ocupado ? 'Trabajando en la respuesta' : 'Preguntar'}>
+              <button type="submit" className="composer-send" data-sin-tap disabled={ocupado || !q.trim()} aria-label={ocupado ? 'Trabajando en la respuesta' : 'Preguntar'}>
                 {ocupado ? <OrbeCara tamano={22} cara="pensando" /> : <Icon n="enviar" size={18} className="" />}
               </button>
             </div>

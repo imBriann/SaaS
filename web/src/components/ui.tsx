@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useRef, useSt
 import { Link } from 'react-router-dom';
 import { Icon } from './icons';
 import { ApiError, fechaHora, num } from '../api';
+import { sonar } from '../lib/sonido';
 export type { ApiError };
 
 // ---------------------------------------------------------------- datos
@@ -32,6 +33,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [t, setT] = useState<{ m: string; err?: boolean } | null>(null);
   const show = useCallback((m: string, err?: boolean) => {
     setT({ m, err });
+    sonar(err ? 'error' : 'ok');
     setTimeout(() => setT(null), err ? 6000 : 3200);
   }, []);
   return (

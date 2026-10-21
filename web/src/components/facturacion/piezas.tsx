@@ -2,6 +2,7 @@ import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type ReactNo
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Contador } from '../Movimiento';
+import { sonar } from '../../lib/sonido';
 
 /**
  * Piezas animadas de planes y facturación. Solo decoran datos reales que llegan del servidor:
@@ -66,6 +67,13 @@ export function CodigoBarras({ valor }: { valor: string }) {
  */
 export function Impresora({ clave, children, sello, tono = 'claro', luz = true }: { clave: string; children: ReactNode; sello?: string | null; tono?: 'claro' | 'oscuro'; luz?: boolean }) {
   const reducido = useReducedMotion();
+  // El cabezal suena mientras sale el papel y el sello golpea al final.
+  useEffect(() => {
+    sonar('impresora');
+    if (!sello) return;
+    const t = window.setTimeout(() => sonar('sello'), reducido ? 200 : 1250);
+    return () => window.clearTimeout(t);
+  }, [clave]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className={`impresora impresora-${tono}`}>
       <div className="impresora-ranura" aria-hidden="true">{luz && <span className="impresora-luz" />}</div>
@@ -128,6 +136,7 @@ export function Confeti({ disparo }: { disparo: number }) {
   const reducido = useReducedMotion();
   useEffect(() => {
     const c = ref.current;
+    if (disparo) { sonar('exito'); window.setTimeout(() => sonar('confeti'), 250); }
     if (!disparo || reducido || !c) return;
     const ctx = c.getContext('2d');
     if (!ctx) return;
@@ -208,6 +217,12 @@ export function BarraDias({ inicio, fin }: { inicio: string; fin: string }) {
 /** Anillo segmentado de días de gracia: se enciende segmento por segmento y el número cuenta hasta su valor. */
 export function AnilloGracia({ total, restantes, texto }: { total: number; restantes: number; texto: string }) {
   const reducido = useReducedMotion();
+  // Cada segmento que se enciende hace «tic», como un contador.
+  useEffect(() => {
+    if (reducido) return;
+    const ts = Array.from({ length: restantes }, (_, i) => window.setTimeout(() => sonar('tick'), 150 + i * 90));
+    return () => ts.forEach((t) => window.clearTimeout(t));
+  }, [restantes, reducido]);
   const R = 62, C = 2 * Math.PI * R;
   const hueco = 9;
   const largo = C / total - hueco;
@@ -237,6 +252,7 @@ export function AvisoDeshacer({ aviso, onCerrar }: { aviso: { id: number; texto:
   const reducido = useReducedMotion();
   useEffect(() => {
     if (!aviso) return;
+    sonar('ok');
     const t = window.setTimeout(onCerrar, aviso.accion ? 9000 : 5000);
     return () => window.clearTimeout(t);
   }, [aviso?.id]); // eslint-disable-line react-hooks/exhaustive-deps

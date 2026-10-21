@@ -7,6 +7,8 @@ import { Icon } from './icons';
 import { Markdown } from './Markdown';
 import { OrbeCara, useCaraIA, type Cara } from './ia/OrbeCara';
 import '../asistente-publico.css';
+import { sonar } from '../lib/sonido';
+import { SonidoBoton } from './SonidoBoton';
 
 /**
  * Omnegia IA en el sitio público. La primera vez aparece en el centro de la bienvenida con una entrada llamativa,
@@ -43,13 +45,13 @@ export function AsistentePublico() {
   const terminar = (abrir: boolean) => {
     guardar(CLAVE_BIENVENIDA, '1', w?.localStorage);
     setFase('lista');
-    if (abrir) window.setTimeout(() => setAbierto(true), 380);
+    if (abrir) window.setTimeout(() => { sonar('abrir'); setAbierto(true); }, 380);
   };
   return createPortal(
     <>
       <AnimatePresence>{fase === 'bienvenida' && <Bienvenida key="bienvenida" onTerminar={terminar} />}</AnimatePresence>
-      {fase === 'lista' && <Lanzador abierto={abierto} onAbrir={() => setAbierto((a) => !a)} />}
-      <AnimatePresence>{abierto && <Chat key="chat" onCerrar={() => setAbierto(false)} />}</AnimatePresence>
+      {fase === 'lista' && <Lanzador abierto={abierto} onAbrir={() => setAbierto((a) => { sonar(a ? 'cerrar' : 'abrir'); return !a; })} />}
+      <AnimatePresence>{abierto && <Chat key="chat" onCerrar={() => { sonar('cerrar'); setAbierto(false); }} />}</AnimatePresence>
     </>, document.body,
   );
 }
@@ -62,6 +64,9 @@ function Bienvenida({ onTerminar }: { onTerminar: (abrir: boolean) => void }) {
   const [destino, setDestino] = useState({ x: 0, y: 0 });
   const zona = useRef<HTMLDivElement>(null);
   const cara: Cara = saliendo ? 'feliz' : paso === 0 ? 'feliz' : paso === PRESENTACION.length - 1 ? 'atenta' : 'hablando';
+  // Entrada con brillo y una burbuja por cada frase (el navegador solo deja sonar tras el primer gesto).
+  useEffect(() => { sonar('magia'); }, []);
+  useEffect(() => { if (paso > 0) sonar('burbuja'); }, [paso]);
   useEffect(() => {
     if (saliendo) return;
     if (paso >= PRESENTACION.length - 1) return;
@@ -75,6 +80,7 @@ function Bienvenida({ onTerminar }: { onTerminar: (abrir: boolean) => void }) {
     const cx = r ? r.left + r.width / 2 : window.innerWidth / 2, cy = r ? r.top + r.height / 2 : window.innerHeight / 2;
     setDestino({ x: window.innerWidth - 44 - cx, y: window.innerHeight - 44 - cy });
     setSaliendo(true);
+    sonar('swoosh');
     window.setTimeout(() => onTerminar(abrir), reducido ? 150 : 900);
   };
   // Tras la última frase, se despide solo si la persona no hace nada.
@@ -130,8 +136,8 @@ function Bienvenida({ onTerminar }: { onTerminar: (abrir: boolean) => void }) {
 
         {!saliendo && (
           <motion.div className="apub-acciones" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reducido ? 0 : 1.1 }}>
-            <button type="button" className="apub-btn primario" onClick={() => salir(true)}><Icon n="ia" className="" size={16} />Preguntar algo ahora</button>
-            <button type="button" className="apub-btn" onClick={() => salir(false)}>Explorar por mi cuenta</button>
+            <button type="button" className="apub-btn primario" onClick={() => salir(true)} data-sin-tap><Icon n="ia" className="" size={16} />Preguntar algo ahora</button>
+            <button type="button" className="apub-btn" onClick={() => salir(false)} data-sin-tap>Explorar por mi cuenta</button>
           </motion.div>
         )}
       </div>
@@ -158,7 +164,7 @@ function Escrito({ texto }: { texto: string }) {
 function Lanzador({ abierto, onAbrir }: { abierto: boolean; onAbrir: () => void }) {
   const reducido = useReducedMotion();
   return (
-    <motion.button type="button" className={`apub-lanzador ${abierto ? 'abierto' : ''}`} onClick={onAbrir} aria-expanded={abierto} aria-label={abierto ? 'Cerrar el chat de Omnegia IA' : 'Abrir el chat de Omnegia IA'}
+    <motion.button type="button" className={`apub-lanzador ${abierto ? 'abierto' : ''}`} onClick={onAbrir} data-sin-tap aria-expanded={abierto} aria-label={abierto ? 'Cerrar el chat de Omnegia IA' : 'Abrir el chat de Omnegia IA'}
       initial={reducido ? { opacity: 0 } : { scale: 0, opacity: 0, rotate: -90 }} animate={{ scale: 1, opacity: 1, rotate: 0 }} transition={{ type: 'spring', stiffness: 260, damping: 16 }}
       whileHover={reducido ? undefined : { scale: 1.06 }} whileTap={reducido ? undefined : { scale: 0.94 }}>
       {!abierto && !reducido && <span className="apub-halo" aria-hidden="true" />}
@@ -206,15 +212,16 @@ function Chat({ onCerrar }: { onCerrar: () => void }) {
     // La conversación del lado del servidor empieza con la persona.
     while (historia.length && historia[0].rol !== 'persona') historia.shift();
     nuevo({ rol: 'persona', texto: t });
+    sonar('enviar'); window.setTimeout(() => sonar('pensar'), 320);
     setOcupado(true);
     try {
       const r = await api.post<any>('/api/publico/asistente', { mensajes: historia });
       nuevo({ rol: 'asistente', texto: r.respuesta, enlaces: r.enlaces, sugerencias: r.sugerencias, siguiente: r.siguiente });
       if (r.siguiente === 'abrir_asesor') abrirAsesor();
-      setRespuestas((n) => n + 1);
+      setRespuestas((n) => n + 1); sonar('recibir');
     } catch (e) {
       nuevo({ rol: 'asistente', texto: e instanceof ApiError && e.status === 400 ? e.message : 'No pude responder en este momento. Intenta de nuevo o habla con un asesor.', siguiente: 'ofrecer_asesor' });
-      setFallos((n) => n + 1);
+      setFallos((n) => n + 1); sonar('error');
     } finally { setOcupado(false); }
   };
   const enviarForm = (e: FormEvent) => { e.preventDefault(); enviar(texto); };
@@ -226,7 +233,8 @@ function Chat({ onCerrar }: { onCerrar: () => void }) {
       <header className="apub-chat-cab">
         <OrbeCara tamano={42} cara={cara} etiqueta="Omnegia IA" />
         <div><b>Omnegia IA</b><span><i className="apub-vivo" aria-hidden="true" />{ocupado ? 'Pensando…' : 'Responde con información verificada'}</span></div>
-        <button type="button" className="apub-cerrar" onClick={onCerrar} aria-label="Cerrar el chat"><Icon n="x" className="" size={16} /></button>
+        <SonidoBoton className="apub-cerrar" size={15} />
+        <button type="button" className="apub-cerrar" onClick={onCerrar} aria-label="Cerrar el chat" data-sin-tap><Icon n="x" className="" size={16} /></button>
       </header>
       <div className="apub-lista" ref={lista} aria-live="polite">
         {msgs.map((m, i) => (
@@ -246,7 +254,7 @@ function Chat({ onCerrar }: { onCerrar: () => void }) {
       <form className="apub-entrada" onSubmit={enviarForm}>
         <textarea ref={entrada} rows={1} maxLength={1200} value={texto} placeholder="Escribe tu pregunta…" aria-label="Tu pregunta"
           onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(texto); } }} />
-        <button type="submit" className="apub-enviar" disabled={!texto.trim() || ocupado} aria-label="Enviar"><Icon n="enviar" className="" size={17} /></button>
+        <button type="submit" className="apub-enviar" data-sin-tap disabled={!texto.trim() || ocupado} aria-label="Enviar"><Icon n="enviar" className="" size={17} /></button>
       </form>
       <p className="apub-nota">No compartas contraseñas ni datos de tarjetas. La IA puede equivocarse: confirma lo importante con un asesor.</p>
     </motion.section>
@@ -264,10 +272,10 @@ function FormAsesor({ conversacion, mensaje, onEnviado }: { conversacion: { rol:
     setEstado({ enviando: true });
     try {
       const r = await api.post<any>('/api/publico/asesor', { nombre: f.nombre, email: f.email, telefono: f.telefono, empresa: f.empresa, mensaje: f.mensaje, acepta_datos: f.acepta, conversacion: conversacion.slice(-12) });
-      setEstado({ ok: r.numero });
+      setEstado({ ok: r.numero }); sonar('exito');
       // En la conversación guardada queda la confirmación, no el formulario (no se reenvía al volver).
       window.setTimeout(() => onEnviado(`✅ Listo. Un asesor te escribirá a **${f.email}**. Tu radicado es **${r.numero}**; te enviamos la confirmación por correo.`), 2500);
-    } catch (err) { setEstado({ error: (err as Error).message }); }
+    } catch (err) { setEstado({ error: (err as Error).message }); sonar('error'); }
   };
   return (
     <form className="apub-asesor" onSubmit={enviar}>
