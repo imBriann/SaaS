@@ -23,6 +23,8 @@ export interface Recibo {
   pendiente?: { estado: string; expira_en: string } | null;
   /** Qué abarcó la consulta (fechas y conteo), para agrupar los recibos en el panel. */
   alcance?: { fecha?: string; desde?: string; hasta?: string; periodo?: string; dias?: number; encontrados?: number };
+  /** Guía en pantalla que preparó el asistente (identificador del catálogo de guías). */
+  guia?: string;
 }
 export interface MensajeHilo { id: string; orden: number; rol: 'user' | 'assistant'; contenido: string; ejecuciones: Recibo[]; creado_en: string }
 

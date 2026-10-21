@@ -254,6 +254,7 @@
         "consultar_catalogo",
         "consumo_del_plan",
         "ayuda_plataforma",
+        "mostrar_guia",
         "crear_item_catalogo",
         "editar_item_catalogo"
       ],

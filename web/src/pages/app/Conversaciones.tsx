@@ -34,9 +34,9 @@ export function Conversaciones() {
             </div>
             {!data ? <Cargando /> : data.conversaciones.length === 0 ? vacio : (
               <ul className="lista-conv" aria-label="Conversaciones">
-                {data.conversaciones.map((c: any) => (
+                {data.conversaciones.map((c: any, i: number) => (
                   <li key={c.id}>
-                    <Link to={`/conversaciones/${c.id}`} className={`conv-fila ${c.sin_leer ? 'sin-leer' : ''}`}>
+                    <Link to={`/conversaciones/${c.id}`} className={`conv-fila ${c.sin_leer ? 'sin-leer' : ''}`} data-guia={i === 0 ? 'conv/fila' : undefined}>
                       <span className="conv-quien"><b className="cortar">{c.sin_leer && <span className="conv-nuevo" aria-label="Sin leer" />}{c.cliente}</b><span className="tenue peq-txt">{hace(c.actualizado_en)}</span></span>
                       <span className="conv-ultimo cortar">{c.ultimo}</span>
                       <span className="conv-estado">
@@ -60,9 +60,9 @@ export function Conversaciones() {
               </div>
               {!data ? <Cargando /> : data.conversaciones.length === 0 ? vacio : (
                 <ul className="lista-conv compacta">
-                  {data.conversaciones.map((c: any) => (
+                  {data.conversaciones.map((c: any, i: number) => (
                     <li key={c.id}>
-                      <Link to={`/conversaciones/${c.id}`} className={`conv-fila ${c.id === id ? 'sel' : ''} ${c.sin_leer && c.id !== id ? 'sin-leer' : ''}`} aria-current={c.id === id ? 'page' : undefined}>
+                      <Link to={`/conversaciones/${c.id}`} className={`conv-fila ${c.id === id ? 'sel' : ''} ${c.sin_leer && c.id !== id ? 'sin-leer' : ''}`} aria-current={c.id === id ? 'page' : undefined} data-guia={i === 0 ? 'conv/fila' : undefined}>
                         <span className="conv-quien"><b className="cortar">{c.sin_leer && c.id !== id && <span className="conv-nuevo" aria-label="Sin leer" />}{c.cliente}</b><span className="tenue peq-txt">{hace(c.actualizado_en)}</span></span>
                         <span className="conv-ultimo cortar">{c.ultimo}</span>
                         <span className="conv-estado">{c.radicado && c.estado_caso !== 'CERRADO' ? <Estado v={c.estado_caso} /> : <Estado v={c.estado} />}<Sla c={c} /></span>
@@ -188,7 +188,7 @@ function Detalle({ id, onCambio, volver }: { id: string; onCambio: () => void; v
         ) : !puedeResponder ? (
           <div className="composer"><span className="tenue peq-txt fila"><Icon n="candado" className="" size={14} />{s.solo_lectura ? 'Suscripción suspendida: puedes leer el hilo, pero no responder.' : 'Tu rol puede leer esta conversación, pero no responder.'}</span></div>
         ) : (
-          <div className={`composer ${nota ? 'nota' : ''}`}>
+          <div className={`composer ${nota ? 'nota' : ''}`} data-guia="conv/composer">
             <div className="fila entre envolver" style={{ gap: 8 }}>
               <div className="tabs" role="group" aria-label="Tipo de mensaje">
                 <button type="button" className={!nota ? 'on' : ''} aria-pressed={!nota} onClick={() => setNota(false)}>Responder a {nombre}</button>
@@ -209,7 +209,7 @@ function Detalle({ id, onCambio, volver }: { id: string; onCambio: () => void; v
                   placeholder={nota ? 'Nota visible solo para el equipo' : `Escribe a ${nombre}. Sale por ${data.canal === 'WHATSAPP' ? 'WhatsApp' : 'el canal web'} desde este hilo.`} aria-label={nota ? 'Nota interna' : `Respuesta a ${data.cliente}`} />
                 <div className="fila entre envolver" style={{ gap: 8 }}>
                   <span className="tenue peq-txt ayuda-composer" style={{ maxWidth: '60ch' }}>{nota ? 'El cliente no recibe la nota.' : data.control === 'AI' ? 'Al responder, tomas la conversación: la IA deja de contestar y queda un radicado a tu nombre.' : 'Responde siempre desde aquí: así el hilo y el tiempo de respuesta quedan registrados.'}</span>
-                  <button className="btn primario" style={{ marginLeft: 'auto' }} disabled={ocupado || !texto.trim()} onClick={enviar}><Icon n={nota ? 'nota' : 'enviar'} className="" size={14} /> {nota ? 'Guardar nota' : 'Enviar'}</button>
+                  <button className="btn primario" data-guia="conv/enviar" style={{ marginLeft: 'auto' }} disabled={ocupado || !texto.trim()} onClick={enviar}><Icon n={nota ? 'nota' : 'enviar'} className="" size={14} /> {nota ? 'Guardar nota' : 'Enviar'}</button>
                 </div>
               </>
             )}

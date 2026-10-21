@@ -131,10 +131,14 @@ export async function avisos(tx: Tx, ctx: Ctx) {
     FROM conversation v JOIN customer c ON c.id=v.customer_id
     LEFT JOIN LATERAL (SELECT * FROM support_case s WHERE s.conversation_id=v.id ORDER BY creado_en DESC LIMIT 1) k ON true
     LEFT JOIN conversation_lectura l ON l.conversation_id=v.id AND l.user_id=$1
-    LEFT JOIN LATERAL (SELECT max(coalesce(m.ocurrido_en, m.creado_en)) AS en FROM message m WHERE m.conversation_id=v.id AND m.remitente='HUMAN' AND m.tipo<>'NOTA_INTERNA') h ON true
+    LEFT JOIN LATERAL (SELECT max(m.creado_en) FILTER (WHERE m.remitente='HUMAN' AND m.tipo<>'NOTA_INTERNA') AS humano,
+                              max(m.creado_en) FILTER (WHERE m.remitente='CUSTOMER') AS cliente
+                       FROM message m WHERE m.conversation_id=v.id) h ON true
     WHERE v.ultimo_mensaje_cliente_en > now() - interval '${DIAS_AVISO} days' ${filtro ? `AND ${filtro}` : ''}`;
   const nuevo = `v.ultimo_mensaje_cliente_en > coalesce(l.leido_en, 'epoch'::timestamptz)`;
-  const espera = `(v.estado='ESCALADA' AND v.ultimo_mensaje_cliente_en > coalesce(h.en, 'epoch'::timestamptz))`;
+  // Quién habló último se decide por orden de llegada al servidor (creado_en), no por la hora que trae
+  // WhatsApp: si el reloj del cliente va adelantado, la respuesta de una persona igual cuenta como posterior.
+  const espera = `(v.estado='ESCALADA' AND h.cliente > coalesce(h.humano, 'epoch'::timestamptz))`;
   const r = (await tx.query(
     `SELECT count(*) FILTER (WHERE ${nuevo} OR ${espera})::int AS total, count(*) FILTER (WHERE ${nuevo})::int AS sin_leer, count(*) FILTER (WHERE ${espera})::int AS por_atender ${base}`, params)).rows[0];
   const ultima = (await tx.query(
@@ -209,8 +213,11 @@ export async function conversationDetail(tx: Tx, ctx: Ctx, id: string) {
   }
   // Abrirla la marca como leída para esta persona (el aviso del menú desaparece).
   if (ctx.actor.tipo === 'USUARIO' && ctx.actor.id) {
-    await tx.query(`INSERT INTO conversation_lectura (tenant_id, user_id, conversation_id) VALUES ($1,$2,$3)
-                    ON CONFLICT (tenant_id, user_id, conversation_id) DO UPDATE SET leido_en=now()`, [ctx.tenantId, ctx.actor.id, id]);
+    // Leída hasta su último mensaje: si la hora que manda WhatsApp va un poco adelantada respecto al
+    // servidor, now() quedaría antes del mensaje y la conversación seguiría «sin leer» tras abrirla.
+    await tx.query(`INSERT INTO conversation_lectura (tenant_id, user_id, conversation_id, leido_en)
+                    VALUES ($1,$2,$3, GREATEST(now(), coalesce((SELECT ultimo_mensaje_cliente_en FROM conversation WHERE id=$3), now())))
+                    ON CONFLICT (tenant_id, user_id, conversation_id) DO UPDATE SET leido_en=EXCLUDED.leido_en`, [ctx.tenantId, ctx.actor.id, id]);
   }
   const mensajes = (await tx.query(
     `SELECT m.id, m.remitente, m.tipo, m.contenido, m.metadatos, m.estado_entrega, m.error_entrega, coalesce(m.ocurrido_en, m.creado_en) AS creado_en, u.nombre AS autor

@@ -48,6 +48,11 @@ const P: Record<string, string> = {
   caja: 'M3 8h18v12H3zM3 8l2.5-4h13L21 8M9 12h6',
   compartir: 'M4 12v8h16v-8M12 3v13M7 8l5-5 5 5',
   telefono: 'M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z',
+  grafica: 'M4 20V11M10 20V5M16 20v-6M2 20h20',
+  documento: 'M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5M9 13h6M9 17h6',
+  externo: 'M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
+  refrescar: 'M20 11A8 8 0 0 0 5.1 7.1L4 8M4 4v4h4M4 13a8 8 0 0 0 14.9 3.9L20 16M20 20v-4h-4',
+  moneda: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v2M12 16v2',
 };
 
 export function Icon({ n, className = 'ico', size }: { n: keyof typeof P | string; className?: string; size?: number }) {

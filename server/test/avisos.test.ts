@@ -8,8 +8,10 @@ let admin: ReturnType<typeof api>;
 let laura: ReturnType<typeof api>;
 let gym: ReturnType<typeof api>;
 
+// WhatsApp manda la hora en segundos enteros y puede ir algo adelantada: se usa el segundo siguiente,
+// así el mensaje queda después de lo sembrado en este mismo segundo y se prueba el reloj adelantado.
 const entrante = async (pid: string, de: string, texto: string, id: string) => {
-  const body = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'x', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: pid }, contacts: [{ wa_id: de, profile: { name: 'Cliente Aviso' } }], messages: [{ from: de, id, timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: texto } }] } }] }] });
+  const body = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'x', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: pid }, contacts: [{ wa_id: de, profile: { name: 'Cliente Aviso' } }], messages: [{ from: de, id, timestamp: String(Math.floor(Date.now() / 1000) + 1), type: 'text', text: { body: texto } }] } }] }] });
   return E.app.inject({ method: 'POST', url: '/api/webhooks/whatsapp', payload: body, headers: { 'content-type': 'application/json', 'x-hub-signature-256': signMeta(body) } });
 };
 

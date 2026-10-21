@@ -386,6 +386,7 @@ const REGLAS_ASISTENTE = [
   'Para varios días seguidos (una semana, un mes) usa agenda_periodo en UNA consulta, no citas_del_dia día por día.',
   'Para mostrar cifras de forma visual escribe un bloque ```grafica con JSON: {"tipo":"barras"|"lineas"|"dona","titulo":"…","unidad":"COP"|"citas"|"unidades"|"%","etiquetas":["…"],"series":[{"nombre":"…","valores":[…]}]}. Hasta 3 series con un valor por etiqueta; la dona lleva una sola serie de hasta 8 partes. Barras para comparar, líneas para la evolución en el tiempo, dona para partes de un total.',
   'Si piden un informe o reporte, escribe un bloque ```informe con JSON: {"titulo":"…","periodo":"…","resumen":"…","cifras":[{"etiqueta":"…","valor":"…"}],"secciones":[{"titulo":"…","texto":"…","tabla":{"columnas":["…"],"filas":[["…"]]},"grafica":{…}}]}. El panel lo presenta con la plantilla de Omnegia y los datos de la empresa y permite descargarlo como imagen o PDF. Fuera del bloque escribe a lo sumo una frase.',
+  'Si preguntan CÓMO hacer algo en el panel y hay una guía para eso, usa mostrar_guia: el panel mueve a la IA por los botones reales y lo explica en pantalla. Entonces responde en una o dos frases (no repitas los pasos). Para dudas que ninguna guía cubre, usa ayuda_plataforma.',
   'Gráficas e informes llevan SOLO cifras que te dieron las herramientas en esta conversación; si faltan datos, consúltalos primero o dilo.',
 ].map((r) => `- ${r}`).join('\n');
 
@@ -464,7 +465,7 @@ export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string,
     async (name, args) => {
       avisar({ tipo: 'herramienta', herramienta: name, fase: 'inicio', alcance: alcanceDe(args) });
       const r = await db.withTenant(userCtx.tenantId, (tx) => evaluateAndExecute(
-        { tx, ctx, conversationId: null, customerId: null, solicitante: userCtx.actor.id, hiloId: prep.hilo?.id ?? null }, prep.agent, { nombre: name, argumentos: args }));
+        { tx, ctx, conversationId: null, customerId: null, solicitante: userCtx.actor.id, hiloId: prep.hilo?.id ?? null, permisosSolicitante: userCtx.permisos }, prep.agent, { nombre: name, argumentos: args }));
       ejecuciones.push(r);
       alcances.set(r, alcanceDe(args, r.resultado));
       avisar({ tipo: 'herramienta', herramienta: name, fase: 'fin', decision: r.decision });
@@ -475,6 +476,8 @@ export async function askAssistant(db: Database, userCtx: Ctx, pregunta: string,
   const recibos: Recibo[] = ejecuciones.map((e) => ({
     id: e.executionId, herramienta: e.herramienta, decision: e.decision, motivo: e.motivo, riesgo: e.riesgo,
     ...(alcances.get(e) ? { alcance: alcances.get(e) } : {}),
+    // Guía en pantalla que el panel puede reproducir (también al releer el hilo).
+    ...(e.herramienta === 'mostrar_guia' && e.decision === 'PERMITIDA' && (e.resultado as any)?.disponible ? { guia: String((e.resultado as any).guia) } : {}),
     ...(e.pendingActionId ? { pendiente_id: e.pendingActionId, resumen: e.resumen ?? null } : {}),
   }));
   // Sin código en el panel; las gráficas y los informes llegan validados.

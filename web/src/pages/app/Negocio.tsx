@@ -24,7 +24,7 @@ export function Clientes() {
       <Cabecera titulo="Clientes" sub="Encuentra sus datos, consulta su historial o añade un contacto.">
         <label className="buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Nombre, teléfono, correo o documento" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar clientes" /></label>
         <button className="btn" onClick={() => run(() => descargar('/api/t/clientes.csv', 'clientes.csv'), 'Exportación lista')}>Exportar</button>
-        <Escritura permiso="customer:write"><button className="btn primario" onClick={() => setNuevo(true)}><Icon n="mas" className="" size={16} />Nuevo cliente</button></Escritura>
+        <Escritura permiso="customer:write"><button className="btn primario" data-guia="clientes/nuevo" onClick={() => setNuevo(true)}><Icon n="mas" className="" size={16} />Nuevo cliente</button></Escritura>
       </Cabecera>
       <div className="contenido">
         {error && <ErrorCarga error={error} reintentar={recargar} />}
@@ -69,13 +69,13 @@ function FormCliente({ inicial, onCerrar, onGuardado }: { inicial?: any; onCerra
   const set = (k: string) => (e: any) => setF({ ...f, [k]: e.target.value });
   const campoError = (k: string) => (error?.details as any[])?.find?.((d: any) => d.campo === k)?.mensaje;
   return (
-    <Modal titulo={inicial ? 'Editar cliente' : 'Nuevo cliente'} onCerrar={onCerrar} pie={<><button className="btn" onClick={onCerrar}>Cancelar</button><button className="btn primario" disabled={ocupado || !f.nombre?.trim()} onClick={guardarCliente}>Guardar</button></>}>
+    <Modal titulo={inicial ? 'Editar cliente' : 'Nuevo cliente'} onCerrar={onCerrar} pie={<><button className="btn" onClick={onCerrar}>Cancelar</button><button className="btn primario" data-guia="cliente/guardar" disabled={ocupado || !f.nombre?.trim()} onClick={guardarCliente}>Guardar</button></>}>
       {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
-      <Campo etiqueta="Nombre o razón social" error={campoError('nombre')}><input className="input" value={f.nombre ?? ''} onChange={set('nombre')} autoComplete="off" /></Campo>
+      <Campo etiqueta="Nombre o razón social" guia="cliente/nombre" error={campoError('nombre')}><input className="input" value={f.nombre ?? ''} onChange={set('nombre')} autoComplete="off" /></Campo>
       <div className="grid g2">
-        <Campo etiqueta="Teléfono" ayuda="con indicativo; en Colombia basta el celular" error={campoError('telefono')}><input className="input" inputMode="tel" value={f.telefono ?? ''} onChange={set('telefono')} placeholder="300 123 4567" /></Campo>
+        <Campo etiqueta="Teléfono" guia="cliente/contacto" ayuda="con indicativo; en Colombia basta el celular" error={campoError('telefono')}><input className="input" inputMode="tel" value={f.telefono ?? ''} onChange={set('telefono')} placeholder="300 123 4567" /></Campo>
         <Campo etiqueta="Correo" ayuda="para enviar la factura" error={campoError('email')}><input className="input" type="email" value={f.email ?? ''} onChange={set('email')} /></Campo>
-        <Campo etiqueta="Tipo de documento"><select className="input" value={f.tipo_documento ?? ''} onChange={set('tipo_documento')}><option value="">Consumidor final</option><option value="CC">Cédula (CC)</option><option value="NIT">NIT</option><option value="CE">Cédula de extranjería</option><option value="PP">Pasaporte</option></select></Campo>
+        <Campo etiqueta="Tipo de documento" guia="cliente/documento"><select className="input" value={f.tipo_documento ?? ''} onChange={set('tipo_documento')}><option value="">Consumidor final</option><option value="CC">Cédula (CC)</option><option value="NIT">NIT</option><option value="CE">Cédula de extranjería</option><option value="PP">Pasaporte</option></select></Campo>
         <Campo etiqueta="Número" ayuda={f.tipo_documento === 'NIT' ? 'con dígito de verificación: 900123456-7' : undefined}><input className="input" value={f.numero_documento ?? ''} onChange={set('numero_documento')} disabled={!f.tipo_documento} /></Campo>
       </div>
     </Modal>
@@ -155,7 +155,7 @@ export function Ventas() {
         <label className="buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Número, cliente o factura" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar ventas" /></label>
         <button className="btn" onClick={() => setCaja(true)}><Icon n="caja" className="" size={16} />Caja del día</button>
         <button className="btn" onClick={() => run(() => descargar(`/api/t/ventas.csv`, `ventas-${hoyLocal()}.csv`), 'Exportación lista')}>Exportar</button>
-        <Escritura permiso="order:create" modulo="ventas"><button className="btn primario" onClick={() => setNueva(true)}><Icon n="mas" className="" size={16} />Registrar venta</button></Escritura>
+        <Escritura permiso="order:create" modulo="ventas"><button className="btn primario" data-guia="ventas/registrar" onClick={() => setNueva(true)}><Icon n="mas" className="" size={16} />Registrar venta</button></Escritura>
       </Cabecera>
       <div className="contenido">
         {error && <ErrorCarga error={error} reintentar={recargar} />}
@@ -172,7 +172,7 @@ export function Ventas() {
               <div className="tabla-wrap"><table className="tabla tabla-movil">
                 <thead><tr><th>#</th><th>Fecha</th><th>Cliente</th><th>Detalle</th><th className="num">Total</th><th>Pago</th><th>Factura</th></tr></thead>
                 <tbody className="entra-escalonado">{data.ventas.map((o: any, i: number) => (
-                  <tr key={o.id} className="clic" style={escalon(i)} onClick={() => nav(`/ventas/${o.id}`)}>
+                  <tr key={o.id} className="clic" style={escalon(i)} data-guia={i === 0 ? 'ventas/fila' : undefined} onClick={() => nav(`/ventas/${o.id}`)}>
                     <td data-etiqueta="Venta" className="principal"><Link to={`/ventas/${o.id}`} className="mono" onClick={(e) => e.stopPropagation()}>#{o.numero}</Link> {o.origen === 'AGENTE' && <Estado v="AGENTE" texto="IA" />}</td>
                     <td data-etiqueta="Fecha">{fechaHora(o.creado_en)}</td>
                     <td data-etiqueta="Cliente">{o.cliente}</td>
@@ -304,10 +304,10 @@ function NuevaVenta({ onCerrar, onGuardada }: { onCerrar: () => void; onGuardada
   }
   return (
     <Modal titulo="Registrar venta" className="modal-venta" onCerrar={onCerrar} pie={<><span className="tenue" style={{ marginRight: 'auto' }}>Total <b>{cop(total)}</b> (IVA incluido)</span><button className="btn" onClick={onCerrar}>Cancelar</button>
-      <button className="btn primario" disabled={ocupado || !cliente || !items.length || !!faltaStock || !!errorPago} onClick={registrar}>{ocupado ? 'Registrando…' : cobra && pago.metodo !== 'DESPUES' ? 'Registrar y cobrar' : 'Registrar por cobrar'}</button></>}>
+      <button className="btn primario" data-guia="venta/registrar" disabled={ocupado || !cliente || !items.length || !!faltaStock || !!errorPago} onClick={registrar}>{ocupado ? 'Registrando…' : cobra && pago.metodo !== 'DESPUES' ? 'Registrar y cobrar' : 'Registrar por cobrar'}</button></>}>
       {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
       <Campo etiqueta="Persona responsable de la venta" ayuda="Opcional. Permite atribuir la actividad y calcular la comisión configurada."><select className="input" value={responsable} onChange={e=>setResponsable(e.target.value)}><option value="">Sin atribuir</option>{responsables.data?.map(p=><option value={p.id} key={p.id}>{p.nombre}</option>)}</select></Campo>
-        <Campo etiqueta="Cliente">
+        <Campo etiqueta="Cliente" guia="venta/cliente">
         {cliente ? <span className="fila entre"><b>{cliente.nombre}</b><button type="button" className="btn peq sutil" onClick={() => setCliente(null)}>Cambiar</button></span> : nuevoCliente ? (
           <span className="col nuevo-cliente">
             <input className="input" value={nuevoCliente.nombre} maxLength={120} onChange={(e) => setNuevoCliente({ ...nuevoCliente, nombre: e.target.value })} placeholder="Nombre del cliente" aria-label="Nombre del cliente nuevo" />
@@ -324,7 +324,7 @@ function NuevaVenta({ onCerrar, onGuardada }: { onCerrar: () => void; onGuardada
           {puede('customer:write') && <button type="button" className="btn peq sutil" style={{ alignSelf: 'flex-start' }} onClick={() => setNuevoCliente({ nombre: /\d{5,}/.test(qCliente) ? '' : qCliente.trim(), telefono: /\d{5,}/.test(qCliente) ? qCliente.trim() : '' })}><Icon n="mas" className="" size={14} />{qCliente.trim() && !/\d{5,}/.test(qCliente) ? `Crear cliente «${qCliente.trim().slice(0, 40)}»` : 'Crear cliente nuevo'}</button>}
         </>}
       </Campo>
-      <div className="col">
+      <div className="col" data-guia="venta/items">
         <span className="etiqueta">Productos y servicios</span>
         {items.length === 0 && <span className="tenue peq-txt">Agrega al menos uno.</span>}
         {items.map((it, i) => {
@@ -341,7 +341,7 @@ function NuevaVenta({ onCerrar, onGuardada }: { onCerrar: () => void; onGuardada
         })}
         <button className="btn peq" style={{ alignSelf: 'flex-start' }} disabled={!activos.length} onClick={() => setItems([...items, { product_id: activos[0].id, cantidad: 1, descuento_pct: 0 }])}><Icon n="mas" className="" size={14} />Agregar ítem</button>
       </div>
-      {cobra ? (items.length > 0 && <CamposCobro metodos={metodos.data} total={total} valor={pago} onCambio={setPago} />)
+      {cobra ? (items.length > 0 && <div data-guia="venta/cobro"><CamposCobro metodos={metodos.data} total={total} valor={pago} onCambio={setPago} /></div>)
         : <p className="tenue peq-txt">La venta queda por cobrar. Tu rol no registra pagos: quien cobra lo hace desde el detalle de la venta.</p>}
     </Modal>
   );
@@ -372,9 +372,9 @@ function RegistrarPago({ venta, metodos, onCerrar, onHecho }: { venta: any; meto
   }
   return (
     <Modal titulo={`Registrar pago · venta #${venta.numero}`} className="modal-venta" onCerrar={onCerrar} pie={<><span className="tenue" style={{ marginRight: 'auto' }}>Total <b>{cop(venta.total)}</b></span><button className="btn" onClick={onCerrar}>Cancelar</button>
-      <button className="btn primario" disabled={ocupado || pago.metodo === 'DESPUES' || !!errorPago} onClick={guardar}>{ocupado ? 'Registrando…' : 'Registrar pago'}</button></>}>
+      <button className="btn primario" data-guia="pago/confirmar" disabled={ocupado || pago.metodo === 'DESPUES' || !!errorPago} onClick={guardar}>{ocupado ? 'Registrando…' : 'Registrar pago'}</button></>}>
       {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
-      <CamposCobro metodos={metodos} total={venta.total} valor={pago} onCambio={setPago} permitirDespues={false} enfocar />
+      <div data-guia="pago/metodo"><CamposCobro metodos={metodos} total={venta.total} valor={pago} onCambio={setPago} permitirDespues={false} enfocar /></div>
       {venta.enlaces?.some((l: any) => l.estado === 'ABIERTO') && <p className="tenue peq-txt">Al registrar el pago se cierra el enlace de pago abierto, para que no se cobre dos veces.</p>}
     </Modal>
   );
@@ -407,7 +407,7 @@ export function VentaDetalle() {
     <>
       <Cabecera titulo={`Venta #${data.numero}`} sub={<span className="fila envolver" style={{ gap: 8 }}>{fechaHora(data.creado_en)} · {data.cliente} <Estado v={data.origen} />{data.estado === 'ANULADA' && <Estado v="ANULADA" />}<Estado v={data.estado_pago === 'PAGADA' ? 'PAGADA' : data.estado === 'ANULADA' ? undefined : 'PENDIENTE'} texto={data.estado_pago === 'PAGADA' ? (vigente ? `Pagada · ${vigente.metodo_nombre.toLowerCase()}` : 'Pagada') : 'Por cobrar'} /></span>}>
         <Link to="/ventas" className="btn sutil"><Icon n="atras" className="" size={16} />Ventas</Link>
-        {porCobrar && <Escritura permiso="payment:register" modulo="ventas"><button className="btn primario" onClick={() => setCobrar(true)}><Icon n="efectivo" className="" size={16} />Registrar pago</button></Escritura>}
+        {porCobrar && <Escritura permiso="payment:register" modulo="ventas"><button className="btn primario" data-guia="venta/registrar-pago" onClick={() => setCobrar(true)}><Icon n="efectivo" className="" size={16} />Registrar pago</button></Escritura>}
         {porCobrar && <Escritura permiso="payment:link" modulo="ventas"><button className="btn" disabled={ocupado} onClick={pedirEnlace}>Enlace de pago</button></Escritura>}
         {data.estado === 'CONFIRMADA' && <Escritura permiso="order:void" modulo="ventas"><button className="btn peligro" onClick={() => setAnular(true)}>Anular</button></Escritura>}
       </Cabecera>
@@ -551,8 +551,8 @@ export function Inventario() {
     <>
       <Cabecera titulo="Catálogo e inventario" sub="Organiza tus productos y servicios. Revisa precios y existencias. Los precios incluyen IVA.">
         <label className="buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Buscar producto o categoría" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar en el catálogo" /></label>
-        <Escritura permiso="catalog:write"><button className="btn" onClick={() => setImportar(true)}><Icon n="subir" className="" size={16} />Importar</button></Escritura>
-        <Escritura permiso="catalog:write"><button className="btn primario" onClick={() => setEditar({ tipo: 'PRODUCTO', nombre: '', precio: '', iva_pct: 19, controla_stock: true, stock: 0, stock_minimo: 0, activo: true })}><Icon n="mas" className="" size={16} />Nuevo ítem</button></Escritura>
+        <Escritura permiso="catalog:write"><button className="btn" data-guia="catalogo/importar" onClick={() => setImportar(true)}><Icon n="subir" className="" size={16} />Importar</button></Escritura>
+        <Escritura permiso="catalog:write"><button className="btn primario" data-guia="catalogo/nuevo" onClick={() => setEditar({ tipo: 'PRODUCTO', nombre: '', precio: '', iva_pct: 19, controla_stock: true, stock: 0, stock_minimo: 0, activo: true })}><Icon n="mas" className="" size={16} />Nuevo ítem</button></Escritura>
       </Cabecera>
       <div className="contenido">
         {bajos.length > 0 && <Tarjeta nivel={3} titulo={<span className="fila"><Icon n="alerta" className="" size={16} /> {bajos.length === 1 ? '1 producto está' : `${bajos.length} productos están`} en o por debajo del mínimo</span>}><div className="fila envolver" style={{ gap: 6 }}>{bajos.map((p) => <span key={p.id} className="chip">{p.nombre}: <b>{p.stock}</b> / mín. {p.stock_minimo}</span>)}</div></Tarjeta>}
@@ -606,13 +606,13 @@ export function Inventario() {
         )}
       </div>
       {editar && (
-        <Modal titulo={editar.id ? `Editar ${editar.nombre}` : 'Nuevo ítem'} onCerrar={() => setEditar(null)} pie={<><button className="btn" onClick={() => setEditar(null)}>Cancelar</button><button className="btn primario" disabled={ocupado || !editar.nombre?.trim() || nombreSinLetras || editar.precio === ''} onClick={guardarProducto}>Guardar</button></>}>
+        <Modal titulo={editar.id ? `Editar ${editar.nombre}` : 'Nuevo ítem'} onCerrar={() => setEditar(null)} pie={<><button className="btn" onClick={() => setEditar(null)}>Cancelar</button><button className="btn primario" data-guia="item/guardar" disabled={ocupado || !editar.nombre?.trim() || nombreSinLetras || editar.precio === ''} onClick={guardarProducto}>Guardar</button></>}>
           {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
           {editar.id && problemas.get(editar.id) && <div className="aviso peq-txt"><Icon n="info" className="" size={14} /><span>{problemas.get(editar.id)!.map((x: any) => x.texto).join(' ')}</span></div>}
           <div className="grid g2">
-            <Campo etiqueta="Tipo"><select className="input" value={editar.tipo} disabled={!!editar.id} onChange={(e) => setEditar({ ...editar, tipo: e.target.value, controla_stock: e.target.value === 'PRODUCTO' })}><option value="SERVICIO">Servicio</option><option value="PRODUCTO">Producto</option></select></Campo>
-            <Campo etiqueta="Nombre" error={nombreSinLetras ? 'El nombre debe tener al menos una letra (por ejemplo «Corte clásico»).' : undefined}><input className="input" value={editar.nombre} maxLength={120} onChange={(e) => setEditar({ ...editar, nombre: e.target.value })} aria-invalid={nombreSinLetras} /></Campo>
-            <Campo etiqueta="Precio (IVA incluido)"><input className="input" inputMode="decimal" value={editar.precio} onChange={(e) => setEditar({ ...editar, precio: e.target.value.replace(/[^\d.]/g, '') })} /></Campo>
+            <Campo etiqueta="Tipo" guia="item/tipo"><select className="input" value={editar.tipo} disabled={!!editar.id} onChange={(e) => setEditar({ ...editar, tipo: e.target.value, controla_stock: e.target.value === 'PRODUCTO' })}><option value="SERVICIO">Servicio</option><option value="PRODUCTO">Producto</option></select></Campo>
+            <Campo etiqueta="Nombre" guia="item/nombre" error={nombreSinLetras ? 'El nombre debe tener al menos una letra (por ejemplo «Corte clásico»).' : undefined}><input className="input" value={editar.nombre} maxLength={120} onChange={(e) => setEditar({ ...editar, nombre: e.target.value })} aria-invalid={nombreSinLetras} /></Campo>
+            <Campo etiqueta="Precio (IVA incluido)" guia="item/precio"><input className="input" inputMode="decimal" value={editar.precio} onChange={(e) => setEditar({ ...editar, precio: e.target.value.replace(/[^\d.]/g, '') })} /></Campo>
             <Campo etiqueta="IVA"><select className="input" value={editar.iva_pct} onChange={(e) => setEditar({ ...editar, iva_pct: Number(e.target.value) })}><option value={0}>0 %</option><option value={5}>5 %</option><option value={19}>19 %</option></select></Campo>
             <Campo etiqueta="Categoría"><input className="input" value={editar.categoria ?? ''} maxLength={60} onChange={(e) => setEditar({ ...editar, categoria: e.target.value })} /></Campo>
             {editar.tipo === 'SERVICIO' ? <Campo etiqueta="Duración (min)"><input className="input" type="number" min={5} max={600} value={editar.duracion_min ?? 30} onChange={(e) => setEditar({ ...editar, duracion_min: e.target.value })} /></Campo>
@@ -672,7 +672,7 @@ function ImportarCatalogo({ onCerrar, onHecho }: { onCerrar: () => void; onHecho
       {!prev ? (
         <div className="col" style={{ gap: 12 }} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(!ocupado&&e.dataTransfer.files[0])subir(e.dataTransfer.files[0]);}}>
           <p className="sec">Sube un archivo .xlsx o .csv con tus productos y servicios. Detectamos las columnas; tú revisas antes de guardar.</p>
-          <label className="btn primario" style={{ alignSelf: 'flex-start' }}><Icon n="subir" className="" size={16} />{ocupado ? 'Leyendo…' : 'Elegir archivo'}<input type="file" accept=".xlsx,.csv" className="sr" onChange={(e) => e.target.files?.[0] && subir(e.target.files[0])} /></label>
+          <label className="btn primario" data-guia="importar/archivo" style={{ alignSelf: 'flex-start' }}><Icon n="subir" className="" size={16} />{ocupado ? 'Leyendo…' : 'Elegir archivo'}<input type="file" accept=".xlsx,.csv" className="sr" onChange={(e) => e.target.files?.[0] && subir(e.target.files[0])} /></label>
           <a className="peq-txt" href="/api/onboarding/plantilla-catalogo.xlsx">Descargar una plantilla de ejemplo</a>
         </div>
       ) : (
@@ -739,7 +739,7 @@ export function Agenda() {
           <input className="input selector-fecha" type="date" value={dia} onChange={(e) => e.target.value && setDia(e.target.value)} aria-label="Ir a una fecha" />
           <button className="btn icono" onClick={() => mover(1)} aria-label="Día siguiente"><Icon n="derecha" className="" size={16} /></button>
         </div>
-        <Escritura permiso="appointment:create" modulo="agenda"><button className="btn primario" onClick={() => setNueva(true)}><Icon n="mas" className="" size={16} />Nueva cita</button></Escritura>
+        <Escritura permiso="appointment:create" modulo="agenda"><button className="btn primario" data-guia="agenda/nueva" onClick={() => setNueva(true)}><Icon n="mas" className="" size={16} />Nueva cita</button></Escritura>
       </Cabecera>
       <div className="contenido">
         {error && <ErrorCarga error={error} reintentar={recargar} />}
@@ -850,7 +850,7 @@ function NuevaCita({ dia, cita, onCerrar, onCreada }: { dia: string; cita?: any;
   return (
     <Modal titulo={cita ? `Reprogramar · ${cita.cliente}` : 'Nueva cita'} onCerrar={onCerrar}>
       {!cita && (
-        <Campo etiqueta="Cliente">
+        <Campo etiqueta="Cliente" guia="cita/cliente">
           {cliente ? <span className="fila entre"><b>{cliente.nombre}</b><button type="button" className="btn peq sutil" onClick={() => setCliente(null)}>Cambiar</button></span> : <>
             <input className="input" type="search" placeholder="Busca por nombre, teléfono o documento" value={qCliente} onChange={(e) => setQCliente(e.target.value)} />
             <div className="opciones-busqueda" role="listbox" aria-label="Clientes encontrados">{clientes.data?.clientes?.slice(0, 6).map((c: any) => <button type="button" role="option" aria-selected="false" key={c.id} onClick={() => setCliente(c)}>{c.nombre}<span className="tenue peq-txt">{c.telefono ?? ''}</span></button>)}</div>
@@ -858,8 +858,8 @@ function NuevaCita({ dia, cita, onCerrar, onCreada }: { dia: string; cita?: any;
         </Campo>
       )}
       <div className="grid g2">
-        <Campo etiqueta="Servicio"><select className="input" value={f.product_id} disabled={!!cita} onChange={(e) => setF({ ...f, product_id: e.target.value })}><option value="">Elige…</option>{servicios.map((p) => <option key={p.id} value={p.id}>{p.nombre} · {p.duracion_min} min</option>)}</select></Campo>
-        <Campo etiqueta="Fecha"><input className="input" type="date" value={f.fecha} min={hoyLocal()} onChange={(e) => setF({ ...f, fecha: e.target.value })} /></Campo>
+        <Campo etiqueta="Servicio" guia="cita/servicio"><select className="input" value={f.product_id} disabled={!!cita} onChange={(e) => setF({ ...f, product_id: e.target.value })}><option value="">Elige…</option>{servicios.map((p) => <option key={p.id} value={p.id}>{p.nombre} · {p.duracion_min} min</option>)}</select></Campo>
+        <Campo etiqueta="Fecha" guia="cita/fecha"><input className="input" type="date" value={f.fecha} min={hoyLocal()} onChange={(e) => setF({ ...f, fecha: e.target.value })} /></Campo>
         <Campo etiqueta="Con"><select className="input" value={f.recurso} onChange={(e) => setF({ ...f, recurso: e.target.value })}><option value="">Cualquiera</option>{(recursos.data ?? []).filter((r) => r.activo).map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}</select></Campo>
       </div>
       {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}

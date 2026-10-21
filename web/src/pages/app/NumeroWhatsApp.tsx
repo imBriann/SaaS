@@ -82,7 +82,7 @@ function Inicio({ previa, onCreada }: { previa: C | null; onCreada: (c: C) => vo
     <div className="col num-inicio" style={{ gap: 16 }}>
       {previa?.estado === 'CANCELADO' && previa.accion_cliente === 'reembolso' && <Reembolso c={previa} />}
       {previa?.estado === 'CANCELADO' && previa.subestado === 'numero_no_disponible' && <div className="aviso" role="status"><Icon n="info" className="" size={16} />El número que elegiste ya no estaba disponible y no se hizo ningún cobro. Elige otro.</div>}
-      <div className="num-opciones" role="group" aria-label="Cómo quieres conectar WhatsApp">
+      <div className="num-opciones" role="group" aria-label="Cómo quieres conectar WhatsApp" data-guia="whatsapp/opciones">
         <TarjetaOpcion activa={modo === 'propio'} icono="conversaciones" titulo="Ya tengo un número" texto="Conecta el número de WhatsApp Business que ya usa tu negocio. Sin costo adicional." onClick={() => setModo(modo === 'propio' ? null : 'propio')} />
         <TarjetaOpcion activa={modo === 'nuevo'} icono="telefono" titulo="Necesito un número nuevo" texto="Elige un número, revisa el precio y Omnegia se encarga de comprarlo y activarlo." onClick={() => setModo(modo === 'nuevo' ? null : 'nuevo')} destacada />
       </div>

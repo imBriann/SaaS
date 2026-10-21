@@ -12,6 +12,7 @@ import { zonaDe } from '../core/tenant.js';
 import { cop } from '../lib/util.js';
 import { createPaymentLink } from '../modules/payments.js';
 import { cobradoPorMetodo } from '../modules/pagosVentas.js';
+import { GUIAS, IDS_GUIA } from './guias.js';
 
 /**
  * Registro de herramientas (PRO-SW-002 fig. 07a y contrato §7.1).
@@ -34,6 +35,8 @@ export interface ToolRuntime {
   /** Asistente del panel: persona que debe confirmar las acciones y su conversación con el asistente. */
   solicitante?: string | null;
   hiloId?: string | null;
+  /** Permisos propios de la persona que pregunta (las guías no ofrecen lo que su rol no puede hacer). */
+  permisosSolicitante?: ReadonlySet<string>;
 }
 
 export interface ToolDef<A extends z.ZodType = z.ZodType> {
@@ -321,6 +324,19 @@ export const TOOLS: ToolDef<any>[] = [
     args: z.object({ tema: z.enum(TEMAS_AYUDA) }).strict(),
     permiso: 'ai:assist', riesgo: 'lectura', efectos: [],
     run: async (a) => ({ tema: a.tema, guia: AYUDA[a.tema as (typeof TEMAS_AYUDA)[number]], verificada: true }),
+  }),
+  def({
+    nombre: 'mostrar_guia', version: '1.0.0', modulo: 'soporte',
+    descripcion: `Muestra una guía en pantalla: el panel lleva a la IA por los botones reales, paso a paso, para que la persona aprenda haciendo. Úsala cuando pregunten cómo hacer algo que esté en esta lista: ${IDS_GUIA.map((id) => `${id} (${GUIAS[id].para})`).join('; ')}. Después responde en una o dos frases sin repetir los pasos. Si devuelve disponible=false, explica el motivo.`,
+    args: z.object({ guia: z.enum(IDS_GUIA) }).strict(),
+    permiso: 'ai:assist', riesgo: 'lectura', efectos: [],
+    run: async (a, rt) => {
+      const g = GUIAS[a.guia];
+      const permisos = rt.permisosSolicitante ?? rt.ctx.permisos;
+      if (g.permiso && !permisos.has('*') && !permisos.has(g.permiso)) return { guia: a.guia, titulo: g.titulo, disponible: false, motivo: 'el rol de la persona no tiene ese permiso' };
+      if (g.modulo && !(await rt.tx.query(`SELECT 1 FROM tenant_module WHERE modulo=$1 AND activo`, [g.modulo])).rows.length) return { guia: a.guia, titulo: g.titulo, disponible: false, motivo: 'el módulo está desactivado' };
+      return { guia: a.guia, titulo: g.titulo, disponible: true };
+    },
   }),
   // ---- Catálogo desde el asistente: siempre con confirmación explícita de la persona.
   def({

@@ -4,7 +4,10 @@ import { api, fecha, guardar, setZona, slugDelHost, tenantSlug } from '../api';
 import { useApi, Medidor, Cargando, Modal, Campo, useAccion, CodigoOtp, useCuentaAtras, useToast } from './ui';
 import { Icon } from './icons';
 import { MARCA } from '../brand';
-import { WorkspaceBirth } from './WorkspaceBirth';
+import { Construccion } from './construccion/Construccion';
+import { IAProvider } from './ia/contexto';
+import { PanelIA, PildoraIA } from './ia/PanelIA';
+import { GuiaEnPantalla } from './ia/GuiaEnPantalla';
 
 export interface Sesion {
   usuario: { id: string; nombre: string; rol: string; rol_nombre: string; email: string | null; correo_verificado: boolean };
@@ -238,7 +241,7 @@ export function PanelLayout() {
   const salir = async (todas = false) => { await api.post(todas ? '/api/auth/logout-todas' : '/api/auth/logout').catch(() => {}); guardar('empresa', null); window.location.href = '/entrar'; };
   const marca = <span className="marca-negocio" aria-hidden="true">{t.logo_data_url ? <img src={t.logo_data_url} alt="" /> : t.tema?.monograma ?? t.nombre.slice(0, 2)}</span>;
   const enlace = (i: Item) => (
-    <NavLink key={i.to} to={i.to} end={i.to === '/'} className={({ isActive }) => `nav-item ${isActive ? 'activo' : ''}`}>
+    <NavLink key={i.to} to={i.to} end={i.to === '/'} className={({ isActive }) => `nav-item ${isActive ? 'activo' : ''}`} data-guia={`menu${i.to}`}>
       <Icon n={i.n} className="" size={18} />{i.t}{i.n === 'conversaciones' && pendientes > 0 && <Insignia n={pendientes} urgente={urgente} etiqueta={textoAviso} />}
     </NavLink>
   );
@@ -246,7 +249,8 @@ export function PanelLayout() {
 
   return (
     <SesionCtx.Provider value={{ s: data, puede, recargar }}>
-      <WorkspaceBirth nombre={t.nombre}>
+      <IAProvider>
+      <Construccion nombre={t.nombre}>
       <div className={`app ${navAbierta ? 'nav-abierta' : ''} ${completa ? 'app-completa' : ''}`}>
         <a className="saltar" href="#contenido">Saltar al contenido</a>
         <header className="barra-movil">
@@ -311,7 +315,7 @@ export function PanelLayout() {
 
         <nav className="tabbar" aria-label="Navegación principal">
           {movil.map((i) => (
-            <NavLink key={i.to} to={i.to} end={i.to === '/'} className={({ isActive }) => `tab ${isActive ? 'activo' : ''}`}>
+            <NavLink key={i.to} to={i.to} end={i.to === '/'} className={({ isActive }) => `tab ${isActive ? 'activo' : ''}`} data-guia={`menu${i.to}`}>
               <span className="tab-ico"><Icon n={i.n} className="" size={20} />{i.n === 'conversaciones' && pendientes > 0 && <Insignia n={pendientes} urgente={urgente} flotante />}</span>
               <span>{i.t}</span>{i.n === 'conversaciones' && pendientes > 0 && <span className="sr"> ({textoAviso})</span>}
             </NavLink>
@@ -323,7 +327,11 @@ export function PanelLayout() {
       </div>
       {contrasena && <CambiarContrasena onCerrar={() => setContrasena(false)} />}
       {veConversaciones && av && <AvisoEntrante ultima={av.ultima} />}
-      </WorkspaceBirth>
+      <PildoraIA />
+      <PanelIA />
+      <GuiaEnPantalla />
+      </Construccion>
+      </IAProvider>
     </SesionCtx.Provider>
   );
 }

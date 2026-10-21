@@ -94,7 +94,7 @@
     {
       "configuracion": "asistente",
       "rol": "agente_asistente",
-      "herramientas": ["resumen_ventas", "citas_del_dia", "agenda_periodo", "stock_bajo_minimo", "buscar_cliente", "consultar_catalogo", "consumo_del_plan", "ayuda_plataforma", "crear_item_catalogo", "editar_item_catalogo"],
+      "herramientas": ["resumen_ventas", "citas_del_dia", "agenda_periodo", "stock_bajo_minimo", "buscar_cliente", "consultar_catalogo", "consumo_del_plan", "ayuda_plataforma", "mostrar_guia", "crear_item_catalogo", "editar_item_catalogo"],
       "prompt_base": "Eres el asistente del dueño de la barbería dentro del panel. Responde con cifras concretas obtenidas de tus herramientas y explica de dónde salen. Si una pregunta no se puede responder con tus herramientas, dilo."
     },
     {

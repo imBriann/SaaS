@@ -56,38 +56,6 @@
 .finish-message p { line-height: 1.7; color: #625e71; }
 .finish-message .btn { margin: 14px 8px 0 0; }
 
-/* One-time introduction of the authenticated, mounted workspace. */
-.workspace-birth { min-height: 100dvh; }
-.birth-presentation { pointer-events: none; }
-.birth-veil { position: fixed; z-index: 110; inset: 0; background: #202136; opacity: 0; transition: opacity 800ms var(--ease-out); }
-[data-birth-stage="0"] .birth-veil { opacity: 1; }
-.birth-guide { position: fixed; z-index: 111; bottom: 24px; right: 24px; width: 340px; min-height: 108px; padding: 20px; display: flex; align-items: center; gap: 16px; border-radius: 14px; background: #202136; color: #efe8ff; box-shadow: 0 15px 45px -20px #17122466; opacity: 1; transform: translate(0, 0) scale(1); transition: transform 900ms var(--ease-out), opacity 240ms ease; }
-.birth-guide > div:last-child { display: grid; gap: 6px; min-width: 0; }
-.birth-guide b { font-weight: 500; font-size: 18px; line-height: 1.25; overflow-wrap: anywhere; }
-.birth-guide span { color: #c3bad6; font-size: 14px; line-height: 1.5; }
-.birth-guide-orb { flex: none; width: 64px; height: 64px; display: grid; place-items: center; }
-[data-birth-stage="0"] .birth-guide { transform: translate(calc(194px - 50vw), calc(78px - 50dvh)) scale(1.35); box-shadow: none; }
-[data-birth-stage="0"] .birth-guide-orb { transform: scale(1.5); }
-.birth-guide-orb { transition: transform 900ms var(--ease-out); }
-/* Cada acceso del menú nace por turnos cuando aparece la barra lateral. */
-.is-born:not([data-birth-stage="0"]) .lateral .nav-item { animation: birth-item 520ms var(--ease-out) both; }
-.is-born:not([data-birth-stage="0"]) .lateral .nav-item:nth-child(2) { animation-delay: 70ms; }
-.is-born:not([data-birth-stage="0"]) .lateral .nav-item:nth-child(3) { animation-delay: 140ms; }
-.is-born:not([data-birth-stage="0"]) .lateral .nav-item:nth-child(4) { animation-delay: 210ms; }
-.is-born:not([data-birth-stage="0"]) .lateral .nav-item:nth-child(5) { animation-delay: 280ms; }
-.is-born:not([data-birth-stage="0"]) .lateral .nav-item:nth-child(6) { animation-delay: 350ms; }
-.is-born:not([data-birth-stage="0"]) .lateral .nav-item:nth-child(n+7) { animation-delay: 420ms; }
-@keyframes birth-item { from { opacity: 0; transform: translateX(-14px); } }
-.is-born:is([data-birth-stage="3"], [data-birth-stage="4"]) .workspace-personalized { box-shadow: 0 0 0 2px color-mix(in srgb, var(--acento) 45%, transparent), 0 24px 50px -30px color-mix(in srgb, var(--acento) 60%, transparent); }
-[data-birth-stage="5"] .birth-guide { opacity: 0; transform: translateY(10px); }
-.is-born .lateral, .is-born .barra-movil, .is-born .tabbar, .is-born .cabecera, .is-born .workspace-personalized, .is-born .contenido > .kpis, .is-born .contenido > .grid, .is-born .contenido > .tarjeta { transition: opacity 1000ms var(--ease-out), transform 1000ms var(--ease-out); }
-.is-born[data-birth-stage="0"] .lateral { opacity: 0; transform: translateX(-35px); visibility: hidden; }
-.is-born[data-birth-stage="0"] .barra-movil, .is-born[data-birth-stage="0"] .tabbar { opacity: 0; visibility: hidden; }
-.is-born:is([data-birth-stage="0"], [data-birth-stage="1"]) .cabecera { opacity: 0; transform: translateY(20px); visibility: hidden; }
-.is-born:is([data-birth-stage="0"], [data-birth-stage="1"], [data-birth-stage="2"]) .workspace-personalized,
-.is-born:is([data-birth-stage="0"], [data-birth-stage="1"], [data-birth-stage="2"]) .contenido > .kpis { opacity: 0; transform: translateY(26px); visibility: hidden; }
-.is-born:is([data-birth-stage="0"], [data-birth-stage="1"], [data-birth-stage="2"], [data-birth-stage="3"]) .contenido > .grid,
-.is-born:is([data-birth-stage="0"], [data-birth-stage="1"], [data-birth-stage="2"], [data-birth-stage="3"]) .contenido > .tarjeta { opacity: 0; transform: translateY(30px); visibility: hidden; }
 .workspace-personalized { position: relative; display: flex; align-items: flex-start; gap: 22px; padding: 24px 26px 26px; margin-bottom: 24px; background: var(--superficie, #fff); border: 1px solid var(--borde); border-radius: 14px; overflow: hidden; transition: box-shadow 700ms var(--ease-out); }
 .workspace-personalized::before { content: ''; position: absolute; inset: 0 0 auto; height: 3px; background: linear-gradient(90deg, var(--acento), color-mix(in srgb, var(--acento) 35%, #22d3ee)); }
 .workspace-personalized-tag { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 14px; font-weight: 550; color: var(--acento-texto, var(--acento)); }
@@ -134,16 +102,12 @@
   .finish-payment-meta dd { text-align: left; }
   .finish-real-steps { gap: 13px 10px; }
   .finish-real-steps li { font-size: 11px; gap: 6px; }
-  .birth-guide { bottom: 80px; right: 16px; width: calc(100vw - 32px); min-height: 96px; padding: 14px 18px; gap: 12px; }
-  .birth-guide-orb { width: 56px; height: 56px; }
-  [data-birth-stage="0"] .birth-guide { transform: translateY(calc(128px - 50dvh)) scale(1); }
   .workspace-personalized { display: block; }
   .workspace-personalized > canvas { margin-bottom: 10px; }
   .workspace-personalized ul { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .is-born .lateral .nav-item { animation: none !important; }
-  .finish-orb, .birth-guide, .birth-guide-orb, .birth-veil, .is-born .lateral, .is-born .barra-movil, .is-born .tabbar, .is-born .cabecera, .is-born .workspace-personalized, .is-born .contenido > .kpis, .is-born .contenido > .grid, .is-born .contenido > .tarjeta { transition: opacity 120ms ease; transform: none; }
+  .finish-orb { transition: opacity 120ms ease; transform: none; }
   .finish-orb.is-working { transform: none; }
   .finish-create-button:active:not(:disabled) { transform: none; }
 }

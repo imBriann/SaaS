@@ -131,13 +131,84 @@ export async function dashboard(tx: Tx, ctx: Ctx) {
   const cobros = can(ctx, 'order:read') ? (await tx.query(
     `SELECT metodo, count(*)::int AS n, coalesce(sum(monto),0)::float AS total FROM order_payment WHERE estado='REGISTRADO' AND creado_en >= $1 AND creado_en < $2 GROUP BY metodo`, [desde, hasta])).rows : [];
   const cobro = (m: string) => cobros.find((c: any) => c.metodo === m)?.total ?? 0;
+  const vivo = await tableroVivo(tx, ctx, hoy, zona);
   return {
+    ...vivo,
     fecha: hoy, zona,
     cifras: { ...cifras, ventas_hoy: Number(cifras.ventas_hoy), ventas_semana: Number(cifras.ventas_semana), por_cobrar: Number(cifras.por_cobrar) },
     cobros_hoy: can(ctx, 'order:read') ? { efectivo: cobro('EFECTIVO'), transferencia: cobro('TRANSFERENCIA'), datafono: cobro('DATAFONO'), pasarela: cobro('PASARELA'), total: cobros.reduce((a: number, c: any) => a + c.total, 0), pagos: cobros.reduce((a: number, c: any) => a + c.n, 0) } : null,
     atencion, hilo, agenda, fiscal, ingresos, ocupacion,
     pasos: can(ctx, 'tenant:configure') ? await primerosPasos(tx, ctx) : null,
     consumo: can(ctx, 'usage:read') ? await allQuotas(tx, ctx.tenantId) : null,
+  };
+}
+
+/**
+ * Cifras del tablero de Inicio que se arma en vivo: el mes contra el mismo tramo del mes anterior, la
+ * semana contra la anterior, la serie de 30 días, la actividad de WhatsApp por hora y los últimos pagos.
+ * Todo sale de la base; un día o una hora sin movimiento vale 0 (no se omite ni se rellena).
+ */
+async function tableroVivo(tx: Tx, ctx: Ctx, hoy: string, zona: string) {
+  const ventas = can(ctx, 'order:read');
+  const inicioMes = `${hoy.slice(0, 8)}01`;
+  const [anio, mes] = [Number(hoy.slice(0, 4)), Number(hoy.slice(5, 7))];
+  const mesPrevio = mes === 1 ? `${anio - 1}-12-01` : `${anio}-${String(mes - 1).padStart(2, '0')}-01`;
+  const diasMesPrevio = new Date(Date.UTC(anio, mes - 1, 0)).getUTCDate();
+  // Mismo tramo del mes anterior: del 1 al mismo día de hoy (o al último, si ese mes es más corto).
+  const finTramoPrevio = addDays(mesPrevio, Math.min(Number(hoy.slice(8, 10)), diasMesPrevio));
+  const d = (f: string) => rangoDia(f, zona).desde.toISOString();
+  const [desdeMes, desdePrevio, hastaPrevio, semana, semanaPrevia, hace30, manana] =
+    [d(inicioMes), d(mesPrevio), d(finTramoPrevio), d(addDays(hoy, -6)), d(addDays(hoy, -13)), d(addDays(hoy, -29)), d(addDays(hoy, 1))];
+
+  let resumenMes = null;
+  let serieMes: { dia: string; total: number }[] = [];
+  let pagos: any[] = [];
+  if (ventas) {
+    const m = (await tx.query(
+      `SELECT coalesce(sum(total) FILTER (WHERE creado_en >= $1), 0)::float AS ventas,
+              count(*) FILTER (WHERE creado_en >= $1)::int AS n,
+              coalesce(sum(total) FILTER (WHERE creado_en >= $2 AND creado_en < $3), 0)::float AS ventas_previo,
+              coalesce(sum(total) FILTER (WHERE creado_en >= $4), 0)::float AS semana,
+              count(*) FILTER (WHERE creado_en >= $4)::int AS n_semana,
+              coalesce(sum(total) FILTER (WHERE creado_en >= $5 AND creado_en < $4), 0)::float AS semana_previa,
+              count(*) FILTER (WHERE creado_en >= $5 AND creado_en < $4)::int AS n_semana_previa
+       FROM "order" WHERE estado='CONFIRMADA' AND creado_en >= least($2::timestamptz, $5::timestamptz) AND creado_en < $6`,
+      [desdeMes, desdePrevio, hastaPrevio, semana, semanaPrevia, manana])).rows[0];
+    // Lo cobrado de las ventas de este mes (no lo que entró este mes por ventas anteriores): nunca pasa del 100 %.
+    const cobrado = (await tx.query(
+      `SELECT coalesce(sum(p.monto), 0)::float AS total FROM order_payment p JOIN "order" o ON o.id=p.order_id
+       WHERE p.estado='REGISTRADO' AND o.estado='CONFIRMADA' AND o.creado_en >= $1`, [desdeMes])).rows[0].total;
+    resumenMes = { ...m, cobrado, ticket: m.n ? m.ventas / m.n : 0, ticket_semana: m.n_semana ? m.semana / m.n_semana : 0, ticket_semana_previa: m.n_semana_previa ? m.semana_previa / m.n_semana_previa : 0 };
+    const porDia = new Map((await tx.query(
+      `SELECT to_char(creado_en AT TIME ZONE $2, 'YYYY-MM-DD') AS dia, sum(total)::float AS total FROM "order"
+       WHERE estado='CONFIRMADA' AND creado_en >= $1 GROUP BY 1`, [hace30, zona])).rows.map((r) => [r.dia, Number(r.total)]));
+    serieMes = Array.from({ length: 30 }, (_, i) => { const dia = addDays(hoy, i - 29); return { dia, total: porDia.get(dia) ?? 0 }; });
+    pagos = (await tx.query(
+      `SELECT p.id, p.metodo, p.monto::float AS monto, p.estado, p.creado_en, o.id AS order_id, o.numero, c.nombre AS cliente
+       FROM order_payment p JOIN "order" o ON o.id=p.order_id JOIN customer c ON c.id=o.customer_id
+       ORDER BY p.creado_en DESC LIMIT 5`)).rows;
+  }
+  const nuevos = new Map((await tx.query(
+    `SELECT to_char(creado_en AT TIME ZONE $2, 'YYYY-MM-DD') AS dia, count(*)::int AS n FROM customer
+     WHERE creado_en >= $1 AND eliminado_en IS NULL GROUP BY 1`, [semana, zona])).rows.map((r) => [r.dia, r.n]));
+  let actividad = null;
+  if (can(ctx, 'conversation:read')) {
+    // Mensajes de clientes por hora en las últimas 12 horas (la última posición es la hora en curso).
+    const porHora = new Map((await tx.query(
+      `SELECT floor(extract(epoch FROM (now() - coalesce(ocurrido_en, creado_en))) / 3600)::int AS h, count(*)::int AS n
+       FROM message WHERE remitente='CUSTOMER' AND coalesce(ocurrido_en, creado_en) > now() - interval '12 hours' GROUP BY 1`)).rows.map((r) => [r.h, r.n]));
+    const hoyMsg = (await tx.query(
+      `SELECT count(*) FILTER (WHERE remitente='CUSTOMER')::int AS recibidos, count(*) FILTER (WHERE remitente='AI')::int AS ia
+       FROM message WHERE tipo <> 'NOTA_INTERNA' AND creado_en >= $1 AND creado_en < $2`, [d(hoy), manana])).rows[0];
+    actividad = { ...hoyMsg, serie: Array.from({ length: 12 }, (_, i) => porHora.get(11 - i) ?? 0) };
+  }
+  const empresa = (await tx.query(
+    `SELECT (SELECT count(*)::int FROM customer WHERE eliminado_en IS NULL) AS clientes,
+            (SELECT count(*)::int FROM product WHERE eliminado_en IS NULL AND activo) AS catalogo,
+            (SELECT count(*)::int FROM user_tenant WHERE activo) AS equipo`)).rows[0];
+  return {
+    mes: resumenMes, serie_mes: serieMes, pagos_recientes: pagos, actividad, empresa,
+    clientes_serie: Array.from({ length: 7 }, (_, i) => nuevos.get(addDays(hoy, i - 6)) ?? 0),
   };
 }
 

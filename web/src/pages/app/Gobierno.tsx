@@ -126,7 +126,7 @@ export function Configuracion() {
 
         {tab === 'personas' && <>
           {s.permisos.includes('user:manage') && <TeamCommissions people={data.personas} />}
-          <Tarjeta titulo="Personas con acceso" acciones={<Escritura permiso="user:manage"><button className="btn primario peq" onClick={() => setInvitar(true)}><Icon n="mas" className="" size={14} />Invitar</button></Escritura>} sinCuerpo>
+          <Tarjeta titulo="Personas con acceso" acciones={<Escritura permiso="user:manage"><button className="btn primario peq" data-guia="config/invitar" onClick={() => setInvitar(true)}><Icon n="mas" className="" size={14} />Invitar</button></Escritura>} sinCuerpo>
             <div className="tabla-wrap"><table className="tabla tabla-movil"><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Recibe radicados</th><th>Acceso</th></tr></thead>
               <tbody>{data.personas.map((p: any) => (
                 <tr key={p.id} className={p.activo ? '' : 'inactiva'}>
@@ -405,12 +405,12 @@ function Invitar({ roles, onCerrar, onHecho }: { roles: any[]; onCerrar: () => v
   const { run, ocupado, error } = useAccion();
   const toast = useToast();
   return (
-    <Modal titulo="Invitar a una persona" onCerrar={onCerrar} pie={!hecho ? <><button className="btn" onClick={onCerrar}>Cancelar</button><button className="btn primario" disabled={ocupado || !f.email || f.nombre.trim().length < 2} onClick={async () => { const r = await run(() => api.post('/api/t/configuracion/invitaciones', f), undefined, { silencioso: true }); if (r) { setHecho(r); onHecho(); } }}>Enviar invitación</button></> : <button className="btn primario" onClick={onCerrar}>Listo</button>}>
+    <Modal titulo="Invitar a una persona" onCerrar={onCerrar} pie={!hecho ? <><button className="btn" onClick={onCerrar}>Cancelar</button><button className="btn primario" data-guia="invitar/enviar" disabled={ocupado || !f.email || f.nombre.trim().length < 2} onClick={async () => { const r = await run(() => api.post('/api/t/configuracion/invitaciones', f), undefined, { silencioso: true }); if (r) { setHecho(r); onHecho(); } }}>Enviar invitación</button></> : <button className="btn primario" onClick={onCerrar}>Listo</button>}>
       {!hecho ? <>
         {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
-        <Campo etiqueta="Nombre"><input className="input" value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} /></Campo>
+        <Campo etiqueta="Nombre" guia="invitar/datos"><input className="input" value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} /></Campo>
         <Campo etiqueta="Correo"><input className="input" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Campo>
-        <Campo etiqueta="Rol"><select className="input" value={f.rol} onChange={(e) => setF({ ...f, rol: e.target.value })}>{roles.map((r) => <option key={r.clave} value={r.clave}>{r.nombre}</option>)}</select></Campo>
+        <Campo etiqueta="Rol" guia="invitar/rol"><select className="input" value={f.rol} onChange={(e) => setF({ ...f, rol: e.target.value })}>{roles.map((r) => <option key={r.clave} value={r.clave}>{r.nombre}</option>)}</select></Campo>
         <span className="tenue peq-txt">Recibirá un enlace para crear su contraseña (o entrar con la suya si ya tiene cuenta). Vence en 7 días.</span>
       </> : hecho.correo_enviado ? <span>Enviamos la invitación a <b>{f.email}</b>.</span> : <>
         <span>Invitación creada. El correo está pendiente de conectar, así que comparte este enlace con {f.nombre} por un canal seguro:</span>

@@ -1,29 +1,30 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { OrbState } from 'thinking-orbs';
 import { api, ApiError, hace, hora, preguntarEnVivo } from '../../api';
 import { useSesion } from '../../components/Layout';
-import { AiOrb } from '../../components/AiOrb';
 import { AiVoice } from '../../components/AiVoice';
 import { BotonCopiar, Markdown } from '../../components/Markdown';
 import { accionIA, Cargando, Confirmar, motivoIA, useAccion, useApi, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
+import { useIA } from '../../components/ia/contexto';
+import { GUIAS } from '../../components/ia/guias';
+import { OrbeCara, useCaraIA } from '../../components/ia/OrbeCara';
 
 interface Alcance { fecha?: string; desde?: string; hasta?: string; periodo?: string; dias?: number; encontrados?: number }
-interface Ejecucion { id: string; herramienta: string; decision: string; motivo?: string | null; riesgo?: string | null; pendiente_id?: string; resumen?: string | null; pendiente?: { estado: string; expira_en: string } | null; alcance?: Alcance }
-interface Item { id?: string; rol: 'user' | 'assistant'; contenido: string; ejecuciones?: Ejecucion[]; creado_en?: string; nuevo?: boolean; fallo?: string | null }
-interface Paso { herramienta: string; fase: 'inicio' | 'fin'; decision?: string }
+export interface Ejecucion { id: string; herramienta: string; decision: string; motivo?: string | null; riesgo?: string | null; pendiente_id?: string; resumen?: string | null; pendiente?: { estado: string; expira_en: string } | null; alcance?: Alcance; guia?: string }
+export interface Item { id?: string; rol: 'user' | 'assistant'; contenido: string; ejecuciones?: Ejecucion[]; creado_en?: string; nuevo?: boolean; fallo?: string | null }
+export interface Paso { herramienta: string; fase: 'inicio' | 'fin'; decision?: string }
 
 /** Lo que el asistente está haciendo en este momento, en presente (lo informa el servidor, no un temporizador). */
 const PROGRESO: Record<string, string> = {
   resumen_ventas: 'Consultando las ventas', citas_del_dia: 'Revisando la agenda', agenda_periodo: 'Revisando la agenda', stock_bajo_minimo: 'Revisando el inventario', buscar_cliente: 'Buscando el cliente',
-  consultar_catalogo: 'Consultando el catálogo', consumo_del_plan: 'Revisando el consumo del plan', ayuda_plataforma: 'Buscando en la guía del panel',
+  consultar_catalogo: 'Consultando el catálogo', consumo_del_plan: 'Revisando el consumo del plan', ayuda_plataforma: 'Buscando en la guía del panel', mostrar_guia: 'Preparando la guía en pantalla',
   crear_item_catalogo: 'Preparando el nuevo ítem', editar_item_catalogo: 'Preparando el cambio',
 };
 const MAX = 1000;
 
 /** Indicador de trabajo: muestra los pasos reales que llegan del servidor y el tiempo que lleva. */
-function Trabajando({ pasos, fase }: { pasos: Paso[]; fase: string }) {
+export function Trabajando({ pasos, fase }: { pasos: Paso[]; fase: string }) {
   const [s, setS] = useState(0);
   useEffect(() => { const t = window.setInterval(() => setS((x) => x + 1), 1000); return () => window.clearInterval(t); }, []);
   // Varias consultas a la misma fuente (p. ej. la agenda día por día) se muestran como un solo paso con su conteo.
@@ -38,7 +39,7 @@ function Trabajando({ pasos, fase }: { pasos: Paso[]; fase: string }) {
   }, []);
   return (
     <div className="as-msg ia as-trabajando" role="status" aria-live="polite">
-      <div className="as-quien"><span className="as-avatar"><AiOrb state="working" size={20} theme="light" label="Trabajando" /></span><b>Asistente</b><span className="as-trabajando-t">{s >= 3 ? `${s} s` : ''}</span></div>
+      <div className="as-quien"><span className="as-avatar"><OrbeCara tamano={24} cara="pensando" /></span><b>Omnegia IA</b><span className="as-trabajando-t">{s >= 3 ? `${s} s` : ''}</span></div>
       <ol className="as-pasos">
         {herramientas.map((h, i) => (
           <li key={i} className={h.hecho ? (h.bloqueada ? 'bloqueado' : 'hecho') : 'actual'}>
@@ -98,6 +99,7 @@ const FUENTE: Record<string, { clave: string; titulo: string; icono: string; uni
   buscar_cliente: { clave: 'clientes', titulo: 'Clientes', icono: 'clientes', unidad: ['coincidencia', 'coincidencias'] },
   consumo_del_plan: { clave: 'plan', titulo: 'Consumo del plan', icono: 'suscripcion' },
   ayuda_plataforma: { clave: 'guia', titulo: 'Guía del panel', icono: 'soporte' },
+  mostrar_guia: { clave: 'guia', titulo: 'Guía del panel', icono: 'soporte' },
 };
 const DIA = (f: string) => new Date(`${f}T12:00:00Z`).toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).replace(/\./g, '');
 const DIA_CORTO = (f: string) => new Date(`${f}T12:00:00Z`).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace(/\./g, '');
@@ -163,16 +165,34 @@ function Consultas({ recibos }: { recibos: Ejecucion[] }) {
   );
 }
 
-function Respuesta({ m, onAccion }: { m: Item; onAccion: (texto: string, recibo: Ejecucion) => void }) {
+/** La guía que preparó el asistente: arranca sola al llegar la respuesta y se puede repetir desde aquí. */
+function GuiaRecibo({ id }: { id: string }) {
+  const { iniciarGuia } = useIA();
+  const g = GUIAS[id];
+  return (
+    <div className="as-guia">
+      <span className="as-guia-orbe" aria-hidden="true"><OrbeCara tamano={30} cara="feliz" /></span>
+      <span className="as-guia-txt"><b>Guía en pantalla · {g.titulo}</b><span>{g.pasos.length} pasos sobre los botones reales de tu panel</span></span>
+      <button type="button" className="btn peq" onClick={() => iniciarGuia(id)}><Icon n="derecha" className="" size={14} />Mostrármela</button>
+    </div>
+  );
+}
+
+/** Primera guía nueva de una respuesta (para arrancarla en cuanto llega). */
+export const guiaDe = (ejecuciones?: Ejecucion[]) => ejecuciones?.find((e) => e.guia && GUIAS[e.guia])?.guia ?? null;
+
+export function Respuesta({ m, onAccion }: { m: Item; onAccion: (texto: string, recibo: Ejecucion) => void }) {
   const pendientes = (m.ejecuciones ?? []).filter((e) => e.pendiente_id);
   const recibos = (m.ejecuciones ?? []).filter((e) => !e.pendiente_id);
+  const guias = [...new Set((m.ejecuciones ?? []).map((e) => e.guia).filter((g): g is string => !!g && !!GUIAS[g]))];
   return (
     <article className="as-msg ia" aria-label="Respuesta del asistente">
       <div className="as-quien">
-        <span className="as-avatar"><AiOrb state="breathing" size={20} theme="light" label="Asistente" /></span>
+        <span className="as-avatar"><OrbeCara tamano={24} /></span>
         <b>Asistente</b>{m.creado_en && <time dateTime={m.creado_en}>{hora(m.creado_en)}</time>}
       </div>
       <div className="as-cuerpo-msg"><Markdown texto={m.contenido} revelar={!!m.nuevo} /></div>
+      {guias.map((g) => <GuiaRecibo key={g} id={g} />)}
       {pendientes.map((e) => <AccionPendiente key={e.pendiente_id} e={e} onResuelta={onAccion} />)}
       {recibos.length > 0 && <Consultas recibos={recibos} />}
       <div className="as-msg-acciones"><BotonCopiar texto={m.contenido} etiqueta="Copiar respuesta" className="sutil" /></div>
@@ -203,6 +223,10 @@ export function Asistente() {
   const [borrar, setBorrar] = useState(false);
   const [lejos, setLejos] = useState(false);
   const { run } = useAccion();
+  const { iniciarGuia } = useIA();
+  const [respuestas, setRespuestas] = useState(0);
+  const [fallos, setFallos] = useState(0);
+  const [largo, setLargo] = useState(0);
   const actual = useRef<string | undefined>(id);
   const recienCreado = useRef<string | null>(null);
   const cuerpo = useRef<HTMLDivElement>(null);
@@ -260,6 +284,9 @@ export function Asistente() {
       });
       if (actual.current === hiloAlEnviar) {
         setMensajes((m) => [...m, { rol: 'assistant', contenido: r.texto, ejecuciones: r.ejecuciones, creado_en: new Date().toISOString(), nuevo: true }]);
+        setLargo(r.texto?.length ?? 0); setRespuestas((n) => n + 1);
+        const g = guiaDe(r.ejecuciones);
+        if (g) window.setTimeout(() => iniciarGuia(g), 900);
         if (r.titulo && !hiloAlEnviar) setTitulo(r.titulo);
         if (r.hilo_id && r.hilo_id !== hiloAlEnviar) { recienCreado.current = r.hilo_id; nav(`/asistente/${r.hilo_id}`, { replace: true }); }
       }
@@ -268,6 +295,7 @@ export function Asistente() {
       // La pregunta queda en pantalla, marcada, con un botón para reintentar: no se pierde lo escrito.
       const mensaje = (err as ApiError).message;
       if (actual.current === hiloAlEnviar) setMensajes((m) => m.map((x, i) => (i === (reintento ?? m.length - 1) ? { ...x, fallo: mensaje } : x)));
+      setFallos((n) => n + 1);
     } finally { setOcupado(false); campo.current?.focus(); }
   };
 
@@ -300,7 +328,7 @@ export function Asistente() {
   const lista = hilos.data ?? [];
   const nombre = s.usuario.nombre.split(' ')[0];
   const saludo = `Hola, ${nombre}. Soy el asistente de ${s.tenant.nombre}. Conozco tu catálogo, tus horarios y tus módulos; lo que cambia —ventas, citas, existencias— lo consulto en el momento y te muestro de dónde sale.`;
-  const orbe: OrbState = ocupado ? 'solving' : q.trim() ? 'listening' : 'breathing';
+  const cara = useCaraIA({ ocupado, escribiendo: !!q.trim(), respuesta: respuestas, fallo: fallos, largo });
   const nueva = () => { setVerLista(false); nav('/asistente'); campo.current?.focus(); };
   const alResolverAccion = (texto: string, recibo: Ejecucion) => {
     setMensajes((m) => [...m.map((x) => ({ ...x, nuevo: false })), { rol: 'assistant', contenido: texto, ejecuciones: [recibo], creado_en: new Date().toISOString(), nuevo: true }]);
@@ -333,7 +361,7 @@ export function Asistente() {
         <section className={`as-escena ${vacio ? 'is-vacio' : ''} ${ocupado ? 'is-working' : ''}`} aria-label="Conversación con el asistente" aria-busy={ocupado}>
           <header className="as-cab">
             <button className="as-lista-btn" onClick={() => setVerLista((v) => !v)} aria-expanded={verLista}><Icon n="conversaciones" className="" size={16} />Conversaciones</button>
-            <span className="as-cab-orbe" aria-hidden="true"><AiOrb state={orbe} size={20} theme="light" label="Asistente" /></span>
+            <span className="as-cab-orbe" aria-hidden="true"><OrbeCara tamano={30} cara={cara} /></span>
             <div className="as-cab-txt">
               <h2 className="cortar">{titulo ?? 'Nueva conversación'}</h2>
               <span className="as-estado"><i className={`ai-status-dot ${ocupado ? 'active' : 'live'}`} />{ocupado ? 'Trabajando en tu respuesta' : 'Conoce tu negocio · solo tú ves esta conversación'}</span>
@@ -347,7 +375,7 @@ export function Asistente() {
             ) : vacio ? (
               <div className="as-hero">
                 <div className="registration-orb-stage"><span className="orb-halo" aria-hidden="true" /><span className="orb-halo" aria-hidden="true" />
-                  <AiOrb large theme="dark" state={orbe} label="Asistente de Omnegia" /></div>
+                  <OrbeCara tamano={112} cara={cara} mirada={q.trim() ? { x: 0, y: 0.9 } : undefined} etiqueta="Omnegia IA" /></div>
                 <div className="as-hero-voz"><AiVoice texto={saludo} /></div>
                 {sugerencias.length > 0 && <div className="as-sugerencias">{sugerencias.map((p, i) => (
                   <button key={p.texto} type="button" className="as-sugerencia" style={{ ['--i' as any]: i }} onClick={() => preguntar(p.texto)} disabled={ocupado}>{p.texto}<Icon n="flecha" className="" size={14} /></button>
@@ -376,7 +404,7 @@ export function Asistente() {
             <div className="as-caja">
               <textarea ref={campo} rows={1} value={q} onChange={(e) => setQ(e.target.value.slice(0, MAX))} onKeyDown={teclas} maxLength={MAX} placeholder="Pregúntale a tu negocio…" aria-label="Pregunta al asistente" disabled={noEncontrado} />
               <button type="submit" className="composer-send" disabled={ocupado || !q.trim() || noEncontrado} aria-label={ocupado ? 'Trabajando en la respuesta' : 'Preguntar'}>
-                {ocupado ? <AiOrb state="working" size={20} theme="dark" label="Trabajando" /> : <Icon n="enviar" size={18} className="" />}
+                {ocupado ? <OrbeCara tamano={22} cara="pensando" /> : <Icon n="enviar" size={18} className="" />}
               </button>
             </div>
             <span className="as-pie">{q.length > MAX - 120 ? <b>{MAX - q.length} caracteres disponibles · </b> : null}Enter envía · Shift + Enter salta de línea · El asistente puede equivocarse. <Link to="/soporte">¿Necesitas a una persona?</Link></span>
