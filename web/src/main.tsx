@@ -59,7 +59,8 @@ const Auditoria = lazy(() => gobierno().then((m) => ({ default: m.Auditoria })))
 const CentroIA = lazy(() => gobierno().then((m) => ({ default: m.CentroIA })));
 const Configuracion = lazy(() => gobierno().then((m) => ({ default: m.Configuracion })));
 const Simulador = lazy(() => gobierno().then((m) => ({ default: m.Simulador })));
-const Suscripcion = lazy(() => gobierno().then((m) => ({ default: m.Suscripcion })));
+const Suscripcion = lazy(() => import('./pages/app/Suscripcion').then((m) => ({ default: m.Suscripcion })));
+const PlanesEmpresa = lazy(() => import('./pages/app/Planes').then((m) => ({ default: m.Planes })));
 const Informes = lazy(() => import('./pages/app/Informes').then((m) => ({ default: m.Informes })));
 const NumeroWhatsApp = lazy(() => import('./pages/app/NumeroWhatsApp').then((m) => ({ default: m.NumeroWhatsApp })));
 const soporte = () => import('./pages/app/Soporte');
@@ -168,6 +169,7 @@ function App() {
             <Route path="/ia" element={<CentroIA />} />
             <Route path="/configuracion" element={<Configuracion />} />
             <Route path="/suscripcion" element={<Suscripcion />} />
+            <Route path="/suscripcion/planes" element={<PlanesEmpresa />} />
             <Route path="/whatsapp/numero" element={<NumeroWhatsApp />} />
             <Route path="/informes" element={<Informes />} />
             <Route path="/auditoria" element={<Auditoria />} />

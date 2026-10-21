@@ -16,6 +16,7 @@ import { gatewayAccount } from './payments.js';
 import { listInvitations } from './team.js';
 import { config, integraciones } from '../config.js';
 import { ofertaRenovacion } from './billing.js';
+import { type Ciclo, DIAS_GRACIA, QUE_SE_PAUSA, preciosDe } from './planes.js';
 import { nitValido } from '../adapters/fiscal.js';
 import { encolarCorreo } from '../email/servicio.js';
 import * as plantillas from '../email/plantillas.js';
@@ -512,19 +513,30 @@ export async function updateTemplate(tx: Tx, ctx: Ctx, clave: string, body: unkn
 export async function subscriptionInfo(tx: Tx, ctx: Ctx) {
   requirePerm(ctx, 'subscription:manage');
   const s = (await tx.query(
-    `SELECT s.*, p.nombre AS plan_nombre, p.precio_mensual, p.cuota_tokens_ia, p.cuota_mensajes, p.cuota_documentos, p.max_usuarios, p.politica_excedente, p.precio_excedente_1k_tokens
+    `SELECT s.*, p.nombre AS plan_nombre, p.precio_mensual, p.precio_anual, p.cuota_tokens_ia, p.cuota_mensajes, p.cuota_documentos, p.max_usuarios, p.politica_excedente, p.precio_excedente_1k_tokens
      FROM subscription s JOIN plan p ON p.codigo=s.plan_codigo WHERE s.tenant_id=$1`, [ctx.tenantId])).rows[0];
   const historico = (await tx.query(`SELECT periodo, metrica, cantidad FROM usage_record ORDER BY periodo DESC, metrica LIMIT 36`)).rows;
   const usuarios = (await tx.query(`SELECT count(*)::int AS n FROM user_tenant WHERE activo`)).rows[0].n;
   // Periodos pagados con su modalidad, monto y condiciones (trazabilidad visible para la empresa).
-  const periodos = (await tx.query(`SELECT modalidad, monto_pagado, monto_referencia, periodo_inicio, periodo_fin, condiciones FROM subscription_period ORDER BY periodo_inicio DESC LIMIT 24`)).rows
+  const periodos = (await tx.query(`SELECT modalidad, monto_pagado, monto_referencia, periodo_inicio, periodo_fin, condiciones, ciclo FROM subscription_period ORDER BY periodo_inicio DESC LIMIT 24`)).rows
     .map((p: any) => ({ ...p, monto_pagado: Number(p.monto_pagado), monto_referencia: p.monto_referencia == null ? null : Number(p.monto_referencia) }));
+  // Lo que paga esta empresa: su precio pactado si lo conserva; si hay un cambio programado, la renovación ya es la del plan nuevo.
+  const precios = preciosDe(s, s.precio_pactado);
+  const programado = s.modalidad === 'COMERCIAL' ? s.cambio_programado : null;
+  const cobro = programado
+    ? { modalidad: s.modalidad, precio_mensual: programado.ciclo === 'ANUAL' ? programado.precio / 10 : programado.precio, precio_anual: programado.ciclo === 'ANUAL' ? programado.precio : programado.precio * 10 }
+    : { modalidad: s.modalidad, precio_mensual: precios.mensual, precio_anual: precios.anual };
+  const ciclo: Ciclo = programado?.ciclo ?? s.ciclo ?? 'MENSUAL';
+  const fin = s.estado === 'EN_GRACIA' && s.gracia_hasta ? new Date(s.gracia_hasta).getTime() : null;
   return {
-    suscripcion: { ...s, precio_mensual: Number(s.precio_mensual), precio_pagado: s.precio_pagado == null ? null : Number(s.precio_pagado) },
+    suscripcion: { ...s, precio_mensual: precios.mensual, precio_anual: precios.anual, precio_catalogo: Number(s.precio_mensual), precio_pagado: s.precio_pagado == null ? null : Number(s.precio_pagado) },
     consumo: await allQuotas(tx, ctx.tenantId), historico, usuarios, periodos,
     pagos_en_linea: config.pagos.proveedor !== 'ninguno',
     // Cómo continuar: lo que se cobraría y si exige aceptar un cambio de modalidad. Nunca es automático.
-    renovacion: ofertaRenovacion(s),
+    renovacion: ofertaRenovacion(cobro, s.modalidad === 'COMERCIAL' ? ciclo : 'MENSUAL'),
+    // Periodo de gracia real (ciclo_suscripcion): días que quedan antes de pasar a solo lectura.
+    gracia: fin == null ? null : { hasta: s.gracia_hasta, dias_total: DIAS_GRACIA, dias_restantes: Math.max(0, Math.ceil((fin - Date.now()) / 86_400_000)) },
+    solo_lectura: QUE_SE_PAUSA,
   };
 }
 

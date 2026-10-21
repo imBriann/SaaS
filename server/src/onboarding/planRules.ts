@@ -9,6 +9,10 @@ export interface PlanDef {
   codigo: 'esencial' | 'negocio' | 'pro';
   nombre: string;
   precio_mensual: number;
+  /** 12 meses por el precio de 10 (2 meses gratis). */
+  precio_anual: number;
+  /** Para quién es, en una línea (se muestra al elegir plan). */
+  descripcion: string;
   cuota_tokens_ia: number;
   cuota_mensajes: number;
   cuota_documentos: number;
@@ -19,20 +23,27 @@ export interface PlanDef {
   orden: number;
 }
 
+/**
+ * Precios y cuotas evaluados con costos reales (IA, WhatsApp, DIAN, cobro e infraestructura): ver
+ * docs/precios/README.md. Una respuesta del agente de IA usa ~5.000 tokens de la cuota.
+ */
 export const PLANES: PlanDef[] = [
   {
-    codigo: 'esencial', nombre: 'Esencial', precio_mensual: 79000, cuota_tokens_ia: 400_000, cuota_mensajes: 1_500, cuota_documentos: 0,
+    codigo: 'esencial', nombre: 'Esencial', precio_mensual: 99_000, precio_anual: 990_000, descripcion: 'Para negocios que empiezan a atender por WhatsApp con IA.',
+    cuota_tokens_ia: 2_000_000, cuota_mensajes: 1_500, cuota_documentos: 0,
     max_usuarios: 2, modulos: ['clientes', 'catalogo', 'ventas', 'agenda', 'conversaciones', 'ia'], politica_excedente: 'LIMITAR', precio_excedente_1k_tokens: 0, orden: 1,
   },
   {
-    codigo: 'negocio', nombre: 'Negocio', precio_mensual: 149000, cuota_tokens_ia: 1_500_000, cuota_mensajes: 5_000, cuota_documentos: 400,
+    codigo: 'negocio', nombre: 'Negocio', precio_mensual: 229_000, precio_anual: 2_290_000, descripcion: 'Para equipos que venden, agendan y facturan todos los días.',
+    cuota_tokens_ia: 6_000_000, cuota_mensajes: 5_000, cuota_documentos: 300,
     max_usuarios: 6, modulos: ['clientes', 'catalogo', 'ventas', 'agenda', 'inventario', 'facturacion', 'conversaciones', 'ia', 'comisiones', 'membresias'],
     politica_excedente: 'LIMITAR', precio_excedente_1k_tokens: 0, orden: 2,
   },
   {
-    codigo: 'pro', nombre: 'Pro', precio_mensual: 289000, cuota_tokens_ia: 5_000_000, cuota_mensajes: 20_000, cuota_documentos: 2_000,
+    codigo: 'pro', nombre: 'Pro', precio_mensual: 549_000, precio_anual: 5_490_000, descripcion: 'Para operaciones grandes con mucho volumen de clientes.',
+    cuota_tokens_ia: 12_000_000, cuota_mensajes: 15_000, cuota_documentos: 1_000,
     max_usuarios: 20, modulos: ['clientes', 'catalogo', 'ventas', 'agenda', 'inventario', 'facturacion', 'conversaciones', 'ia', 'comisiones', 'membresias'],
-    politica_excedente: 'EXCEDENTE', precio_excedente_1k_tokens: 45, orden: 3,
+    politica_excedente: 'EXCEDENTE', precio_excedente_1k_tokens: 30, orden: 3,
   },
 ];
 

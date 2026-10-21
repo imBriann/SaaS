@@ -37,6 +37,9 @@ export interface EventoPago {
   montoCentavos: number;
   moneda: string;
   transaccionId?: string;
+  /** Cómo pagó (CARD, PSE, NEQUI, BANCOLOMBIA_TRANSFER…) y un detalle legible para el recibo; nunca el número completo. */
+  metodo?: string;
+  metodoDetalle?: string;
 }
 
 export interface CheckoutInput {
@@ -83,7 +86,12 @@ function normalizarTransaccionWompi(t: any): EventoPago | null {
   if (!t || typeof t !== 'object') return null;
   const monto = Number(t.amount_in_cents);
   if (!t.id || typeof t.reference !== 'string' || !t.reference || !ESTADO_WOMPI[t.status] || !Number.isSafeInteger(monto) || monto < 0) return null;
-  return { id: `wompi:${t.id}:${t.status}`, proveedor: 'wompi', referencia: t.reference, estado: ESTADO_WOMPI[t.status], montoCentavos: monto, moneda: String(t.currency ?? ''), transaccionId: String(t.id) };
+  const tipo = typeof t.payment_method_type === 'string' && /^[A-Z_]{2,40}$/.test(t.payment_method_type) ? t.payment_method_type : undefined;
+  const extra = t.payment_method?.extra ?? {};
+  const ultimos = typeof extra.last_four === 'string' && /^\d{4}$/.test(extra.last_four) ? extra.last_four : null;
+  const marca = typeof extra.brand === 'string' && /^[A-Za-z ]{2,20}$/.test(extra.brand) ? extra.brand : null;
+  const detalle = ultimos ? `${marca ? `${marca} ` : ''}•••• ${ultimos}` : undefined;
+  return { id: `wompi:${t.id}:${t.status}`, proveedor: 'wompi', referencia: t.reference, estado: ESTADO_WOMPI[t.status], montoCentavos: monto, moneda: String(t.currency ?? ''), transaccionId: String(t.id), metodo: tipo, metodoDetalle: detalle };
 }
 
 /** Verifica el checksum de un evento de Wompi y lo normaliza. */
@@ -212,7 +220,7 @@ export function verifyWebhook(body: string, header: string | undefined, secret =
 /** Evento de la pasarela simulada → evento normalizado (montos en pesos en el cuerpo). */
 export function normalizarEventoSimulado(ev: any): EventoPago | null {
   if (!ev?.id || !ev?.referencia || !['pago.aprobado', 'pago.rechazado'].includes(ev.tipo)) return null;
-  return { id: String(ev.id), proveedor: 'simulada', referencia: String(ev.referencia), estado: ev.tipo === 'pago.aprobado' ? 'APROBADO' : 'RECHAZADO', montoCentavos: Math.round(Number(ev.monto) * 100), moneda: String(ev.moneda ?? 'COP'), transaccionId: ev.transaccion ?? undefined };
+  return { id: String(ev.id), proveedor: 'simulada', referencia: String(ev.referencia), estado: ev.tipo === 'pago.aprobado' ? 'APROBADO' : 'RECHAZADO', montoCentavos: Math.round(Number(ev.monto) * 100), moneda: String(ev.moneda ?? 'COP'), transaccionId: ev.transaccion ?? undefined, metodo: 'SIMULADA', metodoDetalle: 'Tarjeta de prueba •••• 4242' };
 }
 
 // ---------------------------------------------------------------- checkout

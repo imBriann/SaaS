@@ -6,13 +6,14 @@ import { registrarIncidente } from '../core/incidentes.js';
 import { AppError, notFound } from '../lib/errors.js';
 import { cop, token, uuidv7 } from '../lib/util.js';
 import { aCentavos } from '../lib/money.js';
-import { config, institucionalDisponible } from '../config.js';
+import { config, institucionalDisponible, urlEmpresa } from '../config.js';
 import { checkoutUrl, consultarPorReferenciaWompi, consultarTransaccionWompi, cuentaPlataforma, type CuentaPasarela, type EventoPago } from '../adapters/payments.js';
 import { condicionesPeriodo, provisionDraft } from '../onboarding/provisioning.js';
 import { conceptoInstitucional, type Modalidad } from '../onboarding/oferta.js';
 import { cuentaComercio, reconcilePaymentLink } from './payments.js';
 import { encolarDocumentos, recuperarDocumentos } from '../documentos/servicio.js';
 import { pagoNumeroAprobado, pagoNumeroNoAprobado } from '../numeros/servicio.js';
+import { aplicarCambioPagado, aplicarPlanDeRenovacion, preciosDe, type Ciclo } from './planes.js';
 
 /**
  * Pagos de la plataforma (alta de empresas y renovación de suscripciones) y
@@ -106,8 +107,9 @@ export async function procesarEventoPago(db: Database, ev: EventoPago, correlaci
       ? (await tx.query(`SELECT referencia FROM payment WHERE draft_token=$1 AND estado='APROBADO' AND id<>$2 LIMIT 1`, [pago.draft_token, pago.id])).rows[0]
       : null;
     await tx.query(
-      `UPDATE payment SET estado='APROBADO', transaccion_id=$2, estado_proveedor='APROBADO', verificado_en=now(), actualizado_en=now() WHERE id=$1`,
-      [pago.id, ev.transaccionId ?? null]);
+      `UPDATE payment SET estado='APROBADO', transaccion_id=$2, estado_proveedor='APROBADO', verificado_en=now(), actualizado_en=now(),
+         metodo_pago=coalesce($3, metodo_pago), metodo_detalle=coalesce($4, metodo_detalle) WHERE id=$1`,
+      [pago.id, ev.transaccionId ?? null, ev.metodo ?? null, ev.metodoDetalle ?? null]);
     await auditar('pago.aprobado', 'EXITO', { modalidad: pago.modalidad, monto: Number(pago.monto), monto_referencia: pago.monto_referencia == null ? null : Number(pago.monto_referencia), transaccion: ev.transaccionId ?? null, reemplazado: pago.estado === 'REEMPLAZADO' });
     if (otroAprobado) {
       // El dinero se recibió dos veces para la misma alta: queda registrado y se escala para reembolso.
@@ -116,6 +118,7 @@ export async function procesarEventoPago(db: Database, ev: EventoPago, correlaci
     }
     // Un número contratado tiene su propio ciclo: no extiende la suscripción de Omnegia.
     if (pago.numero_contratacion_id) await pagoNumeroAprobado(tx, { ...pago, estado: 'APROBADO' }, correlacion);
+    else if (pago.tenant_id && !pago.draft_token && pago.cambio_plan) await aplicarCambioPagado(tx, pago, correlacion);
     else if (pago.tenant_id && !pago.draft_token) await aplicarRenovacion(tx, pago, correlacion);
     return { estado: 'APROBADO', pago };
   });
@@ -145,18 +148,21 @@ async function aplicarRenovacion(tx: Tx, pago: any, correlacion: string) {
   const terminos = { modalidad, accesoDias: pago.acceso_dias ?? null, precioPagado: Number(pago.monto), montoReferencia: pago.monto_referencia == null ? null : Number(pago.monto_referencia) };
   // Pasar de institucional a comercial solo ocurre con un pago que el cliente aceptó expresamente.
   const condiciones = condicionesPeriodo(terminos, s.modalidad !== modalidad ? { cambio_modalidad: { de: s.modalidad, a: modalidad, aceptado_con_pago: pago.referencia } } : {});
+  // Una renovación puede traer otro plan (un cambio programado o renovar con otro plan estando vencida).
+  if (modalidad === 'COMERCIAL') await aplicarPlanDeRenovacion(tx, pago.tenant_id, pago.plan_codigo ?? null);
+  const ciclo: Ciclo = pago.ciclo === 'ANUAL' ? 'ANUAL' : 'MENSUAL';
   const p = (await tx.query(
     `UPDATE subscription SET estado='ACTIVA', gracia_hasta=NULL,
        periodo_inicio = CASE WHEN periodo_fin > now() THEN periodo_fin ELSE now() END,
        periodo_fin = (CASE WHEN periodo_fin > now() THEN periodo_fin ELSE now() END)
-                     + CASE WHEN $2::int IS NULL THEN interval '1 month' ELSE $2::int * interval '1 day' END,
-       modalidad=$3, precio_pagado=$4, condiciones=$5, actualizado_en=now()
+                     + CASE WHEN $2::int IS NOT NULL THEN $2::int * interval '1 day' WHEN $6 = 'ANUAL' THEN interval '12 months' ELSE interval '1 month' END,
+       modalidad=$3, precio_pagado=$4, condiciones=$5, ciclo=$6, actualizado_en=now()
      WHERE tenant_id=$1 RETURNING periodo_inicio, periodo_fin, plan_codigo`,
-    [pago.tenant_id, terminos.accesoDias, modalidad, terminos.precioPagado, JSON.stringify(condiciones)])).rows[0];
+    [pago.tenant_id, terminos.accesoDias, modalidad, terminos.precioPagado, JSON.stringify(condiciones), ciclo])).rows[0];
   await tx.query(
-    `INSERT INTO subscription_period (id, tenant_id, payment_id, modalidad, plan_codigo, monto_pagado, monto_referencia, periodo_inicio, periodo_fin, condiciones)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (payment_id) DO NOTHING`,
-    [uuidv7(), pago.tenant_id, pago.id, modalidad, p.plan_codigo, terminos.precioPagado, terminos.montoReferencia, p.periodo_inicio, p.periodo_fin, JSON.stringify(condiciones)]);
+    `INSERT INTO subscription_period (id, tenant_id, payment_id, modalidad, plan_codigo, monto_pagado, monto_referencia, periodo_inicio, periodo_fin, condiciones, ciclo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (payment_id) DO NOTHING`,
+    [uuidv7(), pago.tenant_id, pago.id, modalidad, p.plan_codigo, terminos.precioPagado, terminos.montoReferencia, p.periodo_inicio, p.periodo_fin, JSON.stringify(condiciones), ciclo]);
   await auditPlatform(tx, pago.tenant_id, PASARELA, 'WEBHOOK', correlacion, { accion: 'suscripcion.renovada', resultado: 'EXITO', detalle: { referencia: pago.referencia, modalidad, monto: terminos.precioPagado, periodo_fin: p.periodo_fin } });
   // Comprobante, ZIP y correo de confirmación (una sola vez por pago).
   await encolarDocumentos(tx, pago.id);
@@ -296,38 +302,56 @@ export interface OfertaRenovacion {
   /** Hay que confirmar monto y modalidad mostrados antes de generar el pago. */
   requiere_confirmacion: boolean;
   mensaje: string;
+  /** Mensual o anual (12 meses por el precio de 10); el institucional es siempre por días. */
+  ciclo: Ciclo;
 }
 
 /**
  * Cómo puede continuar una empresa. Nunca cobra el precio comercial a quien está en la
  * modalidad institucional sin su aceptación, ni renueva nada de forma automática.
  */
-export function ofertaRenovacion(s: { modalidad?: string | null; precio_mensual: number | string }): OfertaRenovacion {
+export function ofertaRenovacion(s: { modalidad?: string | null; precio_mensual: number | string; precio_anual?: number | string | null }, ciclo: Ciclo = 'MENSUAL'): OfertaRenovacion {
   const referencia = Number(s.precio_mensual);
+  const anual = Number(s.precio_anual ?? referencia * 10);
   const cuenta = cuentaPlataforma();
   if (s.modalidad === 'INSTITUCIONAL') {
     if (config.institucional.activo) {
       const { precioCop, dias } = config.institucional;
-      return { disponible: institucionalDisponible().ok, modalidad: 'INSTITUCIONAL', monto: precioCop, acceso_dias: dias, monto_referencia: referencia, requiere_aceptacion: false, requiere_confirmacion: true,
+      return { ciclo: 'MENSUAL', disponible: institucionalDisponible().ok, modalidad: 'INSTITUCIONAL', monto: precioCop, acceso_dias: dias, monto_referencia: referencia, requiere_aceptacion: false, requiere_confirmacion: true,
         mensaje: `Renovación manual: ${dias} días más por ${cop(precioCop)} (precio institucional vigente), cobro real y único con Wompi. No hay cobros automáticos.` };
     }
-    return { disponible: !!cuenta && (config.simuladores || config.pagos.tarifasConfirmadas), modalidad: 'COMERCIAL', monto: referencia, acceso_dias: null, monto_referencia: referencia, requiere_aceptacion: true, requiere_confirmacion: true,
+    return { ciclo: 'MENSUAL', disponible: !!cuenta && (config.simuladores || config.pagos.tarifasConfirmadas), modalidad: 'COMERCIAL', monto: referencia, acceso_dias: null, monto_referencia: referencia, requiere_aceptacion: true, requiere_confirmacion: true,
       mensaje: `La modalidad institucional terminó. Para continuar puedes aceptar el plan comercial de ${cop(referencia)} al mes. No se cobra nada sin tu aceptación expresa.` };
   }
-  return { disponible: !!cuenta, modalidad: 'COMERCIAL', monto: referencia, acceso_dias: null, monto_referencia: referencia, requiere_aceptacion: false, requiere_confirmacion: false, mensaje: `Plan mensual de ${cop(referencia)}.` };
+  if (ciclo === 'ANUAL') {
+    return { ciclo, disponible: !!cuenta, modalidad: 'COMERCIAL', monto: anual, acceso_dias: null, monto_referencia: anual, requiere_aceptacion: false, requiere_confirmacion: false,
+      mensaje: `Plan anual de ${cop(anual)}: 12 meses por el precio de 10.` };
+  }
+  return { ciclo, disponible: !!cuenta, modalidad: 'COMERCIAL', monto: referencia, acceso_dias: null, monto_referencia: referencia, requiere_aceptacion: false, requiere_confirmacion: false, mensaje: `Plan mensual de ${cop(referencia)}.` };
 }
 
 /** Pago de renovación o reactivación de la suscripción (cuenta de la plataforma). */
 export async function iniciarPagoSuscripcion(db: Database, tenantId: string, cuerpo: unknown = {}) {
   const cuenta = cuentaPlataforma();
   if (!cuenta) throw new AppError('CONFLICT', 'Los pagos en línea están pendientes de conectar. Escribe a soporte para renovar.');
-  const b = (cuerpo && typeof cuerpo === 'object' ? cuerpo : {}) as { modalidad?: unknown; monto?: unknown; acepto?: unknown };
+  const b = (cuerpo && typeof cuerpo === 'object' ? cuerpo : {}) as { modalidad?: unknown; monto?: unknown; acepto?: unknown; ciclo?: unknown };
   return db.withPlatform(async (tx) => {
     const p = (await tx.query(
-      `SELECT p.nombre, p.precio_mensual, t.plan_codigo, t.email_contacto, t.nombre AS negocio, s.modalidad
+      `SELECT p.nombre, p.precio_mensual, p.precio_anual, t.plan_codigo, t.email_contacto, t.nombre AS negocio, t.slug, s.modalidad, s.ciclo, s.precio_pactado, s.cambio_programado, s.estado, s.periodo_fin
        FROM tenant t JOIN plan p ON p.codigo=t.plan_codigo JOIN subscription s ON s.tenant_id=t.id WHERE t.id=$1 FOR UPDATE OF s`, [tenantId])).rows[0];
     if (!p) throw notFound();
-    const oferta = ofertaRenovacion(p);
+    // Un cambio programado se cobra con el plan y el ciclo elegidos (precio del catálogo); si no, el plan actual con su precio pactado.
+    const programado = p.modalidad === 'COMERCIAL' ? p.cambio_programado : null;
+    // Un cambio programado empieza cuando termina lo ya pagado: adelantar ese pago aplicaría el plan nuevo antes de tiempo.
+    if (programado && p.estado === 'ACTIVA' && new Date(p.periodo_fin).getTime() > Date.now()) {
+      throw new AppError('CONFLICT', `Tu cambio al plan ${programado.nombre} se cobra cuando termine tu periodo actual. Si prefieres renovar antes, deshaz primero el cambio programado.`);
+    }
+    const plan = programado ? (await tx.query(`SELECT codigo, nombre, precio_mensual, precio_anual FROM plan WHERE codigo=$1`, [programado.plan])).rows[0] ?? null : null;
+    const ciclo: Ciclo = b.ciclo === 'ANUAL' || b.ciclo === 'MENSUAL' ? b.ciclo : (programado?.ciclo ?? p.ciclo ?? 'MENSUAL');
+    const precios = plan ? preciosDe(plan) : preciosDe(p, p.precio_pactado);
+    const planCobro = plan?.codigo ?? p.plan_codigo;
+    const nombrePlan = plan?.nombre ?? p.nombre;
+    const oferta = ofertaRenovacion({ modalidad: p.modalidad, precio_mensual: precios.mensual, precio_anual: precios.anual }, p.modalidad === 'COMERCIAL' ? ciclo : 'MENSUAL');
     if (!oferta.disponible) throw new AppError('CONFLICT', 'La renovación en línea no está disponible en este momento. Escríbenos y te ayudamos.', { oferta });
     // Lo que se cobra debe ser exactamente lo que se mostró; un cambio de modalidad exige aceptación expresa.
     if (oferta.requiere_confirmacion && (b.modalidad !== oferta.modalidad || Number(b.monto) !== oferta.monto)) {
@@ -336,13 +360,14 @@ export async function iniciarPagoSuscripcion(db: Database, tenantId: string, cue
     if (oferta.requiere_aceptacion && b.acepto !== true) {
       throw new AppError('CONFLICT', `Para continuar debes aceptar expresamente el cambio de modalidad. ${oferta.mensaje}`, { oferta });
     }
-    const concepto = oferta.modalidad === 'INSTITUCIONAL' ? conceptoInstitucional(oferta.acceso_dias ?? undefined) : `Renovación plan ${p.nombre}`;
+    const concepto = oferta.modalidad === 'INSTITUCIONAL' ? conceptoInstitucional(oferta.acceso_dias ?? undefined) : `Renovación plan ${nombrePlan}${oferta.ciclo === 'ANUAL' ? ' anual' : ''}`;
+    const cicloPago = oferta.modalidad === 'COMERCIAL' ? oferta.ciclo : null;
     const entorno = cuenta.proveedor === 'wompi' ? cuenta.entorno : null;
     const previo = (await tx.query(
       `SELECT referencia, expira_en FROM payment WHERE tenant_id=$1 AND draft_token IS NULL AND estado='PENDIENTE' AND monto=$2 AND modalidad=$3 AND proveedor=$4
-         AND entorno IS NOT DISTINCT FROM $5 AND acceso_dias IS NOT DISTINCT FROM $6
+         AND entorno IS NOT DISTINCT FROM $5 AND acceso_dias IS NOT DISTINCT FROM $6 AND ciclo IS NOT DISTINCT FROM $7 AND plan_codigo IS NOT DISTINCT FROM $8 AND cambio_plan IS NULL
          AND creado_en > now() - interval '1 hour' AND (expira_en IS NULL OR expira_en > now() + interval '5 minutes')
-       ORDER BY creado_en DESC LIMIT 1`, [tenantId, oferta.monto, oferta.modalidad, cuenta.proveedor, entorno, oferta.acceso_dias])).rows[0];
+       ORDER BY creado_en DESC LIMIT 1`, [tenantId, oferta.monto, oferta.modalidad, cuenta.proveedor, entorno, oferta.acceso_dias, cicloPago, planCobro])).rows[0];
     let referencia = previo?.referencia as string | undefined;
     let expira = previo?.expira_en ? new Date(previo.expira_en) : undefined;
     if (!referencia) {
@@ -353,16 +378,17 @@ export async function iniciarPagoSuscripcion(db: Database, tenantId: string, cue
       // Los datos de facturación del contratante se toman del último pago de la empresa que los tenga.
       const fact = (await tx.query(`SELECT facturacion, documento_cifrado, facturacion_huella FROM payment WHERE tenant_id=$1 AND facturacion IS NOT NULL ORDER BY creado_en DESC LIMIT 1`, [tenantId])).rows[0];
       await tx.query(
-        `INSERT INTO payment (id, tenant_id, referencia, concepto, monto, estado, proveedor, modalidad, monto_referencia, acceso_dias, plan_codigo, entorno, expira_en, facturacion, documento_cifrado, facturacion_huella)
-         VALUES ($1,$2,$3,$4,$5,'PENDIENTE',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-        [uuidv7(), tenantId, referencia, concepto, oferta.monto, cuenta.proveedor, oferta.modalidad, oferta.monto_referencia, oferta.acceso_dias, p.plan_codigo, entorno, expira.toISOString(),
-          fact?.facturacion ? JSON.stringify(fact.facturacion) : null, fact?.documento_cifrado ?? null, fact?.facturacion_huella ?? null]);
+        `INSERT INTO payment (id, tenant_id, referencia, concepto, monto, estado, proveedor, modalidad, monto_referencia, acceso_dias, plan_codigo, entorno, expira_en, facturacion, documento_cifrado, facturacion_huella, ciclo)
+         VALUES ($1,$2,$3,$4,$5,'PENDIENTE',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        [uuidv7(), tenantId, referencia, concepto, oferta.monto, cuenta.proveedor, oferta.modalidad, oferta.monto_referencia, oferta.acceso_dias, planCobro, entorno, expira.toISOString(),
+          fact?.facturacion ? JSON.stringify(fact.facturacion) : null, fact?.documento_cifrado ?? null, fact?.facturacion_huella ?? null, cicloPago]);
       await auditPlatform(tx, tenantId, PASARELA, 'API', referencia, {
         accion: oferta.requiere_aceptacion ? 'suscripcion.aceptacion_comercial' : 'suscripcion.checkout', resultado: 'EXITO',
-        detalle: { referencia, modalidad: oferta.modalidad, monto: oferta.monto, acceso_dias: oferta.acceso_dias, aceptado: oferta.requiere_aceptacion ? true : undefined },
+        detalle: { referencia, modalidad: oferta.modalidad, monto: oferta.monto, acceso_dias: oferta.acceso_dias, ciclo: cicloPago ?? undefined, plan: planCobro, aceptado: oferta.requiere_aceptacion ? true : undefined },
       });
     }
-    const url = checkoutUrl(cuenta, { referencia, montoCentavos: aCentavos(oferta.monto), redirectUrl: `${config.publicUrl}/pago/resultado`, expiraEn: cuenta.proveedor === 'wompi' ? expira : undefined, concepto, cliente: { email: p.email_contacto, nombre: p.negocio } });
-    return { referencia, monto: oferta.monto, modalidad: oferta.modalidad, acceso_dias: oferta.acceso_dias, url, proveedor: cuenta.proveedor };
+    // Al volver del checkout, la empresa llega a su panel, donde se confirma el pago y se imprime el recibo.
+    const url = checkoutUrl(cuenta, { referencia, montoCentavos: aCentavos(oferta.monto), redirectUrl: `${urlEmpresa(p.slug)}/suscripcion?ref=${referencia}`, expiraEn: cuenta.proveedor === 'wompi' ? expira : undefined, concepto, cliente: { email: p.email_contacto, nombre: p.negocio } });
+    return { referencia, monto: oferta.monto, modalidad: oferta.modalidad, acceso_dias: oferta.acceso_dias, ciclo: oferta.ciclo, url, proveedor: cuenta.proveedor };
   });
 }

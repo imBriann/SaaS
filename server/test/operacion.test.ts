@@ -147,12 +147,12 @@ describe('Suscripción', () => {
   it('medidor de consumo con proyección visible para el administrador', async () => {
     const yo = await admin.get('/yo');
     expect(yo.body.consumo.tokens_ia.usado).toBeGreaterThan(0);
-    expect(yo.body.consumo.tokens_ia.cuota).toBe(1_500_000);
+    expect(yo.body.consumo.tokens_ia.cuota).toBe(6_000_000);
     expect(yo.body.consumo.documentos.usado).toBeGreaterThan(40);
   });
 
   it('cuota de IA agotada con política LIMITAR: se escala a una persona en vez de gastar', async () => {
-    await E.db.withPlatform((tx) => tx.query(`UPDATE usage_record SET cantidad = 2000000 WHERE tenant_id=$1 AND metrica='tokens_ia'`, [E.A]));
+    await E.db.withPlatform((tx) => tx.query(`UPDATE usage_record SET cantidad = 7000000 WHERE tenant_id=$1 AND metrica='tokens_ia'`, [E.A]));
     const from = '573207770004';
     await wa(from, 'hola'); await wa(from, 'sí'); await wa(from, 'cuánto vale el corte clásico');
     const k = await E.db.withTenant(E.A, async (tx) => (await tx.query(

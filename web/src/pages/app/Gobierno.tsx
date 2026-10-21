@@ -474,7 +474,7 @@ function Invitar({ roles, onCerrar, onHecho }: { roles: any[]; onCerrar: () => v
 
 // =================================================================== Suscripción
 /** Comprobantes (y facturas, cuando existan) de los pagos de la empresa a Omnegia. */
-function DocumentosPagos() {
+export function DocumentosPagos() {
   const { data, error, recargar } = useApi<any[]>(() => api.get('/api/t/suscripcion/documentos'), []);
   const [bajando, setBajando] = useState<string | null>(null);
   const [err, setErr] = useState('');
@@ -502,7 +502,8 @@ function DocumentosPagos() {
   );
 }
 
-export function Suscripcion() {
+/** Vista de la modalidad institucional (acceso por días); la comercial está en Suscripcion.tsx. */
+export function SuscripcionClasica() {
   const { data, error, recargar } = useApi<any>(() => api.get('/api/t/suscripcion'), []);
   const { run, ocupado } = useAccion();
   const [confirmar, setConfirmar] = useState(false);
@@ -585,7 +586,7 @@ export function Suscripcion() {
 }
 
 /** Número de WhatsApp contratado: cargo separado del plan y de lo que cobra Meta. */
-function NumeroContratado() {
+export function NumeroContratado() {
   const { data } = useApi<any>(() => api.get('/api/t/numeros/contratacion'), []);
   const c = data?.contratacion && data.contratacion.estado !== 'CANCELADO' ? data.contratacion : null;
   return (

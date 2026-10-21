@@ -23,12 +23,12 @@ import type { Personalizacion } from './personalization.js';
 export async function ensurePlatformCatalog(tx: Tx): Promise<void> {
   for (const p of PLANES) {
     await tx.query(
-      `INSERT INTO plan (codigo, nombre, precio_mensual, cuota_tokens_ia, cuota_mensajes, cuota_documentos, max_usuarios, modulos, politica_excedente, precio_excedente_1k_tokens, orden)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       ON CONFLICT (codigo) DO UPDATE SET nombre=EXCLUDED.nombre, precio_mensual=EXCLUDED.precio_mensual, cuota_tokens_ia=EXCLUDED.cuota_tokens_ia,
+      `INSERT INTO plan (codigo, nombre, precio_mensual, cuota_tokens_ia, cuota_mensajes, cuota_documentos, max_usuarios, modulos, politica_excedente, precio_excedente_1k_tokens, orden, precio_anual, descripcion)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ON CONFLICT (codigo) DO UPDATE SET nombre=EXCLUDED.nombre, precio_mensual=EXCLUDED.precio_mensual, precio_anual=EXCLUDED.precio_anual, descripcion=EXCLUDED.descripcion, cuota_tokens_ia=EXCLUDED.cuota_tokens_ia,
          cuota_mensajes=EXCLUDED.cuota_mensajes, cuota_documentos=EXCLUDED.cuota_documentos, max_usuarios=EXCLUDED.max_usuarios, modulos=EXCLUDED.modulos,
          politica_excedente=EXCLUDED.politica_excedente, precio_excedente_1k_tokens=EXCLUDED.precio_excedente_1k_tokens, orden=EXCLUDED.orden`,
-      [p.codigo, p.nombre, p.precio_mensual, p.cuota_tokens_ia, p.cuota_mensajes, p.cuota_documentos, p.max_usuarios, p.modulos, p.politica_excedente, p.precio_excedente_1k_tokens, p.orden],
+      [p.codigo, p.nombre, p.precio_mensual, p.cuota_tokens_ia, p.cuota_mensajes, p.cuota_documentos, p.max_usuarios, p.modulos, p.politica_excedente, p.precio_excedente_1k_tokens, p.orden, p.precio_anual, p.descripcion],
     );
   }
   for (const [codigo, m] of Object.entries(MODULOS)) {

@@ -21,6 +21,7 @@ import * as payments from '../../modules/payments.js';
 import * as pagos from '../../modules/pagosVentas.js';
 import * as informes from '../../modules/informes.js';
 import * as admin from '../../modules/admin.js';
+import * as planes from '../../modules/planes.js';
 import * as team from '../../modules/team.js';
 import * as soporte from '../../modules/soporte.js';
 import * as soporteIA from '../../modules/soporteIA.js';
@@ -290,6 +291,24 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
     await db.withTenant(ctx.tenantId, async () => requirePerm(ctx, 'subscription:manage'));
     return iniciarPagoSuscripcion(db, ctx.tenantId, req.body ?? {});
   });
+  // Planes y cambio de plan: el precio y el cargo los calcula el servidor; el cliente solo elige plan y ciclo.
+  const conPermiso = (ctx: Ctx) => db.withTenant(ctx.tenantId, async () => requirePerm(ctx, 'subscription:manage'));
+  rx('get', '/suscripcion/planes', async (ctx) => { await conPermiso(ctx); return db.withPlatform((tx) => planes.planesDisponibles(tx, ctx.tenantId)); });
+  rx('get', '/suscripcion/cambio', async (ctx, req) => {
+    await conPermiso(ctx);
+    return db.withPlatform((tx) => planes.cotizar(tx, ctx.tenantId, String(req.query?.plan ?? ''), String(req.query?.ciclo ?? '')));
+  });
+  rx('post', '/suscripcion/cambio', async (ctx, req) => { await conPermiso(ctx); return planes.confirmarCambio(db, ctx, req.body ?? {}); });
+  app.route({ method: 'DELETE', url: '/api/t/suscripcion/cambio', preHandler: guard, handler: async (req) => { await conPermiso(req.ctx!); return planes.deshacerCambio(db, req.ctx!); } });
+  rx('get', '/suscripcion/movimientos', async (ctx) => {
+    await conPermiso(ctx);
+    const info = await db.withTenant(ctx.tenantId, (tx) => admin.subscriptionInfo(tx, ctx));
+    const s = info.suscripcion;
+    const proximo = s.modalidad === 'COMERCIAL' && ['ACTIVA', 'PAGO_PENDIENTE', 'EN_GRACIA'].includes(s.estado)
+      ? { fecha: s.periodo_fin, monto: info.renovacion.monto, plan: s.cambio_programado?.nombre ?? s.plan_nombre } : null;
+    return db.withPlatform((tx) => planes.movimientos(tx, ctx.tenantId, proximo));
+  });
+  rx('get', '/suscripcion/pagos/:ref', async (ctx, req) => { await conPermiso(ctx); return db.withPlatform((tx) => planes.estadoPago(tx, ctx.tenantId, String(req.params.ref))); });
 
   // --- Documentos de los pagos a la plataforma (la RLS limita a los de esta empresa)
   r('get', '/suscripcion/documentos', async (tx, ctx) => { requirePerm(ctx, 'subscription:manage'); return documentosTenant(tx); });
