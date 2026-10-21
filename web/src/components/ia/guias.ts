@@ -17,6 +17,7 @@ export const GUIAS: Record<string, Guia> = {
     titulo: 'Recorrido por el panel',
     pasos: [
       { ancla: 'menu/', titulo: 'Inicio', texto: 'Tu tablero: lo vendido, lo cobrado, la agenda de hoy y lo que espera por ti, con cifras reales que se actualizan solas.', opcional: true },
+      { ancla: 'menu/informes', titulo: 'Informes', texto: 'Informes con tus cifras reales y tu marca: ventas, cobros, agenda, clientes e inventario, listos para descargar como imagen o PDF.', opcional: true },
       { ancla: 'menu/conversaciones', titulo: 'Conversaciones', texto: 'Aquí llegan los mensajes de WhatsApp. El número rojo cuenta los que no has leído y late si alguien espera a una persona.', opcional: true },
       { ancla: 'menu/agenda', titulo: 'Agenda', texto: 'Las citas del día por persona. La IA también agenda por WhatsApp y esas citas llevan la marca IA.', opcional: true },
       { ancla: 'menu/ventas', titulo: 'Ventas', texto: 'Registra ventas, cobra en efectivo, transferencia o datáfono y revisa la caja del día.', opcional: true },

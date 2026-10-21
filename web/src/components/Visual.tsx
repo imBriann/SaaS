@@ -204,7 +204,7 @@ export function Grafica({ g, enInforme }: { g: GraficaSpec; enInforme?: boolean 
 interface Empresa { nombre: string; nit?: string | null; ciudad?: string | null; logo?: string | null; monograma?: string | null }
 
 /** Dibuja el informe en un lienzo (sin capturar el DOM): mismo contenido, con la plantilla de Omnegia. */
-async function informeAPng(inf: InformeSpec, e: Empresa, acento: string, generado: Date) {
+async function informeAPng(inf: InformeSpec, e: Empresa, acento: string, generado: Date, origen: string) {
   const W = 1240, P = 64, S = 2;
   const c = document.createElement('canvas');
   const x = c.getContext('2d')!;
@@ -235,7 +235,7 @@ async function informeAPng(inf: InformeSpec, e: Empresa, acento: string, generad
     // Cabecera: Omnegia a la izquierda; la empresa a la derecha.
     if (icono && pintar) x.drawImage(icono, P, y - 26, 32, 32);
     f(600, 20, TINTA.fuerte); escribir(MARCA.nombre, P + 42, y);
-    f(400, 13, TINTA.tenue); escribir('Informe preparado por el asistente', P + 42, y + 20);
+    f(400, 13, TINTA.tenue); escribir(origen, P + 42, y + 20);
     const derecha = W - P - (logo ? 70 : 0);
     if (logo && pintar) { const r = Math.min(56 / logo.width, 56 / logo.height); x.drawImage(logo, W - P - logo.width * r, y - 34, logo.width * r, logo.height * r); }
     f(600, 18, TINTA.fuerte); escribir(e.nombre, derecha, y - 6, 'right');
@@ -303,7 +303,8 @@ async function informeAPng(inf: InformeSpec, e: Empresa, acento: string, generad
   return c;
 }
 
-export function Informe({ inf }: { inf: InformeSpec }) {
+/** `origen`: quién lo preparó (el asistente, o el panel con los datos de la empresa en Informes). */
+export function Informe({ inf, origen = 'Informe preparado por el asistente' }: { inf: InformeSpec; origen?: string }) {
   const { s } = useSesion();
   const ref = useRef<HTMLElement>(null);
   const generado = useMemo(() => new Date(), []);
@@ -322,7 +323,7 @@ export function Informe({ inf }: { inf: InformeSpec }) {
   return (
     <article ref={ref} className="vz-informe" aria-label={`Informe: ${inf.titulo}`}>
       <header className="vz-inf-cab">
-        <span className="vz-inf-marca"><img src={MARCA.icono} alt="" width={28} height={28} /><span><b>{MARCA.nombre}</b><small>Informe preparado por el asistente</small></span></span>
+        <span className="vz-inf-marca"><img src={MARCA.icono} alt="" width={28} height={28} /><span><b>{MARCA.nombre}</b><small>{origen}</small></span></span>
         <span className="vz-inf-empresa">
           <span><b>{empresa.nombre}</b><small>{[empresa.nit ? `NIT ${empresa.nit}` : null, empresa.ciudad].filter(Boolean).join(' · ')}</small></span>
           {empresa.logo ? <img src={empresa.logo} alt={`Logotipo de ${empresa.nombre}`} /> : empresa.monograma ? <span className="vz-inf-monograma" aria-hidden="true">{empresa.monograma}</span> : null}
@@ -353,7 +354,7 @@ export function Informe({ inf }: { inf: InformeSpec }) {
       <footer className="vz-inf-pie">
         <span>Datos de {empresa.nombre} consultados en su panel de {MARCA.nombre}. Verifica las cifras antes de compartir este informe.</span>
         <span className="vz-acciones">
-          <BotonExportar onClick={async () => descargarLienzo(await informeAPng(inf, empresa, acentoActual(), generado), nombreArchivo(`${inf.titulo}-${empresa.nombre}`))}>Descargar imagen</BotonExportar>
+          <BotonExportar onClick={async () => descargarLienzo(await informeAPng(inf, empresa, acentoActual(), generado, origen), nombreArchivo(`${inf.titulo}-${empresa.nombre}`))}>Descargar imagen</BotonExportar>
           <button type="button" className="vz-boton" onClick={imprimir}><Icon n="facturacion" className="" size={14} />Imprimir o PDF</button>
         </span>
       </footer>

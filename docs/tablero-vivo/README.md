@@ -38,3 +38,18 @@ del navegador).
 
 Para añadir una guía: el id en `IDS_GUIA` y `GUIAS` del servidor, los pasos en el catálogo web y el
 atributo `data-guia` en cada elemento que se señala.
+
+## Interfaz del panel
+
+- **Escritorio:** riel lateral de íconos (activo en círculo negro, nombre al pasar el cursor), barra superior con la pregunta rápida a Omnegia IA (`Ctrl/⌘ + K`), el chat y la campana con lo que espera en Conversaciones. Fondo cálido y tarjetas suaves.
+- **Teléfono:** sin cambios de navegación: cabecera móvil, barra inferior y menú «Más».
+- «Asistente IA» ya no ocupa un lugar en el menú (la IA está en todas las pantallas); la pantalla completa del asistente se abre desde el chat lateral. Su lugar lo toma **Informes**.
+
+## Informes
+
+`GET /api/t/informes` (los que el rol y los módulos permiten) y `GET /api/t/informes/:tipo?periodo=semana|mes|mes_anterior|rango&desde&hasta` (hasta 92 días; más de 31 se agrupa por semana).
+Tipos: ventas, cobros, agenda, clientes e inventario. Los arma el servidor con consultas (sin IA), se validan con el mismo esquema `Informe` del asistente y se muestran en la plantilla de Omnegia con los datos de la empresa, descargables como imagen o PDF. Para un corte distinto, «Pedir a Omnegia IA».
+
+## La cara de Omnegia IA
+
+`OrbeCara` (`web/src/components/ia/OrbeCara.tsx`) con mejillas, boca y brillo en los ojos; parpadea y curiosea sola. Gestos: escuchando (la persona escribe), pensando (consulta), hablando (responde), feliz (terminó), atenta (al pasar el cursor) y confundida (algo falló o no encuentra un botón). `useCaraIA` elige el gesto en una conversación.

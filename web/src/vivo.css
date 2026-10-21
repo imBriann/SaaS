@@ -378,3 +378,107 @@
   .construyendo .lateral .nav-item, .construyendo .lateral .nav-titulo, .construyendo .tabbar .tab, .construyendo .cabecera .titulo, .construyendo .cabecera .sub, .construyendo .cabecera .acciones, .construyendo .lateral .cuenta { animation: none !important; opacity: 1 !important; transform: none !important; filter: none !important; }
   .pildora-ia, .tv-preguntar, .pia-chip, .tv-flecha, .guia-puntos i { transition: opacity 120ms ease !important; transform: none !important; }
 }
+
+/* ---------------------------------------------------------------- informes */
+.inf-pagina { display: flex; flex-direction: column; gap: 16px; }
+.inf-tipos { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.inf-tipo { position: relative; display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--borde) 55%, transparent); border-radius: 18px; background: var(--superficie); box-shadow: var(--tv-sombra); color: var(--tinta); font: inherit; text-align: left; cursor: pointer; overflow: hidden; transition: border-color 180ms, box-shadow 220ms; }
+.inf-tipo:hover { box-shadow: 0 1px 2px rgb(27 27 25 / 5%), 0 16px 34px -18px rgb(27 27 25 / 28%); }
+.inf-tipo:focus-visible { outline: 2px solid var(--acento); outline-offset: 3px; }
+.inf-tipo.on { border-color: var(--tinta); }
+.inf-tipo-ico { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--superficie-2); color: var(--tinta-2); transition: background-color 200ms, color 200ms; }
+.inf-tipo.on .inf-tipo-ico { background: var(--tinta); color: #fff; }
+.inf-tipo-txt { display: grid; gap: 2px; min-width: 0; }
+.inf-tipo-txt b { font-size: 14.5px; }
+.inf-tipo-txt small { font-size: 12px; line-height: 1.35; color: var(--tinta-3); }
+.inf-tipo-marca { position: absolute; left: 16px; right: 16px; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--acento); }
+.inf-barra { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.inf-fechas { display: inline-flex; align-items: center; gap: 6px; color: var(--tinta-3); }
+.inf-fechas .input { height: 36px; width: auto; }
+.inf-generado { margin-left: auto; }
+.inf-cuerpo { width: 100%; max-width: 980px; margin: 0 auto; min-height: 320px; }
+.inf-esqueleto { display: grid; place-items: center; gap: 12px; min-height: 320px; border-radius: 20px; background: var(--superficie); box-shadow: var(--tv-sombra); color: var(--tinta-3); font-size: 14px; }
+.inf-medida { display: flex; align-items: center; gap: 14px; width: 100%; max-width: 980px; margin: 0 auto; padding: 14px 18px; border-radius: 18px; background: linear-gradient(120deg, var(--ia-tinte), var(--superficie) 70%); border: 1px solid color-mix(in srgb, var(--ia-1) 14%, transparent); }
+.inf-medida > span { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.inf-medida small { font-size: 12.5px; color: var(--tinta-3); }
+@media (max-width: 760px) {
+  .inf-tipos { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px; padding: 2px 16px 8px; scrollbar-width: none; }
+  .inf-tipo { flex: 0 0 76%; scroll-snap-align: start; }
+  .inf-generado { margin-left: 0; width: 100%; }
+  .inf-medida { flex-wrap: wrap; }
+}
+
+/* ---------------------------------------------------------------- interfaz del panel (estilo tablero) */
+.ia-raiz { --lienzo: #ecebe6; --superficie-2: #f2f1ed; --r-tarjeta: 18px; }
+.ia-raiz .app { background: var(--lienzo); }
+.ia-raiz .tarjeta, .ia-raiz .contenedor, .ia-raiz .decision { border-color: color-mix(in srgb, var(--borde) 55%, transparent); box-shadow: var(--tv-sombra); }
+.barra-superior { display: none; }
+
+@media (min-width: 761px) {
+  /* Riel lateral: una píldora blanca de íconos; el activo es un círculo negro y el nombre sale como etiqueta. */
+  .ia-raiz .app { grid-template-columns: 104px minmax(0, 1fr); }
+  .ia-raiz .app .lateral { position: sticky; top: 16px; align-self: start; width: 72px; height: calc(100dvh - 32px); margin: 16px 0 16px 16px; padding: 14px 0; gap: 6px; align-items: center; overflow: visible; background: var(--superficie); border: 0; border-radius: 40px; box-shadow: var(--tv-sombra); }
+  .ia-raiz .lateral > .contexto { padding: 0; margin-bottom: 6px; }
+  .ia-raiz .lateral > .contexto .contexto-txt { display: none; }
+  .ia-raiz .lateral .marca-negocio { width: 44px; height: 44px; border-radius: 50%; font-size: 14px; transition: transform 260ms var(--ease-salto); }
+  .ia-raiz .lateral > .contexto:hover { background: transparent; }
+  .ia-raiz .lateral > .contexto:hover .marca-negocio { transform: rotate(-8deg) scale(1.06); }
+  .ia-raiz .lateral .nav-grupo { align-items: center; gap: 6px; width: 100%; }
+  .ia-raiz .lateral .nav-grupo + .nav-grupo { padding-top: 10px; margin-top: 4px; border-top: 1px solid var(--borde); width: 40px; }
+  .ia-raiz .lateral .nav-titulo { display: none; }
+  .ia-raiz .lateral .nav-item { position: relative; justify-content: center; width: 44px; height: 44px; min-height: 0; padding: 0; border-radius: 50%; color: var(--tinta-2); }
+  .ia-raiz .lateral .nav-item svg { color: currentColor; }
+  .ia-raiz .lateral .nav-item:hover { background: var(--superficie-2); }
+  .ia-raiz .lateral .nav-item.activo { background: var(--tinta); color: #fff; box-shadow: 0 8px 18px -10px rgb(27 27 25 / 70%); }
+  .ia-raiz .lateral .nav-item.activo svg { color: #fff; }
+  .ia-raiz .app .lateral .nav-item.activo::before { display: none; }
+  .ia-raiz .lateral .nav-item .marca-piloto { display: none; }
+  .ia-raiz .lateral .nav-item .insignia { position: absolute; top: -3px; right: -5px; margin: 0; }
+  .ia-raiz .lateral .nav-txt { position: absolute; left: calc(100% + 14px); top: 50%; z-index: 40; padding: 6px 11px; border-radius: 9px; background: var(--tinta); color: #fff; font-size: 13px; font-weight: 500; white-space: nowrap; pointer-events: none; opacity: 0; transform: translate(-6px, -50%); transition: opacity 160ms ease-out, transform 220ms var(--ease-suave); box-shadow: 0 8px 20px -10px rgb(27 27 25 / 60%); }
+  .ia-raiz .lateral .nav-txt::before { content: ''; position: absolute; left: -4px; top: 50%; width: 8px; height: 8px; margin-top: -4px; border-radius: 2px; background: inherit; transform: rotate(45deg); }
+  .ia-raiz .lateral .nav-item:hover .nav-txt, .ia-raiz .lateral .nav-item:focus-visible .nav-txt { opacity: 1; transform: translate(0, -50%); }
+  .ia-raiz .lateral .cuenta { margin-top: auto; padding-top: 10px; border-top: 0; }
+  .ia-raiz .lateral .cuenta-btn { justify-content: center; width: 44px; height: 44px; padding: 0; border-radius: 50%; }
+  .ia-raiz .lateral .cuenta-btn > span:nth-child(2), .ia-raiz .lateral .cuenta-btn > svg { display: none; }
+  .ia-raiz .lateral .cuenta-btn .avatar { width: 40px; height: 40px; }
+  .ia-raiz .lateral .firma-marca { display: none; }
+  /* Ventanas bajas: el riel se compacta y, si aun así no cabe, se desplaza (las etiquetas se ocultan). */
+  @media (max-height: 940px) { .ia-raiz .app .lateral, .ia-raiz .lateral .nav-grupo { gap: 3px; } .ia-raiz .lateral .nav-item { width: 40px; height: 40px; } .ia-raiz .lateral .marca-negocio { width: 40px; height: 40px; } }
+  @media (max-height: 800px) { .ia-raiz .app .lateral { overflow-y: auto; scrollbar-width: none; } .ia-raiz .lateral .nav-item { width: 36px; height: 36px; } .ia-raiz .lateral .nav-txt { display: none; } }
+
+  /* Barra superior: la empresa, la pregunta rápida a la IA, el chat y la campana. */
+  .barra-superior { display: flex; align-items: center; gap: 16px; padding: 18px 32px 0; width: 100%; max-width: 1440px; margin: 0 auto; }
+  .bs-empresa { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--tinta); }
+  .bs-empresa:hover { text-decoration: none; }
+  .bs-empresa .marca-negocio { width: 34px; height: 34px; border-radius: 50%; }
+  .bs-empresa > span { display: grid; min-width: 0; line-height: 1.25; }
+  .bs-empresa b { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bs-empresa small { font-size: 12px; color: var(--tinta-3); }
+  .bs-acciones { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+  .bs-pregunta { display: flex; align-items: center; gap: 8px; width: clamp(240px, 30vw, 380px); height: 48px; padding: 0 5px 0 12px; border-radius: 99px; background: var(--superficie); box-shadow: var(--tv-sombra); transition: width 360ms var(--ease-suave), box-shadow 220ms; }
+  .bs-pregunta.foco { width: clamp(300px, 38vw, 480px); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ia-1) 35%, transparent), var(--tv-sombra); }
+  .bs-pregunta input { flex: 1; min-width: 0; height: 100%; border: 0; background: transparent; font: inherit; font-size: 14px; color: var(--tinta); outline: none; }
+  .bs-pregunta input::placeholder { color: var(--tinta-4); }
+  .bs-pregunta kbd { flex: none; padding: 2px 7px; border-radius: 7px; background: var(--superficie-2); color: var(--tinta-3); font: inherit; font-size: 11.5px; font-weight: 600; }
+  .bs-enviar { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border: 0; border-radius: 50%; background: var(--tinta); color: #fff; cursor: pointer; transition: transform 180ms var(--ease-salto); }
+  .bs-enviar:hover { transform: scale(1.06); }
+  .bs-enviar:active { transform: scale(0.94); }
+  .bs-circulo { position: relative; display: grid; place-items: center; width: 48px; height: 48px; border: 0; border-radius: 50%; background: var(--superficie); color: var(--tinta); box-shadow: var(--tv-sombra); cursor: pointer; transition: transform 200ms var(--ease-salto), background-color 160ms, color 160ms; }
+  .bs-circulo:hover { transform: translateY(-2px); text-decoration: none; }
+  .bs-circulo.on { background: var(--tinta); color: #fff; }
+  .bs-circulo:focus-visible, .bs-enviar:focus-visible { outline: 2px solid var(--ia-1); outline-offset: 2px; }
+  .bs-circulo .insignia { position: absolute; top: -2px; right: -3px; }
+  .bs-campana-suena { transform-origin: 50% 10%; animation: bs-campana 2.8s ease-in-out infinite; }
+  @keyframes bs-campana { 0%, 80%, 100% { transform: rotate(0); } 84% { transform: rotate(14deg); } 88% { transform: rotate(-12deg); } 92% { transform: rotate(8deg); } 96% { transform: rotate(-4deg); } }
+  .ia-raiz .pagina { padding-top: 20px; }
+  .app-completa .barra-superior { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bs-campana-suena { animation: none; }
+  .bs-pregunta, .bs-circulo, .bs-enviar, .ia-raiz .lateral .nav-txt { transition: none; }
+}
+
+/* En el chat lateral (angosto) el resumen de consultas va en dos líneas ordenadas. */
+.panel-ia .as-consultas-cab { flex-wrap: wrap; row-gap: 2px; }
+.panel-ia .as-consultas-meta { flex-basis: 100%; margin-left: 30px; }
+.panel-ia .as-consultas-cab b { white-space: nowrap; }

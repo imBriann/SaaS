@@ -189,7 +189,7 @@ export function Respuesta({ m, onAccion }: { m: Item; onAccion: (texto: string, 
     <article className="as-msg ia" aria-label="Respuesta del asistente">
       <div className="as-quien">
         <span className="as-avatar"><OrbeCara tamano={24} /></span>
-        <b>Asistente</b>{m.creado_en && <time dateTime={m.creado_en}>{hora(m.creado_en)}</time>}
+        <b>Omnegia IA</b>{m.creado_en && <time dateTime={m.creado_en}>{hora(m.creado_en)}</time>}
       </div>
       <div className="as-cuerpo-msg"><Markdown texto={m.contenido} revelar={!!m.nuevo} /></div>
       {guias.map((g) => <GuiaRecibo key={g} id={g} />)}

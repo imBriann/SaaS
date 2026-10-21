@@ -8,6 +8,7 @@ import { Construccion } from './construccion/Construccion';
 import { IAProvider } from './ia/contexto';
 import { PanelIA, PildoraIA } from './ia/PanelIA';
 import { GuiaEnPantalla } from './ia/GuiaEnPantalla';
+import { BarraSuperior } from './ia/BarraSuperior';
 
 export interface Sesion {
   usuario: { id: string; nombre: string; rol: string; rol_nombre: string; email: string | null; correo_verificado: boolean };
@@ -44,10 +45,10 @@ function aplicarTema(tema: any) {
   r.setProperty('--sobre-acento', tema.texto_sobre_acento ?? '#ffffff');
 }
 
-type Item = { to: string; n: string; t: string; permiso?: string; modulo?: string; movil?: boolean };
+type Item = { to: string; n: string; t: string; permiso?: string; algunos?: string[]; modulo?: string; movil?: boolean };
 const OPERACION: Item[] = [
   { to: '/', n: 'inicio', t: 'Inicio', movil: true },
-  { to: '/asistente', n: 'ia', t: 'Asistente IA', permiso: 'ai:assist', modulo: 'ia' },
+  { to: '/informes', n: 'grafica', t: 'Informes', algunos: ['order:read', 'appointment:read', 'customer:read', 'inventory:read'] },
   { to: '/conversaciones', n: 'conversaciones', t: 'Conversaciones', permiso: 'conversation:read', modulo: 'conversaciones', movil: true },
   { to: '/agenda', n: 'agenda', t: 'Agenda', permiso: 'appointment:read', modulo: 'agenda', movil: true },
   { to: '/ventas', n: 'ventas', t: 'Ventas', permiso: 'order:read', modulo: 'ventas', movil: true },
@@ -228,7 +229,7 @@ export function PanelLayout() {
   if (!data) return <div className="pagina"><Cargando filas={6} /></div>;
 
   const puede = (p: string) => data.permisos.includes(p);
-  const visible = (i: Item) => (!i.permiso || puede(i.permiso)) && (!i.modulo || data.modulos.includes(i.modulo));
+  const visible = (i: Item) => (!i.permiso || puede(i.permiso)) && (!i.algunos || i.algunos.some(puede)) && (!i.modulo || data.modulos.includes(i.modulo));
   const t = data.tenant;
   const av = avisos.data?.conversaciones;
   const urgente = (av?.por_atender ?? 0) > 0;
@@ -242,7 +243,7 @@ export function PanelLayout() {
   const marca = <span className="marca-negocio" aria-hidden="true">{t.logo_data_url ? <img src={t.logo_data_url} alt="" /> : t.tema?.monograma ?? t.nombre.slice(0, 2)}</span>;
   const enlace = (i: Item) => (
     <NavLink key={i.to} to={i.to} end={i.to === '/'} className={({ isActive }) => `nav-item ${isActive ? 'activo' : ''}`} data-guia={`menu${i.to}`}>
-      <Icon n={i.n} className="" size={18} />{i.t}{i.n === 'conversaciones' && pendientes > 0 && <Insignia n={pendientes} urgente={urgente} etiqueta={textoAviso} />}
+      <Icon n={i.n} className="" size={18} /><span className="nav-txt">{i.t}</span>{i.n === 'conversaciones' && pendientes > 0 && <Insignia n={pendientes} urgente={urgente} etiqueta={textoAviso} />}
     </NavLink>
   );
   const movil = OPERACION.filter((i) => i.movil && visible(i)).slice(0, 4);
@@ -273,7 +274,7 @@ export function PanelLayout() {
               {gobierno.map(enlace)}
               {piloto && (
                 <NavLink to="/simulador" className={({ isActive }) => `nav-item ${isActive ? 'activo' : ''}`}>
-                  <Icon n="simulador" className="" size={18} />Simulador<span className="marca-piloto">Pruebas</span>
+                  <Icon n="simulador" className="" size={18} /><span className="nav-txt">Simulador</span><span className="marca-piloto">Pruebas</span>
                 </NavLink>
               )}
             </nav>
@@ -305,6 +306,7 @@ export function PanelLayout() {
         <div className="velo-nav" onClick={() => setNavAbierta(false)} aria-hidden="true" />
 
         <div className="marco">
+          <BarraSuperior marca={marca} empresa={t.nombre} rol={data.usuario.rol_nombre} pendientes={pendientes} urgente={urgente} textoAviso={textoAviso} veConversaciones={veConversaciones} />
           <AvisoSuscripcion s={data} puede={puede} />
           {!data.usuario.correo_verificado && <AvisoCorreo s={data} onVerificado={recargar} />}
           <main className={`pagina ${completa ? 'completa' : ''}`} id="contenido" tabIndex={-1}>
@@ -339,7 +341,7 @@ export function PanelLayout() {
 interface Avisos { conversaciones: { total: number; sin_leer: number; por_atender: number; ultima: { id: string; cliente: string; en: string; espera: boolean; texto: string } | null } }
 
 /** Contador del menú: aparece con un salto y late si una conversación espera a una persona. */
-function Insignia({ n, urgente, etiqueta, flotante }: { n: number; urgente?: boolean; etiqueta?: string; flotante?: boolean }) {
+export function Insignia({ n, urgente, etiqueta, flotante }: { n: number; urgente?: boolean; etiqueta?: string; flotante?: boolean }) {
   return (
     <span key={n} className={`insignia ${urgente ? 'urgente' : ''} ${flotante ? 'flotante' : ''}`} aria-label={etiqueta || undefined} aria-hidden={etiqueta ? undefined : true} title={etiqueta || undefined}>
       {n > 99 ? '99+' : n}

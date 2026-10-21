@@ -19,6 +19,7 @@ import * as fiscal from '../../modules/fiscal.js';
 import * as conv from '../../modules/conversations.js';
 import * as payments from '../../modules/payments.js';
 import * as pagos from '../../modules/pagosVentas.js';
+import * as informes from '../../modules/informes.js';
 import * as admin from '../../modules/admin.js';
 import * as team from '../../modules/team.js';
 import * as soporte from '../../modules/soporte.js';
@@ -50,6 +51,10 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   // --- Sesión y panel
   r('get', '/yo', (tx, ctx) => admin.me(tx, ctx));
   r('get', '/inicio', (tx, ctx) => admin.dashboard(tx, ctx));
+
+  // --- Informes con datos reales (plantilla de Omnegia)
+  r('get', '/informes', (tx, ctx) => informes.informesDisponibles(tx, ctx));
+  r('get', '/informes/:tipo', (tx, ctx, req) => informes.generarInforme(tx, ctx, req.params.tipo, req.query));
 
   // --- Clientes
   r('get', '/clientes', (tx, ctx, req) => customers.listCustomers(tx, ctx, { q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina }));

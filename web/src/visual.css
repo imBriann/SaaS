@@ -43,7 +43,7 @@
 .vz-inf-empresa { margin-left: auto; text-align: right; }
 .vz-inf-empresa b { font-size: 14.5px; }
 .vz-inf-empresa img { width: 44px; height: 44px; object-fit: contain; border-radius: 8px; }
-.vz-inf-monograma { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; background: var(--acento); color: var(--sobre-acento); font-weight: 650; }
+.vz-inf-empresa > .vz-inf-monograma, .vz-inf-monograma { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; background: var(--acento); color: var(--sobre-acento); font-weight: 650; }
 .vz-inf-cuerpo { padding: 20px 20px 8px; }
 .vz-inf-titulo { margin: 0; font-size: 24px; font-weight: 650; letter-spacing: -.02em; line-height: 1.2; }
 .vz-inf-periodo { margin: 4px 0 0; font-size: 13px; color: var(--tinta-3); }
