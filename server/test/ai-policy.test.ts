@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { setup, login, api, CRED, type Env } from './helpers.js';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+import { config } from '../src/config.js';
+import { setup, login, api, CRED, diaLaborable, type Env } from './helpers.js';
 import { evaluateAndExecute, visibleTools, type AgentProfile } from '../src/ai/gateway.js';
 import { loadAgent, handleCustomerMessage } from '../src/ai/runtime.js';
 import { setLlm } from '../src/ai/llm/index.js';
@@ -22,6 +23,8 @@ let conv: string;
 let cliente: string;
 
 beforeAll(async () => {
+  // Estas pruebas recorren la facturación electrónica: el interruptor (apagado por defecto) se enciende aquí.
+  config.fiscal.dianHabilitada = true;
   E = await setup();
   await E.db.withTenant(E.A, async (tx) => {
     agente = (await loadAgent(tx, 'atencion'))!;
@@ -133,14 +136,18 @@ describe('Matriz de casos de política', () => {
 });
 
 describe('Confirmación determinista y recibo', () => {
-  it('la acción confirmable solo se ejecuta cuando el CLIENTE responde SÍ', async () => {
+  // En AUTOMATICO (por defecto) una cita con datos explícitos se agenda sin «SÍ» (ia-autonoma.test.ts);
+  // la confirmación del cliente se conserva en el modo ASESOR, que es el que se prueba aquí.
+  it('ASESOR: la acción confirmable solo se ejecuta cuando el CLIENTE responde SÍ', async () => {
+    await E.db.withPlatform((tx) => tx.query(`UPDATE ia_ajustes SET autonomia='ASESOR' WHERE tenant_id=$1`, [E.A]));
+    onTestFinished(() => E.db.withPlatform((tx) => tx.query(`UPDATE ia_ajustes SET autonomia='AUTOMATICO' WHERE tenant_id=$1`, [E.A])).then(() => undefined));
     const from = '573019990001';
     const wa = async (texto: string) => {
       await receiveChannelMessages(E.db, [{ phoneNumberId: 'sim-elparche', from, nombre: 'Prueba', id: `t.${uuidv7()}`, texto }], 'WHATSAPP', 't');
       await drain(E.db);
     };
     await wa('hola'); await wa('si');
-    await wa('quiero una cita de corte clásico mañana a las 10');
+    await wa(`quiero una cita de corte clásico el ${diaLaborable().nombre} a las 10`);
     const antes = await E.db.withTenant(E.A, async (tx) => (await tx.query(`SELECT count(*)::int n FROM appointment a JOIN customer c ON c.id=a.customer_id WHERE c.telefono='+${from}'`)).rows[0].n);
     expect(antes).toBe(0);
     await wa('sí');

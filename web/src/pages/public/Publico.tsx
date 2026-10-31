@@ -482,7 +482,7 @@ export function Aprovisionamiento() {
   const [consulta, setConsulta] = useState(0);
   const [pw, setPw] = useState('');
   // Cómo conectará WhatsApp: decide a dónde lleva «Entrar a mi panel». Comprar un número ocurre ya dentro del panel.
-  const [whatsapp, setWhatsapp] = useState<'despues' | 'propio' | 'nuevo'>('despues');
+  const [whatsapp, setWhatsapp] = useState<'despues' | 'propio'>('despues');
   const [creada, setCreada] = useState(false);
   const [errAcceso, setErrAcceso] = useState('');
   const [entrando, setEntrando] = useState(false);
@@ -577,7 +577,7 @@ export function Aprovisionamiento() {
       const emp = r.empresas?.find((x: any) => x.slug === st.tenant.slug);
       if (!emp) { setErrAcceso('Iniciaste sesión, pero esta cuenta no tiene acceso al panel recién creado. Revisa el correo con el que entras.'); return; }
       guardar('borrador', null);
-      irAEmpresa(emp.slug, whatsapp === 'nuevo' ? '/whatsapp/numero' : whatsapp === 'propio' ? '/configuracion?tab=canal' : '/', nav);
+      irAEmpresa(emp.slug, whatsapp === 'propio' ? '/whatsapp/numero' : '/', nav);
     } finally { setEntrando(false); }
   };
 
@@ -635,17 +635,16 @@ export function Aprovisionamiento() {
               {st.acceso.vigente_hasta && <div><dt>Acceso hasta</dt><dd>{new Date(st.acceso.vigente_hasta).toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'long', year: 'numeric' })}</dd></div>}
               {st.acceso.url && <div><dt>Dirección</dt><dd><a href={st.acceso.url} className="mono">{st.acceso.url.replace(/^https?:\/\//, '')}</a></dd></div>}
             </dl>}
-            <fieldset className="num-registro" aria-describedby="num-registro-ayuda">
+            <fieldset className="num-registro dos" aria-describedby="num-registro-ayuda">
               <legend>¿Cómo conectarás WhatsApp?</legend>
-              {([['propio', 'Ya tengo un número', 'Lo conectas en Configuración › WhatsApp. Sin mensualidad de número.'],
-                ['nuevo', 'Necesito un número nuevo', 'Eliges uno, ves el precio antes de pagar y lo activamos por ti.'],
+              {([['propio', 'Usar mi propio número', 'Lo escribes, recibes un código por SMS y queda conectado a la IA. Sin mensualidad de número.'],
                 ['despues', 'Lo decido después', 'Puedes hacerlo cuando quieras desde el panel.']] as const).map(([v, t, d2]) => (
                 <label key={v} className={`num-registro-op ${whatsapp === v ? 'on' : ''}`}>
                   <input type="radio" name="whatsapp-conexion" value={v} checked={whatsapp === v} onChange={() => setWhatsapp(v)} />
                   <span><b>{t}</b><small>{d2}</small></span>
                 </label>
               ))}
-              <span id="num-registro-ayuda" className="tenue peq-txt">Al entrar te llevamos a ese paso. Nada se cobra sin que revises y confirmes el precio.</span>
+              <span id="num-registro-ayuda" className="tenue peq-txt">Al entrar te llevamos a ese paso. Conectar tu número no tiene costo en Omnegia.</span>
             </fieldset>
             <form className="decision col" style={{ gap: 14, padding: 20 }} onSubmit={entrar}>
               {necesitaCrear

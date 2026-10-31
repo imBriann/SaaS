@@ -226,3 +226,74 @@
 .num-registro-op.on { border-color: var(--acento); background: var(--acento-tinte); transform: translateY(-1px); }
 @media (max-width: 680px) { .num-registro { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .num-registro-op { transition: none; } .num-registro-op.on { transform: none; } }
+.num-registro.dos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 680px) { .num-registro.dos { grid-template-columns: 1fr; } }
+
+/* ---------------------------------------------------------------- «Usar mi propio número» (NumeroPropio.tsx) */
+.num-opciones.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.num-opcion-etiqueta { align-self: flex-start; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--acento-tinte-2); color: var(--acento-texto); }
+.num-opcion.proximamente { cursor: not-allowed; background: var(--superficie-2); box-shadow: none; }
+.num-opcion.proximamente:hover, .num-opcion.proximamente:active { transform: none; border-color: var(--borde); box-shadow: none; }
+.num-opcion.proximamente .num-opcion-ico { background: var(--superficie-3); color: var(--tinta-3); }
+.num-opcion.proximamente .num-opcion-txt b { color: var(--tinta-2); }
+.num-opcion.proximamente .num-opcion-etiqueta { background: var(--superficie-3); color: var(--tinta-2); }
+
+.num-propio-numero { display: grid; grid-template-columns: minmax(170px, 230px) 1fr; gap: 12px; align-items: start; }
+.num-prefijo { display: flex; align-items: stretch; }
+.num-prefijo > span.mono { display: grid; place-items: center; padding: 0 12px; border: 1px solid var(--borde-2); border-right: 0; border-radius: var(--r) 0 0 var(--r); background: var(--superficie-2); color: var(--tinta-2); font-size: 15px; }
+.num-prefijo .input { border-radius: 0 var(--r) var(--r) 0; flex: 1; min-width: 0; font-size: 17px; letter-spacing: .02em; }
+.num-propio-aviso { align-items: flex-start; line-height: 1.45; font-weight: 400; }
+.num-propio-aviso b { font-weight: 600; }
+.num-propio-titulo { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.015em; }
+.num-propio-titulo:focus, .num-final-titulo:focus { outline: none; }
+.num-propio-titulo:focus-visible, .num-final-titulo:focus-visible { outline: 2px solid var(--acento); outline-offset: 4px; border-radius: 4px; }
+.num-enlace-boton { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.num-enlace-boton:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; border-radius: 3px; }
+
+/* El SMS llega: el teléfono se asienta y la burbuja con el código aparece encima. */
+.num-codigo .num-sms { position: relative; width: 56px; height: 56px; margin-top: 6px; }
+.num-sms-tel { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: var(--acento-tinte); color: var(--acento-texto); animation: num-entra-nodo 480ms var(--ease-salto) both; }
+.num-sms-burbuja {
+  position: absolute; left: 40px; top: -8px; padding: 3px 9px; border-radius: 10px 10px 10px 3px; white-space: nowrap;
+  background: var(--acento); color: var(--sobre-acento); font: 600 12px/1.4 var(--mono, ui-monospace, monospace); letter-spacing: .06em;
+  transform-origin: 0 100%; animation: num-burbuja 520ms 260ms var(--ease-salto) both;
+}
+.num-codigo-input { max-width: 260px; font-size: 26px; letter-spacing: .4em; text-align: center; font-variant-numeric: tabular-nums; min-height: 56px; }
+.num-codigo-input[aria-invalid='true'] { border-color: var(--error); animation: num-sacude 320ms ease-out; }
+.num-reenvio { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding-top: 12px; border-top: 1px solid var(--borde); }
+.num-reenvio #num-reenvio-ayuda { flex-basis: 100%; }
+.num-cuenta { margin-left: 2px; padding: 0 6px; border-radius: 999px; background: var(--superficie-2); font-size: 12px; color: var(--tinta-2); font-variant-numeric: tabular-nums; }
+
+/* Conectando: la línea entre el número y la IA fluye mientras el servidor trabaja. */
+.num-union-linea.esperando path { stroke-dasharray: 8 10; stroke-dashoffset: 0; animation: num-fluye 900ms linear infinite; opacity: .7; }
+.num-nombre-revision { display: flex; gap: 6px; align-items: flex-start; max-width: 46ch; margin: 0; text-align: left; }
+
+@keyframes num-burbuja { from { opacity: 0; transform: scale(.4) translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes num-sacude { 0%, 100% { transform: none; } 25% { transform: translateX(-6px); } 50% { transform: translateX(5px); } 75% { transform: translateX(-3px); } }
+@keyframes num-fluye { to { stroke-dashoffset: -36; } }
+
+@media (max-width: 1100px) { .num-opciones.tres { grid-template-columns: 1fr; } }
+@media (max-width: 680px) {
+  .num-propio-numero { grid-template-columns: 1fr; }
+  .num-codigo-input { max-width: none; }
+  .num-reenvio .btn { flex: 1 1 auto; min-height: 48px; }
+  .num-propio-form .btn.grande { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .num-sms-tel, .num-sms-burbuja, .num-codigo-input[aria-invalid='true'] { animation: none !important; }
+  .num-union-linea.esperando path { animation: none; stroke-dasharray: none; }
+}
+.num-fallo { flex-wrap: nowrap; align-items: flex-start; line-height: 1.45; }
+.num-fallo svg { margin-top: 2px; }
+
+/* Estado de la conexión, siempre visible arriba de «Conectar WhatsApp» */
+.num-estado { border-left: 4px solid var(--borde); }
+.num-estado.ok { border-left-color: var(--ok); }
+.num-estado.warn { border-left-color: var(--atencion); }
+.num-estado.err { border-left-color: var(--error); }
+.num-estado .estado { font-size: 14px; height: 28px; padding: 0 12px 0 10px; }
+/* Lista de empresas para asignar un número (panel del operador) */
+.lista.seleccion { max-height: 280px; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.lista.seleccion li { padding: 8px 4px; border-bottom: 1px solid var(--borde); }
+.lista.seleccion label { cursor: pointer; min-height: 32px; }
+.lista.seleccion input:disabled + span { opacity: .6; }

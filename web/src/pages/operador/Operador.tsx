@@ -25,6 +25,7 @@ const SECCIONES: { to: string; n: string; t: string }[] = [
   { to: '/operador/salud', n: 'salud', t: 'Salud del sistema' },
   { to: '/operador/incidentes', n: 'alerta', t: 'Incidentes' },
   { to: '/operador/integraciones', n: 'integraciones', t: 'Integraciones' },
+  { to: '/operador/numeros', n: 'telefono', t: 'Números de WhatsApp' },
   { to: '/operador/conversaciones', n: 'conversaciones', t: 'Conversaciones' },
   { to: '/operador/atencion', n: 'persona', t: 'Atención de las empresas' },
   { to: '/operador/soporte', n: 'soporte', t: 'Soporte' },

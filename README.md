@@ -15,7 +15,7 @@ npm run instalar     # dependencias de server/ y web/
 npm run dev          # API en :3000 y panel en http://localhost:5173
 ```
 
-La primera ejecución crea la base en `server/data/pglite` y carga datos de demostración. Para empezar de cero: `npm run reset`.
+La primera ejecución crea la base en `server/data/pglite` y carga datos de demostración. Para empezar de cero: `npm run reset`. Para limpiar empresas conservando la tuya (`npm run reiniciar`) o dejar todo en blanco, también en PostgreSQL (`npm run borrar-todo`), ver [docs/reinicio-de-datos](docs/reinicio-de-datos/README.md).
 
 | Cuenta | Contraseña | Qué es |
 |---|---|---|
@@ -36,10 +36,11 @@ Copia `server/.env.example` a `server/.env`. Nunca subas `.env` al repositorio. 
 | Base | `APP_PUBLIC_URL` (https en producción), `API_PUBLIC_URL`, `BASE_DOMAIN`, `DATABASE_URL`, `APP_KEY` (32+ caracteres: `openssl rand -base64 48`) |
 | Correo | `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS`, `EMAIL_REPLY_TO`, `EMAIL_SUPPORT_INBOX`, `EMAIL_OTP_EXPIRY_MINUTES`, `RESEND_WEBHOOK_SECRET` |
 | SMTP alternativo | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` |
-| WhatsApp (Meta) | `WHATSAPP_PLATFORM_PHONE_NUMBER_ID` (número de Omnegia: reconoce los teléfonos de los comercios), `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` |
+| WhatsApp (Meta) | `WHATSAPP_PLATFORM_PHONE_NUMBER_ID` (número de Omnegia: reconoce los teléfonos de los comercios), `WHATSAPP_PLATFORM_WABA_ID` (WABA de Omnegia donde se registran los números propios), `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION`, `WHATSAPP_WABA_LIMITE_NUMEROS` (2 con el portafolio de Meta sin verificar), `WHATSAPP_CUENTA_PROPIA_HABILITADA` (0: «Próximamente») |
 | IA (Claude) | `ANTHROPIC_API_KEY`, `LLM_MODEL` (por defecto `claude-opus-5-5`), `IA_PRECIO_ENTRADA_USD_MTOK`, `IA_PRECIO_SALIDA_USD_MTOK` |
 | Pagos (Wompi) | `WOMPI_ENTORNO`, `WOMPI_LLAVE_PUBLICA`, `WOMPI_LLAVE_PRIVADA`, `WOMPI_SECRETO_INTEGRIDAD`, `WOMPI_SECRETO_EVENTOS`, `WOMPI_3DS`, `WOMPI_3DS_SANDBOX`, `TARIFAS_CONFIRMADAS`, `MODO_INSTITUCIONAL`, `PRECIO_INSTITUCIONAL_COP`, `ACCESO_INSTITUCIONAL_DIAS` |
 | Documentos de pago y zona legal | `EMISOR_RAZON_SOCIAL`, `EMISOR_NUMERO_DOCUMENTO`, `EMISOR_DIRECCION`, `EMISOR_CIUDAD`, `EMISOR_CORREO`, `EMISOR_TELEFONO` (también identifican a Omnegia en `/legal`), `EMISOR_RESPONSABLE_IVA`, `IVA_PCT`, `FACTURACION_ELECTRONICA_PLATAFORMA` (nunca automática) y `FACTURACION_*` |
+| Facturación de las empresas | `FACTURACION_DIAN_HABILITADA` (0 por defecto: factura DIAN en «Próximamente»; las empresas generan comprobantes de venta internos), `FISCAL_PROVIDER` |
 | Sesiones | `SESION_DIAS`, `SESION_INACTIVIDAD_HORAS`, `LOGIN_MAX_INTENTOS`, `LOGIN_VENTANA_MIN` |
 
 El panel muestra el estado de cada integración en Configuración › Integraciones. El operador lo ve en su panel, en Integraciones. `GET /api/salud/listo` responde 200 solo si la base está disponible y las migraciones están aplicadas.
@@ -87,11 +88,13 @@ Cómo funciona el envío:
 
 ## 4. Otras integraciones
 
-- **WhatsApp:** en Meta, registra el webhook `https://<tu-api>/api/webhooks/whatsapp` con `WHATSAPP_VERIFY_TOKEN`. Cada empresa guarda su identificador de número (Phone number ID) en Configuración › WhatsApp y pulsa «Probar conexión». Fuera de la ventana de 24 horas solo salen plantillas aprobadas en Meta.
-- **Números de WhatsApp contratados (Telnyx + Meta):** una empresa puede comprar un número desde `/whatsapp/numero` y Omnegia lo verifica y conecta. Configuración, costos, restricciones y pruebas en [docs/numeros-whatsapp](docs/numeros-whatsapp/README.md).
+- **WhatsApp:** en Meta, registra el webhook `https://<tu-api>/api/webhooks/whatsapp` con `WHATSAPP_VERIFY_TOKEN`. Las empresas no escriben identificadores: conectan su número con «Usar mi propio número» o el operador se lo asigna desde **Números de WhatsApp** (lista en vivo de la WABA, asignación, registro en la API con PIN cifrado). Fuera de la ventana de 24 horas solo salen plantillas aprobadas en Meta. Ver [docs/numeros-whatsapp](docs/numeros-whatsapp/README.md), sección 11.
+- **Usar mi propio número (forma principal):** en `/whatsapp/numero` la empresa escribe su número, recibe un código por SMS y queda conectada a la IA, sin entrar a Meta. Omnegia registra el número en su propia WABA (`WHATSAPP_PLATFORM_WABA_ID`, obligatoria en producción si hay `WHATSAPP_ACCESS_TOKEN`).
+- **Números de WhatsApp contratados (Telnyx + Meta), «Próximamente»:** con `NUMEROS_COMPRA_HABILITADA=1` una empresa puede comprar un número desde `/whatsapp/numero` y Omnegia lo verifica y conecta. Configuración, costos, restricciones y pruebas en [docs/numeros-whatsapp](docs/numeros-whatsapp/README.md).
 - **IA:** con `ANTHROPIC_API_KEY`, el agente usa Claude. Sin ella, en producción las conversaciones pasan a una persona.
 - **Wompi:** las altas y renovaciones usan las llaves de la plataforma. URL de eventos: `https://<tu-api>/api/webhooks/wompi`. Cada comercio conecta su propia cuenta para cobrar a sus clientes. `TARIFAS_CONFIRMADAS=1` solo cuando los precios comerciales estén definidos.
-- **Facturación electrónica:** solo existe el entorno de pruebas, y sus documentos dicen «sin validez fiscal». Falta conectar un proveedor autorizado por la DIAN.
+- **Facturación electrónica DIAN, «Próximamente»:** apagada con `FACTURACION_DIAN_HABILITADA=0` (sus rutas responden 409). Mientras tanto, cada empresa genera **comprobantes de venta** internos, sin validez fiscal y con su leyenda. Ver [docs/comprobantes](docs/comprobantes/README.md).
+- **La IA que atiende:** por defecto resuelve sola citas, ventas y dudas, y solo pasa a una persona por reglas explícitas (pide una persona, queja, pagos, urgencia, sin solución). Los avisos proactivos respetan la ventana de 24 horas de WhatsApp. Ver [docs/ia-autonoma](docs/ia-autonoma/README.md), [docs/agenda](docs/agenda/README.md) (motor de disponibilidad y calendario) y [docs/imagenes](docs/imagenes/README.md) (fotos del catálogo, proveedor y derechos, punto de venta).
 
 ## 5. Panel del operador de Omnegia
 

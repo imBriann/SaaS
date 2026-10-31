@@ -2,6 +2,8 @@ import { readFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+// Restricción de exclusión de la agenda (doble reserva imposible): la misma extensión que en PostgreSQL.
+import { btree_gist } from '@electric-sql/pglite/contrib/btree_gist';
 import pg from 'pg';
 
 /**
@@ -91,7 +93,7 @@ export class Database {
       return new Database(new PgEngine(pool));
     }
     if (opts.dataDir && opts.dataDir !== 'memory://') mkdirSync(opts.dataDir, { recursive: true });
-    const db = new PGlite(opts.dataDir && opts.dataDir !== 'memory://' ? opts.dataDir : undefined);
+    const db = new PGlite(opts.dataDir && opts.dataDir !== 'memory://' ? opts.dataDir : undefined, { extensions: { btree_gist } });
     await db.waitReady;
     return new Database(new PgliteEngine(db));
   }

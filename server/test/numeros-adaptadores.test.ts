@@ -2,9 +2,9 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { TelnyxNumeros, texmlLlamada, verificarFirmaTelnyx } from '../src/numeros/telnyx.js';
 import { ErrorProveedor, NumeroNoDisponible, elegibleWhatsApp } from '../src/numeros/proveedor.js';
-import { codigoDeTranscripcion, ErrorMeta, MetaGraph } from '../src/numeros/meta.js';
+import { codigoDeTranscripcion, ErrorMeta, MetaGraph, motivoRegistro } from '../src/numeros/meta.js';
 import { cotizar, tasaUsdCop, olvidarTasa } from '../src/numeros/tarifas.js';
-import { config, erroresNumeros } from '../src/config.js';
+import { config, erroresNumeroPropio, erroresNumeros } from '../src/config.js';
 
 /**
  * Forma de las llamadas a las APIs reales (Telnyx v2 y Graph de Meta) con un fetch de prueba.
@@ -150,6 +150,48 @@ describe('Meta (Graph API)', () => {
     expect(e1.reintentable).toBe(false);
     const limite = new MetaGraph(fetchFalso([() => ({ status: 400, json: { error: { code: 130429 } } })]).f);
     expect((await limite.solicitarCodigo('1', 'TK').catch((x) => x)).reintentable).toBe(true);
+  });
+
+  it('número propio: código por SMS o llamada en la WABA de la plataforma y deregister al desconectar', async () => {
+    const { f, llamadas } = fetchFalso([() => ({ json: { success: true } })]);
+    const m = new MetaGraph(f, 'v23.0');
+    await m.solicitarCodigo('110200345501442', 'TK-PLATAFORMA', 'SMS');
+    expect(llamadas[0].url).toBe('https://graph.facebook.com/v23.0/110200345501442/request_code?code_method=SMS&language=es');
+    expect(llamadas[0].headers.authorization).toBe('Bearer TK-PLATAFORMA');
+    await m.solicitarCodigo('110200345501442', 'TK-PLATAFORMA', 'VOICE');
+    expect(llamadas[1].url).toContain('code_method=VOICE');
+    await m.desregistrar('110200345501442', 'TK-PLATAFORMA');
+    expect(llamadas[2]).toMatchObject({ method: 'POST', url: 'https://graph.facebook.com/v23.0/110200345501442/deregister' });
+  });
+
+  it('clasifica los errores del registro sin exponer el texto de Meta', async () => {
+    const error = async (json: unknown, status = 400) => new MetaGraph(fetchFalso([() => ({ status, json })]).f).agregarNumero('1', 'TK', { cc: '57', numero: '3001234567', nombre: 'X' }).catch((x) => x);
+    const enUso = await error({ error: { code: 100, message: 'Invalid parameter', error_user_msg: 'This phone number is already registered to a WhatsApp account.' } });
+    expect(motivoRegistro(enUso)).toBe('NUMERO_EN_USO');
+    // El mensaje que puede llegar a la interfaz nunca trae el texto de Meta.
+    expect(enUso.message).not.toMatch(/already registered/);
+    expect(motivoRegistro(await error({ error: { code: 100, error_subcode: 2388012, message: 'exists' } }))).toBe('NUMERO_YA_EN_LA_CUENTA');
+    expect(motivoRegistro(await error({ error: { code: 136024 } }))).toBe('YA_VERIFICADO');
+    expect(motivoRegistro(await error({ error: { code: 133016 } }))).toBe('DEMASIADOS_INTENTOS');
+    expect(motivoRegistro(await error({ error: { code: 133005 } }))).toBe('PIN_EXISTENTE');
+    expect(motivoRegistro(await error({ error: { code: 100, error_user_msg: 'The WhatsApp Business Account has reached the maximum number of phone numbers.' } }))).toBe('LIMITE_NUMEROS');
+    expect(motivoRegistro(await error({ error: { code: 100, error_user_msg: 'The verified_name is not acceptable.' } }))).toBe('NOMBRE_RECHAZADO');
+    expect(motivoRegistro(await error({ error: { code: 100, error_user_msg: 'Invalid phone number.' } }))).toBe('NUMERO_INVALIDO');
+    expect(motivoRegistro(await error({ error: { code: 190 } }, 401))).toBe('ACCESO');
+    expect(motivoRegistro(await error({ error: { code: 1 } }, 500))).toBe('TEMPORAL');
+    // Código equivocado: false; código vencido: se informa como tal.
+    const v = new MetaGraph(fetchFalso([() => ({ status: 400, json: { error: { code: 136025, message: 'Verify code error' } } })]).f);
+    expect(await v.verificarCodigo('1', 'TK', '000000')).toBe(false);
+    const vencido = new MetaGraph(fetchFalso([() => ({ status: 400, json: { error: { code: 100, error_user_msg: 'The verification code has expired.' } } })]).f);
+    expect(motivoRegistro(await vencido.verificarCodigo('1', 'TK', '000000').catch((x) => x))).toBe('CODIGO_VENCIDO');
+  });
+
+  it('en producción, con token de WhatsApp, la WABA de la plataforma es obligatoria y numérica', () => {
+    const base = { ...config, dev: false, whatsapp: { ...config.whatsapp, accessToken: 'EAAG', plataformaWabaId: undefined } };
+    expect(erroresNumeroPropio(base as typeof config)[0]).toMatch(/WHATSAPP_PLATFORM_WABA_ID/);
+    expect(erroresNumeroPropio({ ...base, whatsapp: { ...base.whatsapp, plataformaWabaId: 'abc' } } as typeof config)[0]).toMatch(/numérico/);
+    expect(erroresNumeroPropio({ ...base, whatsapp: { ...base.whatsapp, plataformaWabaId: '102290129340398' } } as typeof config)).toEqual([]);
+    expect(erroresNumeroPropio({ ...base, whatsapp: { ...base.whatsapp, accessToken: undefined } } as typeof config)).toEqual([]);
   });
 
   it('extrae el código dictado en cifras o en palabras, sin adivinar', () => {

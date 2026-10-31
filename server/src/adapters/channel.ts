@@ -24,6 +24,10 @@ export interface ChannelAdapter {
   canal: 'WHATSAPP' | 'WEB';
   sendText(phoneNumberId: string | null, to: string, text: string): Promise<SendResult>;
   sendTemplate(phoneNumberId: string | null, to: string, p: PlantillaEnvio): Promise<SendResult>;
+  /** Documento por enlace (p. ej. el PDF de un comprobante). Solo dentro de la ventana de 24 horas. */
+  sendDocument?(phoneNumberId: string | null, to: string, d: { enlace: string; archivo: string; texto: string }): Promise<SendResult>;
+  /** Imagen por enlace https (foto de un producto). Solo dentro de la ventana de 24 horas. */
+  sendImage?(phoneNumberId: string | null, to: string, d: { enlace: string; texto: string }): Promise<SendResult>;
 }
 
 /** Firma X-Hub-Signature-256 del webhook de Meta: sha256=<hmac(app_secret, cuerpo)>. */
@@ -115,20 +119,30 @@ export class WhatsAppCloudAdapter implements ChannelAdapter {
     });
   }
 
+  async sendDocument(phoneNumberId: string | null, to: string, d: { enlace: string; archivo: string; texto: string }): Promise<SendResult> {
+    const tk = await tokenPara(phoneNumberId);
+    return this.sinConexion(phoneNumberId, tk) ?? this.post(phoneNumberId!, tk!, { to, type: 'document', document: { link: d.enlace, filename: d.archivo.slice(0, 120), caption: d.texto.slice(0, 1024) } });
+  }
+
+  async sendImage(phoneNumberId: string | null, to: string, d: { enlace: string; texto: string }): Promise<SendResult> {
+    const tk = await tokenPara(phoneNumberId);
+    return this.sinConexion(phoneNumberId, tk) ?? this.post(phoneNumberId!, tk!, { to, type: 'image', image: { link: d.enlace, caption: d.texto.slice(0, 1024) } });
+  }
+
   /** Diagnóstico del número: datos públicos de la cuenta y calidad, sin enviar nada. */
-  async diagnose(phoneNumberId: string): Promise<{ ok: boolean; numero?: string; nombre?: string; calidad?: string; error?: string; simulado?: boolean }> {
+  async diagnose(phoneNumberId: string): Promise<{ ok: boolean; numero?: string; nombre?: string; calidad?: string; estado?: string; plataforma?: string; error?: string; simulado?: boolean }> {
     if (esSimulado(phoneNumberId)) {
       return config.simuladores ? { ok: true, simulado: true, numero: 'Simulador', nombre: 'Número de pruebas' } : { ok: false, error: 'Los identificadores sim-… solo funcionan en demostración.' };
     }
     const tk = await tokenPara(phoneNumberId);
     if (!tk) return { ok: false, error: 'Falta WHATSAPP_ACCESS_TOKEN en el servidor.' };
     try {
-      const res = await this.fetcher(`https://graph.facebook.com/${config.whatsapp.graphVersion}/${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name,quality_rating`, {
+      const res = await this.fetcher(`https://graph.facebook.com/${config.whatsapp.graphVersion}/${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name,quality_rating,status,platform_type`, {
         headers: { Authorization: `Bearer ${tk}` }, signal: AbortSignal.timeout(10_000),
       });
       const d: any = await res.json().catch(() => ({}));
       if (!res.ok) return { ok: false, error: CODIGOS_LEGIBLES[Number(d?.error?.code)] ?? `Meta respondió ${res.status}: revisa el identificador del número y los permisos del token.` };
-      return { ok: true, numero: d.display_phone_number, nombre: d.verified_name, calidad: d.quality_rating };
+      return { ok: true, numero: d.display_phone_number, nombre: d.verified_name, calidad: d.quality_rating, estado: d.status, plataforma: d.platform_type };
     } catch {
       return { ok: false, error: 'No hubo respuesta de Meta. Intenta de nuevo en unos minutos.' };
     }

@@ -44,6 +44,8 @@ export async function me(tx: Tx, ctx: Ctx) {
     tenant: { ...t, zona_horaria: zonaValida(t.zona_horaria) }, modulos, permisos: [...ctx.permisos], solo_lectura: !!ctx.soloLectura,
     consumo: can(ctx, 'usage:read') ? await allQuotas(tx, ctx.tenantId) : null,
     simuladores: config.simuladores,
+    // Facturación DIAN apagada: el panel la muestra como «Próximamente» y ofrece comprobantes de venta.
+    factura_dian: config.fiscal.dianHabilitada,
   };
 }
 
@@ -361,6 +363,11 @@ export async function updateTenantInfo(tx: Tx, ctx: Ctx, body: unknown) {
   requireWritable(ctx);
   const d = EmpresaInput.parse(body);
   if (d.whatsapp_phone_number_id?.startsWith('sim-') && !config.simuladores) throw invalid('Los números de simulación solo se permiten en el entorno de demostración.');
+  // Un número real se conecta con «Usar mi propio número» o lo asigna el equipo de Omnegia: la empresa no escribe
+  // identificadores de la cuenta de WhatsApp de la plataforma (podría tomar un número que no es suyo).
+  if (d.whatsapp_phone_number_id && !d.whatsapp_phone_number_id.startsWith('sim-')) {
+    throw invalid('Conecta tu número desde «Número de WhatsApp › Usar mi propio número»: solo necesitas recibir un código por SMS. No hace falta copiar identificadores de Meta.');
+  }
   return { d };
 }
 

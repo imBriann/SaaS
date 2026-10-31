@@ -1,3 +1,4 @@
+import { MetricasIA } from '../../components/MetricasIA';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
@@ -24,6 +25,17 @@ const PERIODOS: [string, string][] = [['semana', 'Últimos 7 días'], ['mes', 'E
  * empresa), listos para descargar como imagen o PDF. Los arma el servidor con consultas, sin IA; para
  * uno a medida está Omnegia IA.
  */
+/** Fechas del periodo elegido para las métricas de la IA. */
+function rangoMetricas(periodo: string, desde: string, hasta: string) {
+  const hoy = hoyLocal();
+  const dia = (f: string, n: number) => { const d = new Date(`${f}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  if (periodo === 'rango') return { desde, hasta };
+  if (periodo === 'semana') return { desde: dia(hoy, -6), hasta: hoy };
+  const primero = `${hoy.slice(0, 8)}01`;
+  if (periodo === 'mes_anterior') { const fin = dia(primero, -1); return { desde: `${fin.slice(0, 8)}01`, hasta: fin }; }
+  return { desde: primero, hasta: hoy };
+}
+
 export function Informes() {
   const { s } = useSesion();
   const { abrirPanel } = useIA();
@@ -45,6 +57,7 @@ export function Informes() {
       <Cabecera titulo="Informes" sub={`Cifras reales de ${s.tenant.nombre}, con su marca, listas para descargar como imagen o PDF.`} />
       <div className="contenido inf-pagina">
         {disponibles.error && <ErrorCarga error={disponibles.error} reintentar={disponibles.recargar} />}
+        {s.permisos.includes('ai:read') && <MetricasIA {...rangoMetricas(periodo, desde, hasta)} />}
         {disponibles.data && !tipos.length && <Vacio titulo="No hay informes para tu rol">Pide a quien administra la empresa acceso a ventas, agenda, clientes o inventario.</Vacio>}
         {tipos.length > 0 && <>
           <div className="inf-tipos" role="tablist" aria-label="Tipo de informe">

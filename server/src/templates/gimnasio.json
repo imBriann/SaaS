@@ -14,7 +14,7 @@
         "inventory:read", "inventory:write", "order:read", "order:create", "order:void", "appointment:read",
         "appointment:create", "appointment:cancel", "conversation:read", "conversation:reply", "case:create",
         "case:manage", "case:supervise", "invoice:read", "invoice:issue", "invoice:void", "ai:read", "ai:configure",
-        "ai:assist", "audit:read", "subscription:manage", "usage:read", "payment:link", "payment:register", "payment:void"
+        "ai:assist", "audit:read", "subscription:manage", "usage:read", "payment:link", "payment:register", "payment:void", "comprobante:read", "comprobante:issue", "comprobante:send", "comprobante:void"
       ]
     },
     {
@@ -23,7 +23,7 @@
       "permisos": [
         "customer:read", "customer:write", "catalog:read", "inventory:read", "order:read", "order:create",
         "appointment:read", "appointment:create", "appointment:cancel", "conversation:read", "conversation:reply",
-        "case:create", "case:manage", "invoice:read", "invoice:issue", "ai:assist", "payment:link", "payment:register"
+        "case:create", "case:manage", "invoice:read", "invoice:issue", "ai:assist", "payment:link", "payment:register", "comprobante:read", "comprobante:issue", "comprobante:send"
       ],
       "es_asesor": true
     },
@@ -36,19 +36,19 @@
       "clave": "agente_atencion",
       "nombre": "Agente de atención (IA)",
       "es_agente": true,
-      "permisos": ["catalog:read", "appointment:read", "appointment:create", "appointment:cancel", "order:create", "case:create", "invoice:read", "payment:link"]
+      "permisos": ["catalog:read", "appointment:read", "appointment:create", "appointment:cancel", "order:create", "case:create", "invoice:read", "payment:link", "comprobante:read", "comprobante:send"]
     },
     {
       "clave": "agente_asistente",
       "nombre": "Asistente del negocio (IA)",
       "es_agente": true,
-      "permisos": ["customer:read", "catalog:read", "inventory:read", "order:read", "appointment:read", "invoice:read", "usage:read", "ai:assist", "catalog:write"]
+      "permisos": ["customer:read", "catalog:read", "inventory:read", "order:read", "appointment:read", "invoice:read", "usage:read", "ai:assist", "catalog:write", "comprobante:read"]
     },
     {
       "clave": "agente_copiloto",
       "nombre": "Copiloto del asesor (IA)",
       "es_agente": true,
-      "permisos": ["customer:read", "catalog:read", "appointment:read", "order:read", "invoice:read", "ai:assist"]
+      "permisos": ["customer:read", "catalog:read", "appointment:read", "order:read", "invoice:read", "ai:assist", "comprobante:read"]
     }
   ],
   "etiqueta_recurso": "Entrenador",
@@ -74,7 +74,7 @@
     {
       "configuracion": "atencion",
       "rol": "agente_atencion",
-      "herramientas": ["consultar_catalogo", "consultar_precio", "consultar_disponibilidad", "crear_cita", "mis_citas", "cancelar_cita", "registrar_venta", "generar_enlace_pago", "estado_factura", "escalar_a_humano"],
+      "herramientas": ["consultar_catalogo", "consultar_precio", "consultar_disponibilidad", "crear_cita", "mis_citas", "cancelar_cita", "registrar_venta", "generar_enlace_pago", "estado_factura", "consultar_comprobantes", "reenviar_comprobante", "reprogramar_cita", "unirse_lista_espera", "anotar_pendiente", "enviar_imagen_producto", "escalar_a_humano"],
       "prompt_base": "Tono motivador y breve. No prometas resultados físicos ni des consejos médicos o nutricionales. Escala a una persona reclamos, congelamientos de membresía y reembolsos."
     },
     {

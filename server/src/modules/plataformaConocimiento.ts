@@ -46,7 +46,7 @@ export async function conocimientoOmnegia(db: Database): Promise<string> {
 
   return `
 # Qué es Omnegia
-Plataforma colombiana para pequeños negocios: reúne en un solo panel la atención por WhatsApp con un asistente de IA (que pasa a una persona con radicado cuando hace falta), clientes, catálogo, agenda, ventas y cobros (efectivo, transferencia, datáfono y enlace de pago Wompi), inventario, comisiones del equipo, facturación electrónica y permisos por rol. Cada negocio elige sus módulos. Funciona en computador y en el teléfono. Hay un asistente de IA dentro del panel que responde con los datos del negocio y un copiloto que le sugiere respuestas al asesor.
+Plataforma colombiana para pequeños negocios: reúne en un solo panel la atención por WhatsApp con un asistente de IA (que pasa a una persona con radicado cuando hace falta), clientes, catálogo, agenda, ventas y cobros (efectivo, transferencia, datáfono y enlace de pago Wompi), inventario, comisiones del equipo, comprobantes de venta (soporte interno, sin validez fiscal) y permisos por rol. La factura electrónica DIAN llegará más adelante. Cada negocio elige sus módulos. Funciona en computador y en el teléfono. Hay un asistente de IA dentro del panel que responde con los datos del negocio y un copiloto que le sugiere respuestas al asesor.
 
 # Planes y precios (página ${config.publicUrl}/planes)
 Hay tres planes. Todos incluyen la atención por WhatsApp con IA, clientes, catálogo, agenda y ventas; se diferencian en personas, uso de IA, mensajes, facturas electrónicas y módulos. Precios en pesos colombianos. El pago anual cubre 12 meses por el precio de 10 (2 meses gratis).
@@ -70,8 +70,8 @@ En ${config.publicUrl}/planes se elige un plan (o directamente en ${config.publi
 - Retracto: dentro de los 5 días hábiles después del pago, si el espacio aún no se creó. También procede devolución si la activación falló o pasaron 30 días sin activarse, y por cobro duplicado. La devolución se hace en máximo 15 días calendario, sin descuentos. No se devuelven periodos ya prestados cuando la empresa decide terminar por su cuenta. Se solicita en ${config.publicUrl}/consumidor#reembolso.
 
 # WhatsApp del negocio
-- Conectar un número propio: en el panel, Configuración › WhatsApp, se escribe el Phone number ID que Meta muestra junto al número (no es el número de teléfono) y se pulsa «Probar conexión».
-- Contratar un número nuevo: en el panel, sección «Número de WhatsApp», Omnegia gestiona el número y lo deja conectado al asistente de IA.
+- Conectar un número propio: en el panel, «Número de WhatsApp» › «Usar mi propio número»: se escribe el número, llega un código por SMS (o llamada) y queda conectado. No hay que entrar a Meta ni copiar identificadores. Ahí mismo están «Probar conexión» y «Desconectar».
+- Comprar un número nuevo y conectar la cuenta de WhatsApp Business propia de la empresa llegarán más adelante («Próximamente»).
 - El asistente del negocio responde solo dentro de las 24 horas desde el último mensaje del cliente; fuera de esa ventana WhatsApp exige plantillas aprobadas.
 - En Conversaciones el asesor ve el hilo, toma el caso, responde, deja notas internas, pide sugerencias a la IA y, en casos difíciles, pide ayuda a Omnegia compartiendo esa conversación (solo lectura o con permiso para responder).
 
@@ -89,7 +89,7 @@ ${Object.entries(AYUDA).map(([tema, g]) => `- ${tema}: ${g}`).join('\n')}
 - Las conversaciones con este WhatsApp se borran ${RETENCION_DIAS_PLATAFORMA} días después del último mensaje.
 - El equipo de Omnegia no puede ver los datos de los clientes de una empresa, salvo una conversación que la empresa comparta con soporte por tiempo limitado.
 - Datos personales: ${config.publicUrl}/eliminacion-de-datos. Política: ${config.publicUrl}/privacidad.
-- La facturación electrónica hoy funciona en entorno de pruebas (sin validez ante la DIAN) hasta conectar un proveedor autorizado.
+- La factura electrónica DIAN está en «Próximamente»: exige conectar un proveedor tecnológico autorizado. Mientras tanto cada negocio genera «comprobantes de venta» desde el detalle de una venta: sirven para entregar al cliente y llevar el registro, pero no son facturas electrónicas ni tienen validez ante la DIAN.
 
 # Páginas a las que puedes llevar a la persona (usa estas URL exactas, no inventes otras)
 ${paginas().map((p) => `- ${p.ruta} — ${p.para}`).join('\n')}

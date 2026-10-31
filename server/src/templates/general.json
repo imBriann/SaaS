@@ -50,7 +50,11 @@
         "usage:read",
         "payment:link",
         "payment:register",
-        "payment:void"
+        "payment:void",
+        "comprobante:read",
+        "comprobante:issue",
+        "comprobante:send",
+        "comprobante:void"
       ]
     },
     {
@@ -75,7 +79,8 @@
         "ai:read",
         "ai:assist",
         "usage:read",
-        "payment:register"
+        "payment:register",
+        "comprobante:read"
       ],
       "es_asesor": true
     },
@@ -100,7 +105,10 @@
         "invoice:issue",
         "ai:assist",
         "payment:link",
-        "payment:register"
+        "payment:register",
+        "comprobante:read",
+        "comprobante:issue",
+        "comprobante:send"
       ],
       "es_asesor": true
     },
@@ -114,7 +122,8 @@
         "order:create",
         "appointment:read",
         "appointment:create",
-        "payment:register"
+        "payment:register",
+        "comprobante:read"
       ]
     },
     {
@@ -130,7 +139,9 @@
         "order:create",
         "case:create",
         "invoice:read",
-        "payment:link"
+        "payment:link",
+        "comprobante:read",
+        "comprobante:send"
       ]
     },
     {
@@ -146,7 +157,8 @@
         "invoice:read",
         "usage:read",
         "ai:assist",
-        "catalog:write"
+        "catalog:write",
+        "comprobante:read"
       ]
     },
     {
@@ -159,7 +171,8 @@
         "appointment:read",
         "order:read",
         "invoice:read",
-        "ai:assist"
+        "ai:assist",
+        "comprobante:read"
       ]
     }
   ],
@@ -238,6 +251,12 @@
         "registrar_venta",
         "generar_enlace_pago",
         "estado_factura",
+        "consultar_comprobantes",
+        "reenviar_comprobante",
+        "reprogramar_cita",
+        "unirse_lista_espera",
+        "anotar_pendiente",
+        "enviar_imagen_producto",
         "escalar_a_humano"
       ],
       "prompt_base": "Tono cercano y breve, como se habla en un negocio de barrio en Colombia. No negocies precios ni ofrezcas descuentos. Escala a una persona los reclamos, las solicitudes de reembolso y cualquier cosa que no puedas resolver con tus herramientas."

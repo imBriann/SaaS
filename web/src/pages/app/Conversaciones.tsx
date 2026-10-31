@@ -6,7 +6,13 @@ import { Campo, Cargando, Confirmar, ErrorCarga, Estado, Modal, Recibo, Tarjeta,
 import { Icon } from '../../components/icons';
 import { TextoWhatsApp } from '../../components/Markdown';
 
-const FILTROS: [string, string][] = [['todas', 'Todas'], ['escaladas', 'Con una persona'], ['cola', 'En cola'], ['mias', 'Mías'], ['ia', 'IA al frente'], ['cerradas', 'Cerradas']];
+/** Qué resolvió la IA en cada conversación (una línea; no pide nada). */
+const RESOLVIO: Record<string, string> = {
+  crear_cita: 'La IA agendó una cita', reprogramar_cita: 'La IA reprogramó una cita', cancelar_cita: 'La IA canceló una cita', registrar_venta: 'La IA registró una venta',
+  generar_enlace_pago: 'La IA envió un enlace de pago', reenviar_comprobante: 'La IA reenvió un comprobante', unirse_lista_espera: 'La IA lo anotó en la lista de espera', enviar_imagen_producto: 'La IA envió la foto de un producto',
+};
+const REGLA: Record<string, string> = { PIDE_PERSONA: 'Pidió una persona', QUEJA: 'Queja', PAGOS: 'Pagos o reembolso', URGENCIA: 'Urgencia', SIN_SOLUCION: 'La IA no pudo resolverlo', MONTO: 'Venta grande' };
+const FILTROS: [string, string][] = [['persona', 'Necesitan a una persona'], ['todas', 'Todas'], ['escaladas', 'Con una persona'], ['cola', 'En cola'], ['mias', 'Mías'], ['ia', 'IA al frente'], ['cerradas', 'Cerradas']];
 const PRIORIDADES = ['BAJA', 'MEDIA', 'ALTA', 'URGENTE'];
 const ENTREGA: Record<string, string> = { PENDIENTE: 'enviando…', ENVIADO: 'enviado', ENTREGADO: 'entregado', LEIDO: 'leído', SIMULADO: 'simulado', FALLIDO: 'no entregado' };
 const MARCA_ENTREGA: Record<string, string> = { ENVIADO: '✓', ENTREGADO: '✓✓', LEIDO: '✓✓' };
@@ -28,7 +34,7 @@ export function Avatar({ nombre, grande }: { nombre: string; grande?: boolean })
 export function Conversaciones() {
   const { id } = useParams();
   const nav = useNavigate();
-  const [filtro, setFiltro] = useState('todas');
+  const [filtro, setFiltro] = useState('persona');
   const [q, setQ] = useState('');
   const qr = useRetardo(q);
   const { data, error, recargar } = useApi<any>(() => api.get(`/api/t/conversaciones?filtro=${filtro}${qr ? `&q=${encodeURIComponent(qr)}` : ''}`), [filtro, qr], { cada: 6000 });
@@ -55,7 +61,7 @@ export function Conversaciones() {
         </header>
         <div className="cv-filas-wrap">
           {error ? <div className="cv-pad"><ErrorCarga error={error} reintentar={recargar} /></div> : !data ? <Cargando filas={7} /> : lista.length === 0 ? (
-            <div className="cv-pad"><Vacio titulo={qr ? 'Nada coincide con la búsqueda' : 'No hay conversaciones en esta vista'}>{qr ? 'Busca por nombre, teléfono o radicado.' : filtro === 'todas' ? 'Cuando un cliente escriba por WhatsApp, su conversación aparecerá aquí.' : 'Prueba con otro filtro.'}</Vacio></div>
+            <div className="cv-pad"><Vacio titulo={qr ? 'Nada coincide con la búsqueda' : 'No hay conversaciones en esta vista'}>{qr ? 'Busca por nombre, teléfono o radicado.' : filtro === 'persona' ? 'Tu asistente está atendiendo todo: nada espera por ti. Mira «Todas» para ver lo que resolvió.' : filtro === 'todas' ? 'Cuando un cliente escriba por WhatsApp, su conversación aparecerá aquí.' : 'Prueba con otro filtro.'}</Vacio></div>
           ) : (
             <ul className="cv-filas">
               {lista.map((c, i) => {
@@ -71,8 +77,10 @@ export function Conversaciones() {
                         <span className="cv-fila-l3">
                           {c.estado === 'CERRADA' ? <span className="cv-chip gris">Cerrada</span> : c.control === 'AI' ? <span className="cv-chip ia"><Icon n="ia" className="" size={11} />IA</span> : <span className="cv-chip persona"><Icon n="persona" className="" size={11} />{c.asignado ?? 'Sin asignar'}</span>}
                           {c.radicado && c.estado_caso !== 'CERRADO' && <span className="cv-chip mono">{c.radicado}</span>}
+                          {c.regla && c.control === 'HUMANO' && c.estado !== 'CERRADA' && <span className="cv-chip persona">{REGLA[c.regla] ?? c.regla}</span>}
                           <Sla c={c} mini />
                         </span>
+                        {c.ia_resolvio && <span className="cv-fila-l4 tenue peq-txt">{RESOLVIO[c.ia_resolvio] ?? 'La IA resolvió una solicitud'}</span>}
                       </span>
                     </Link>
                   </li>
@@ -289,7 +297,7 @@ function Detalle({ id, onCambio, volver, detalles, alternarDetalles }: { id: str
                   <div className={`cv-msg ${tipo} ${soporte ? 'soporte' : ''} ${fallo ? 'fallo' : ''}`}>
                     {(autor || m.tipo === 'PLANTILLA' || tipo === 'sistema') && <span className="cv-msg-autor"><Icon n={rolIco} className="" size={11} />{m.tipo === 'PLANTILLA' ? 'Plantilla' : autor ?? rolTxt}</span>}
                     <div className="cv-burbuja">
-                      {m.tipo === 'MEDIA' ? <Archivo m={m} conv={id} /> : <TextoWhatsApp texto={m.contenido ?? ''} />}
+                      {m.tipo === 'MEDIA' && m.metadatos?.imagen ? <figure className="cv-imagen"><img src={m.metadatos.imagen} alt={m.contenido ?? 'Imagen enviada'} loading="lazy" /><figcaption className="tenue peq-txt">{m.contenido}</figcaption></figure> : m.tipo === 'MEDIA' ? <Archivo m={m} conv={id} /> : <TextoWhatsApp texto={m.contenido ?? ''} />}
                       <span className="cv-msg-meta">
                         {hora(m.creado_en)}
                         {m.estado_entrega !== 'N/A' && tipo !== 'cliente' && <span className={`cv-entrega e-${String(m.estado_entrega).toLowerCase()}`} title={ENTREGA[m.estado_entrega] ?? m.estado_entrega}>{MARCA_ENTREGA[m.estado_entrega] ?? (fallo ? '!' : m.estado_entrega === 'SIMULADO' ? '◦' : '…')}</span>}

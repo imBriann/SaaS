@@ -23,6 +23,8 @@ export interface Sesion {
   solo_lectura: boolean;
   consumo: any;
   simuladores: boolean;
+  /** Facturación electrónica DIAN encendida en el servidor (apagada: «Próximamente»). */
+  factura_dian?: boolean;
 }
 const SesionCtx = createContext<{ s: Sesion; puede: (p: string) => boolean; recargar: () => void } | null>(null);
 export const useSesion = () => useContext(SesionCtx)!;
@@ -50,21 +52,24 @@ function aplicarTema(tema: any) {
   r.setProperty('--sobre-acento', tema.texto_sobre_acento ?? '#ffffff');
 }
 
-type Item = { to: string; n: string; t: string; permiso?: string; algunos?: string[]; modulo?: string; movil?: boolean };
+type Item = { to: string; n: string; t: string; permiso?: string; algunos?: string[]; modulo?: string; movil?: boolean; soloDian?: boolean };
 const OPERACION: Item[] = [
   { to: '/', n: 'inicio', t: 'Inicio', movil: true },
   { to: '/informes', n: 'grafica', t: 'Informes', algunos: ['order:read', 'appointment:read', 'customer:read', 'inventory:read'] },
   { to: '/conversaciones', n: 'conversaciones', t: 'Conversaciones', permiso: 'conversation:read', modulo: 'conversaciones', movil: true },
   { to: '/agenda', n: 'agenda', t: 'Agenda', permiso: 'appointment:read', modulo: 'agenda', movil: true },
+  { to: '/vender', n: 'caja', t: 'Vender', permiso: 'order:create', modulo: 'ventas' },
   { to: '/ventas', n: 'ventas', t: 'Ventas', permiso: 'order:read', modulo: 'ventas', movil: true },
   { to: '/clientes', n: 'clientes', t: 'Clientes', permiso: 'customer:read' },
   { to: '/inventario', n: 'inventario', t: 'Catálogo', permiso: 'catalog:read' },
-  { to: '/facturacion', n: 'facturacion', t: 'Facturación', permiso: 'invoice:read', modulo: 'facturacion' },
+  { to: '/comprobantes', n: 'facturacion', t: 'Comprobantes', permiso: 'comprobante:read', modulo: 'ventas' },
+  // Con la facturación DIAN apagada, la entrada no aparece: su tarjeta «Próximamente» vive en Comprobantes.
+  { to: '/facturacion', n: 'facturacion', t: 'Facturación', permiso: 'invoice:read', modulo: 'facturacion', soloDian: true },
 ];
 const GOBIERNO: Item[] = [
   { to: '/ia', n: 'ia', t: 'Centro de IA', permiso: 'ai:read', modulo: 'ia' },
   { to: '/configuracion', n: 'configuracion', t: 'Configuración', permiso: 'tenant:configure' },
-  { to: '/whatsapp/numero', n: 'telefono', t: 'Número de WhatsApp', permiso: 'subscription:manage' },
+  { to: '/whatsapp/numero', n: 'telefono', t: 'Número de WhatsApp', permiso: 'tenant:configure' },
   { to: '/suscripcion', n: 'suscripcion', t: 'Suscripción', permiso: 'subscription:manage' },
   { to: '/auditoria', n: 'auditoria', t: 'Auditoría', permiso: 'audit:read' },
   { to: '/soporte', n: 'soporte', t: 'Soporte' },
@@ -243,7 +248,7 @@ export function PanelLayout() {
   if (!data) return <div className="pagina"><Cargando filas={6} /></div>;
 
   const puede = (p: string) => data.permisos.includes(p);
-  const visible = (i: Item) => (!i.permiso || puede(i.permiso)) && (!i.algunos || i.algunos.some(puede)) && (!i.modulo || data.modulos.includes(i.modulo));
+  const visible = (i: Item) => (!i.permiso || puede(i.permiso)) && (!i.algunos || i.algunos.some(puede)) && (!i.modulo || data.modulos.includes(i.modulo)) && (!i.soloDian || !!data.factura_dian);
   const t = data.tenant;
   const av = avisos.data?.conversaciones;
   const urgente = (av?.por_atender ?? 0) > 0;

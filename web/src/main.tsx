@@ -20,6 +20,7 @@ import './workspace-birth.css';
 import './creation.css';
 import './legal.css';
 import './numeros.css';
+import './agenda.css';
 import './visual.css';
 import './pulido.css';
 import './premium.css';
@@ -50,11 +51,13 @@ const Consumidor = lazy(() => legal().then(m => ({ default: m.Consumidor })));
 const Asistente = lazy(() => import('./pages/app/Asistente').then((m) => ({ default: m.Asistente })));
 const Conversaciones = lazy(() => import('./pages/app/Conversaciones').then((m) => ({ default: m.Conversaciones })));
 const negocio = () => import('./pages/app/Negocio');
-const Agenda = lazy(() => negocio().then((m) => ({ default: m.Agenda })));
+const Agenda = lazy(() => import('./pages/app/Agenda').then((m) => ({ default: m.Agenda })));
 const Clientes = lazy(() => negocio().then((m) => ({ default: m.Clientes })));
 const Facturacion = lazy(() => negocio().then((m) => ({ default: m.Facturacion })));
 const Inventario = lazy(() => negocio().then((m) => ({ default: m.Inventario })));
 const Ventas = lazy(() => negocio().then((m) => ({ default: m.Ventas })));
+const Vender = lazy(() => import('./pages/app/Vender').then((m) => ({ default: m.Vender })));
+const Comprobantes = lazy(() => import('./pages/app/Comprobantes').then((m) => ({ default: m.Comprobantes })));
 const VentaDetalle = lazy(() => negocio().then((m) => ({ default: m.VentaDetalle })));
 const gobierno = () => import('./pages/app/Gobierno');
 const Auditoria = lazy(() => gobierno().then((m) => ({ default: m.Auditoria })));
@@ -83,6 +86,7 @@ const OpSoporte = lazy(() => op().then((m) => ({ default: m.OpSoporte })));
 const OpTicket = lazy(() => op().then((m) => ({ default: m.OpTicket })));
 const OpAuditoria = lazy(() => op().then((m) => ({ default: m.OpAuditoria })));
 const OpReembolsos = lazy(() => op().then((m) => ({ default: m.OpReembolsos })));
+const OpNumeros = lazy(() => import('./pages/operador/Numeros').then((m) => ({ default: m.OpNumeros })));
 const atencionOp = () => import('./pages/operador/Atencion');
 const OpConversaciones = lazy(() => atencionOp().then((m) => ({ default: m.OpConversaciones })));
 const OpAtencionEmpresas = lazy(() => atencionOp().then((m) => ({ default: m.OpAtencionEmpresas })));
@@ -153,6 +157,7 @@ function App() {
             <Route path="soporte" element={<OpSoporte />} />
             <Route path="soporte/:id" element={<OpTicket />} />
             <Route path="reembolsos" element={<OpReembolsos />} />
+            <Route path="numeros" element={<OpNumeros />} />
             <Route path="auditoria" element={<OpAuditoria />} />
           </Route>
           {sinEmpresa && <Route path="/" element={<Raiz />} />}
@@ -169,6 +174,8 @@ function App() {
             <Route path="/inventario" element={<Inventario />} />
             <Route path="/agenda" element={<Agenda />} />
             <Route path="/facturacion" element={<Facturacion />} />
+            <Route path="/comprobantes" element={<Comprobantes />} />
+            <Route path="/vender" element={<Vender />} />
             <Route path="/ia" element={<CentroIA />} />
             <Route path="/perfil" element={<PerfilPagina />} />
             <Route path="/configuracion" element={<Configuracion />} />

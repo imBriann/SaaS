@@ -485,6 +485,33 @@ export const documentoFiscal = (o: { cliente: string; empresa: string; tipoDoc: 
   boton: { texto: 'Ver el documento', url: o.url }, empresa: o.empresa,
 });
 
+/**
+ * Comprobante de venta de una empresa a su cliente. Se llama siempre «comprobante» (nunca «factura») y lleva la
+ * leyenda de no validez ante la DIAN, igual que el PDF.
+ */
+export const comprobanteVenta = (o: { cliente: string; empresa: string; numero: string; total: string; anulado: boolean; url: string; leyenda: string }) => render({
+  tipo: 'comprobante_venta', asunto: `Comprobante de venta ${o.numero} — ${o.empresa}`, previa: `${o.empresa} te envía el comprobante de tu compra.`,
+  titulo: `Tu comprobante de venta ${o.numero}`, saludo: `Hola ${primerNombre(o.cliente)},`,
+  parrafos: [
+    `${o.empresa} te envía el comprobante de tu compra por ${o.total}.`,
+    ...(o.anulado ? ['Este comprobante fue anulado por la empresa; lo conservas solo como referencia.'] : []),
+    o.leyenda,
+  ],
+  boton: { texto: 'Ver el comprobante', url: o.url }, empresa: o.empresa,
+});
+
+/**
+ * Aviso proactivo de un negocio a su cliente (recordatorio, seguimiento, pago pendiente…) cuando WhatsApp no se
+ * puede usar: fuera de la ventana de 24 horas y sin plantilla aprobada.
+ */
+export const avisoCliente = (o: { cliente: string; empresa: string; asunto: string; texto: string }) => render({
+  tipo: 'aviso_cliente', asunto: `${o.asunto} — ${o.empresa}`, previa: o.asunto,
+  titulo: o.asunto, saludo: `Hola ${primerNombre(o.cliente)},`,
+  // Los avisos de WhatsApp usan *negrita*; en el correo se quitan los asteriscos.
+  parrafos: [o.texto.replace(/\*/g, '').replace(/^Hola [^,]+,\s*/, ''), 'Puedes responder escribiéndonos por WhatsApp.'],
+  empresa: o.empresa,
+});
+
 /** Correo de prueba de configuración (script de envío). */
 export const pruebaConfiguracion = (o: { proveedor: string }) => render({
   tipo: 'prueba_configuracion', asunto: `Prueba de envío de ${MARCA.nombre}`, previa: 'Si lees esto, el envío funciona.',

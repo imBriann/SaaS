@@ -2,20 +2,22 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, cop, fechaCompleta, fechaHora, type ApiError } from '../../api';
 import { Cabecera, Escritura } from '../../components/Layout';
-import { Campo, Cargando, ErrorCarga, Estado, Tarjeta, useAccion, useApi, useToast } from '../../components/ui';
+import { Campo, Cargando, ErrorCarga, Estado, Modal, Tarjeta, useAccion, useApi, useToast } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import { Contador, MarcaExito, escalon } from '../../components/Movimiento';
 import { AiOrb } from '../../components/AiOrb';
 import { irA } from '../public/Publico';
+import { PasoNumero, Propio } from './NumeroPropio';
 
 /**
- * Número de WhatsApp contratado desde Omnegia: elegir, revisar el precio, pagar y acompañar la
- * activación real. Todo estado viene del servidor; esta pantalla nunca da por hecho un paso que el
+ * Conexión del número de WhatsApp. La forma principal es «Usar mi propio número» (./NumeroPropio.tsx):
+ * SMS y listo, sin entrar a Meta. La compra de un número nuevo (elegir, revisar el precio, pagar y
+ * acompañar la activación real) queda como «Próximamente» mientras NUMEROS_COMPRA_HABILITADA=0. Todo estado viene del servidor; esta pantalla nunca da por hecho un paso que el
  * servidor no confirmó, y se puede cerrar en cualquier momento sin perder el progreso.
  */
 type C = any;
 
-const ESPERA: string[] = ['PAGO_PENDIENTE', 'PAGO_CONFIRMADO', 'APROVISIONANDO_NUMERO', 'NUMERO_APROVISIONADO', 'VERIFICACION_PENDIENTE', 'CONEXION_PENDIENTE'];
+const ESPERA: string[] = ['PAGO_PENDIENTE', 'PAGO_CONFIRMADO', 'APROVISIONANDO_NUMERO', 'NUMERO_APROVISIONADO', 'VERIFICACION_PENDIENTE', 'CONEXION_PENDIENTE', 'CODIGO_VERIFICADO', 'REGISTRADO'];
 const ANTES_DEL_PAGO = ['SELECCION_NUMERO', 'CONFIRMACION_PENDIENTE', 'PAGO_PENDIENTE'];
 
 export const formatoNumero = (n: string) => {
@@ -49,14 +51,19 @@ export function NumeroWhatsApp() {
     })();
   }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const actualizar = (r: any) => setData(r && 'contratacion' in r ? r : { contratacion: r });
+  const actualizar = (r: any) => { setData(r && 'contratacion' in r ? r : { contratacion: r }); recargarConexion(); };
+  // Estado siempre visible, en lenguaje simple (Sin conectar, Esperando el código, Conectado…).
+  const { data: conexion, recargar: recargarConexion } = useApi<any>(() => api.get('/api/t/numeros/whatsapp'), [c?.estado]);
 
   return (
     <>
-      <Cabecera titulo="Número de WhatsApp" sub="Contrata un número nuevo y Omnegia lo deja conectado a tu asistente de IA." />
+      <Cabecera titulo="Conectar WhatsApp" sub="Conecta tu número y tu asistente de IA empezará a responder a tus clientes." />
       <div className="contenido numeros">
+        {conexion && <EstadoConexion e={conexion} onCambio={() => { recargarConexion(); recargar(); }} />}
         {error ? <ErrorCarga error={error} reintentar={recargar} /> : cargando && !data ? <Cargando filas={6} /> : !vivo ? (
           <Inicio previa={c} onCreada={actualizar} />
+        ) : c.origen === 'PROPIO' ? (
+          <Propio c={c} onCambio={actualizar} recargar={recargar} />
         ) : ANTES_DEL_PAGO.includes(c.estado) ? (
           <Contratacion c={c} onCambio={actualizar} recargar={recargar} />
         ) : (
@@ -73,42 +80,103 @@ export function NumeroWhatsApp() {
 // ---------------------------------------------------------------------------
 // Paso 0 · tipo de conexión y selección del número
 // ---------------------------------------------------------------------------
+/** Motivos de un intento anterior del flujo propio que vale la pena recordar al volver. */
+const AVISO_PREVIO = ['numero_en_uso', 'numero_invalido', 'limite_numeros', 'nombre_rechazado', 'pin_existente', 'acceso'];
+
 function Inicio({ previa, onCreada }: { previa: C | null; onCreada: (c: C) => void }) {
   const { data: op, error, recargar } = useApi<any>(() => api.get('/api/t/numeros/opciones'), []);
-  const [modo, setModo] = useState<'propio' | 'nuevo' | null>(null);
+  const [modo, setModo] = useState<'propio' | 'nuevo' | null>('propio');
   if (error) return <ErrorCarga error={error} reintentar={recargar} />;
   if (!op) return <Cargando filas={4} />;
+  const compra = !!op.compra_habilitada;
+  const previaPropia = previa?.origen === 'PROPIO' && AVISO_PREVIO.includes(previa.subestado) && previa.ultimo_error;
   return (
     <div className="col num-inicio" style={{ gap: 16 }}>
       {previa?.estado === 'CANCELADO' && previa.accion_cliente === 'reembolso' && <Reembolso c={previa} />}
       {previa?.estado === 'CANCELADO' && previa.subestado === 'numero_no_disponible' && <div className="aviso" role="status"><Icon n="info" className="" size={16} />El número que elegiste ya no estaba disponible y no se hizo ningún cobro. Elige otro.</div>}
-      <div className="num-opciones" role="group" aria-label="Cómo quieres conectar WhatsApp" data-guia="whatsapp/opciones">
-        <TarjetaOpcion activa={modo === 'propio'} icono="conversaciones" titulo="Ya tengo un número" texto="Conecta el número de WhatsApp Business que ya usa tu negocio. Sin costo adicional." onClick={() => setModo(modo === 'propio' ? null : 'propio')} />
-        <TarjetaOpcion activa={modo === 'nuevo'} icono="telefono" titulo="Necesito un número nuevo" texto="Elige un número, revisa el precio y Omnegia se encarga de comprarlo y activarlo." onClick={() => setModo(modo === 'nuevo' ? null : 'nuevo')} destacada />
+      {previaPropia && <div className="aviso" role="status"><Icon n="info" className="" size={16} /><span><b>En tu último intento con {formatoNumero(previa.numero)}:</b> {previa.ultimo_error}</span></div>}
+      <div className="num-opciones tres" role="group" aria-label="Cómo quieres conectar WhatsApp" data-guia="whatsapp/opciones">
+        <TarjetaOpcion activa={modo === 'propio'} icono="conversaciones" titulo="Usar mi propio número" texto="Escribe tu número, recibe un código por SMS y listo. Sin entrar a Meta ni a Facebook." etiqueta="Recomendado" onClick={() => setModo(modo === 'propio' ? null : 'propio')} />
+        <TarjetaOpcion activa={modo === 'nuevo'} icono="telefono" titulo="Comprar un número nuevo" texto={compra ? 'Elige un número y Omnegia lo compra y lo activa por ti.' : 'Omnegia comprará y activará un número por ti. Llegará más adelante.'} etiqueta={compra ? undefined : 'Próximamente'} deshabilitada={!compra} onClick={() => setModo(modo === 'nuevo' ? null : 'nuevo')} />
+        {/* Registro integrado de Meta (cuenta propia de la empresa): exige que Omnegia sea Tech Provider verificado. */}
+        <TarjetaOpcion activa={false} icono="configuracion" titulo="Conectar mi propia cuenta de WhatsApp Business" texto="Para quien ya administra su cuenta en Meta. Llegará cuando Omnegia complete su verificación ante Meta." etiqueta="Próximamente" deshabilitada onClick={() => undefined} />
       </div>
       <div className={`plegable ${modo === 'propio' ? 'abierto' : ''}`} aria-hidden={modo !== 'propio'}>
-        <div>
-          <Tarjeta titulo="Conectar tu propio número">
-            <div className="col" style={{ gap: 10 }}>
-              <p className="sec">Tu número debe estar en una cuenta de WhatsApp Business de Meta y no usarse en la aplicación de WhatsApp personal. No pagas mensualidad de número en Omnegia.</p>
-              <Link className="btn primario" to="/configuracion?tab=canal" tabIndex={modo === 'propio' ? 0 : -1}>Ir a Configuración › WhatsApp<Icon n="flecha" className="" size={16} /></Link>
-            </div>
-          </Tarjeta>
+        <div>{modo === 'propio' && (op.propio?.disponible
+          ? <PasoNumero paises={op.propio.paises} nombre={op.propio.nombre} onCreada={onCreada} />
+          : <Tarjeta titulo="Usar mi propio número"><div className="bloqueado"><Icon n="info" className="" size={16} /><span>{op.propio?.motivo ?? (op.propio?.conectado ? `Ya tienes un número conectado (${op.propio.numero ?? 'en Configuración › WhatsApp'}). Desconéctalo antes de conectar otro.` : 'Ya tienes una conexión en curso. Recarga la página para verla.')}</span></div></Tarjeta>)}
         </div>
       </div>
-      <div className={`plegable ${modo === 'nuevo' ? 'abierto' : ''}`} aria-hidden={modo !== 'nuevo'}>
-        <div>{modo === 'nuevo' && (op.disponible ? <Selector op={op} onElegido={onCreada} /> : <NoDisponible op={op} />)}</div>
-      </div>
+      {compra && (
+        <div className={`plegable ${modo === 'nuevo' ? 'abierto' : ''}`} aria-hidden={modo !== 'nuevo'}>
+          <div>{modo === 'nuevo' && (op.disponible ? <Selector op={op} onElegido={onCreada} /> : <NoDisponible op={op} />)}</div>
+        </div>
+      )}
     </div>
   );
 }
 
-function TarjetaOpcion({ activa, icono, titulo, texto, onClick, destacada }: { activa: boolean; icono: string; titulo: string; texto: string; onClick: () => void; destacada?: boolean }) {
+// ---------------------------------------------------------------------------
+// Estado de la conexión, prueba y desconexión
+// ---------------------------------------------------------------------------
+const TONO_CONEXION: Record<string, string> = { CONECTADO: 'ok', ESPERANDO_CODIGO: 'warn', CONECTANDO: 'warn', NECESITA_ATENCION: 'err', DESCONECTADO: 'neutro', SIN_CONECTAR: 'neutro' };
+
+function EstadoConexion({ e, onCambio }: { e: any; onCambio: () => void }) {
+  const [probar, setProbar] = useState(false);
+  const [desconectar, setDesconectar] = useState(false);
   return (
-    <button type="button" className={`num-opcion ${activa ? 'on' : ''} ${destacada ? 'destacada' : ''}`} aria-expanded={activa} onClick={onClick}>
+    <section className={`tarjeta num-estado ${TONO_CONEXION[e.estado] ?? 'neutro'}`} aria-live="polite" aria-label="Estado de tu WhatsApp">
+      <div className="cuerpo fila entre envolver" style={{ gap: 12 }}>
+        <span className="col" style={{ gap: 4, minWidth: 0 }}>
+          <span className={`estado ${TONO_CONEXION[e.estado] ?? 'neutro'}`}>{e.texto}</span>
+          {e.que_hacer && <span className="sec peq-txt">{e.que_hacer}</span>}
+        </span>
+        <span className="fila envolver" style={{ gap: 8 }}>
+          {e.puede_probar && <Escritura permiso="tenant:configure"><button className="btn" onClick={() => setProbar(true)}>Probar conexión</button></Escritura>}
+          {e.puede_desconectar && e.estado !== 'ESPERANDO_CODIGO' && <Escritura permiso="tenant:configure"><button className="btn peligro" onClick={() => setDesconectar(true)}>Desconectar</button></Escritura>}
+        </span>
+      </div>
+      {probar && <ProbarConexion numero={e.numero} onCerrar={() => setProbar(false)} />}
+      {desconectar && <Desconectar e={e} onCerrar={() => setDesconectar(false)} onHecho={() => { setDesconectar(false); onCambio(); }} />}
+    </section>
+  );
+}
+
+function ProbarConexion({ numero, onCerrar }: { numero: string | null; onCerrar: () => void }) {
+  const [tel, setTel] = useState('');
+  const [ok, setOk] = useState<string | null>(null);
+  const { run, ocupado, error } = useAccion();
+  return (
+    <Modal titulo="Probar conexión" onCerrar={onCerrar} pie={<><button className="btn" onClick={onCerrar}>Cerrar</button>
+      <button className="btn primario" disabled={ocupado || tel.replace(/\D/g, '').length < 7} onClick={async () => { const r = await run(() => api.post('/api/t/numeros/whatsapp/probar', { telefono: tel }), undefined, { silencioso: true }); if (r) setOk(r.mensaje); }}>{ocupado ? 'Enviando…' : 'Enviar mensaje de prueba'}</button></>}>
+      <p className="sec">Te enviamos un mensaje de prueba desde {numero ?? 'tu número'} al celular que indiques. WhatsApp solo lo permite si ese celular escribió a tu número en las últimas 24 horas: escribe primero «hola» desde él.</p>
+      <Campo etiqueta="Celular que recibe la prueba"><input className="input mono" inputMode="tel" value={tel} onChange={(ev) => setTel(ev.target.value)} placeholder="300 123 4567" /></Campo>
+      {error && <div className="aviso" role="alert"><Icon n="info" className="" size={16} /><span>{error.message}</span></div>}
+      {ok && <div className="aviso exito" role="status"><Icon n="ok" className="" size={16} /><span>{ok}</span></div>}
+    </Modal>
+  );
+}
+
+function Desconectar({ e, onCerrar, onHecho }: { e: any; onCerrar: () => void; onHecho: () => void }) {
+  const [t, setT] = useState('');
+  const { run, ocupado, error } = useAccion();
+  const activo = e.estado === 'CONECTADO' || e.estado === 'NECESITA_ATENCION';
+  return (
+    <Modal titulo="Desconectar WhatsApp" onCerrar={onCerrar} pie={<><button className="btn" onClick={onCerrar}>Cancelar</button>
+      <button className="btn peligro" disabled={ocupado || (activo && t.trim().toUpperCase() !== 'DESCONECTAR')} onClick={async () => { const r = await run(() => api.post('/api/t/numeros/whatsapp/desconectar', { confirmacion: t }), 'Número desconectado', { silencioso: true }); if (r) onHecho(); }}>Desconectar</button></>}>
+      {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
+      <p className="sec">Tus clientes dejarán de recibir respuestas por {e.numero ?? 'este número'} y el número quedará libre. Podrás volver a usarlo en la app de WhatsApp de tu celular o conectarlo de nuevo aquí.</p>
+      {activo && <Campo etiqueta="Escribe DESCONECTAR para confirmar"><input className="input mono" value={t} onChange={(ev) => setT(ev.target.value)} /></Campo>}
+    </Modal>
+  );
+}
+
+function TarjetaOpcion({ activa, icono, titulo, texto, onClick, etiqueta, deshabilitada }: { activa: boolean; icono: string; titulo: string; texto: string; onClick: () => void; etiqueta?: string; deshabilitada?: boolean }) {
+  return (
+    <button type="button" className={`num-opcion ${activa && !deshabilitada ? 'on' : ''} ${deshabilitada ? 'proximamente' : ''}`} aria-expanded={deshabilitada ? undefined : activa} disabled={deshabilitada} onClick={onClick}>
       <span className="num-opcion-ico" aria-hidden="true"><Icon n={icono} className="" size={22} /></span>
-      <span className="num-opcion-txt"><b>{titulo}</b><span>{texto}</span></span>
-      <Icon n="abajo" className="num-opcion-flecha" size={18} />
+      <span className="num-opcion-txt">{etiqueta && <span className="num-opcion-etiqueta">{etiqueta}</span>}<b>{titulo}</b><span>{texto}</span></span>
+      {!deshabilitada && <Icon n="abajo" className="num-opcion-flecha" size={18} />}
     </button>
   );
 }
@@ -118,7 +186,7 @@ function NoDisponible({ op }: { op: any }) {
     <Tarjeta titulo="La compra de números no está disponible">
       <div className="col" style={{ gap: 10 }}>
         <div className="bloqueado"><Icon n="info" className="" size={16} /><span>{op.motivo}</span></div>
-        {op.contratacion_id ? <span className="sec">Recarga la página para ver tu contratación.</span> : <span className="sec">Puedes conseguir un número compatible con WhatsApp Business (que reciba llamadas o SMS y no esté en la aplicación personal) y conectarlo en <Link className="enlace" to="/configuracion?tab=canal">Configuración › WhatsApp</Link>.</span>}
+        {op.contratacion_id ? <span className="sec">Recarga la página para ver tu contratación.</span> : <span className="sec">Puedes conseguir un número compatible con WhatsApp Business (que reciba llamadas o SMS y no esté en la aplicación personal) y conectarlo aquí mismo con «Usar mi propio número».</span>}
       </div>
     </Tarjeta>
   );

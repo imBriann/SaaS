@@ -1,5 +1,6 @@
 import { verificarAlta } from './helpers.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { config } from '../src/config.js';
 import { setup, api, type Env } from './helpers.js';
 import { signWebhook, verifyWebhook } from '../src/adapters/payments.js';
 import { parsePrecio, readSheet, applyMapping, inferMapping } from '../src/onboarding/importer.js';
@@ -10,7 +11,8 @@ import { contrast, deriveTheme } from '../src/onboarding/theme.js';
  * a webhooks duplicados, falsificados y repetidos (PRO-SW-002 fig. 10).
  */
 let E: Env;
-beforeAll(async () => { E = await setup(); });
+// El alta con «necesito factura electrónica» sube el plan y pide el NIT solo con la facturación DIAN encendida.
+beforeAll(async () => { config.fiscal.dianHabilitada = true; E = await setup(); });
 afterAll(async () => { await E.app.close(); await E.db.close(); });
 
 const post = (url: string, payload: unknown, headers: Record<string, string> = {}) => E.app.inject({ method: 'POST', url, payload: payload as any, headers });

@@ -14,8 +14,14 @@ import { tenantGuard } from '../context.js';
 import * as customers from '../../modules/customers.js';
 import * as catalog from '../../modules/catalog.js';
 import * as agenda from '../../modules/agenda.js';
+import * as iaAutonoma from '../../modules/iaAutonoma.js';
+import * as imagenes from '../../modules/imagenes.js';
+import * as aprobaciones from '../../ai/aprobaciones.js';
+import { avisar } from '../../modules/proactivo.js';
+import { formatFechaLarga, utcToLocal } from '../../lib/time.js';
 import * as orders from '../../modules/orders.js';
 import * as fiscal from '../../modules/fiscal.js';
+import * as comprobantes from '../../modules/comprobantes.js';
 import * as conv from '../../modules/conversations.js';
 import * as payments from '../../modules/payments.js';
 import * as pagos from '../../modules/pagosVentas.js';
@@ -124,15 +130,63 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
     return { fecha, franjas, alternativas };
   });
   r('post', '/agenda/citas', (tx, ctx, req) => agenda.createAppointment(tx, ctx, req.body));
-  r('patch', '/agenda/citas/:id', (tx, ctx, req) => agenda.updateAppointmentState(tx, ctx, req.params.id, String(req.body?.estado)));
+  r('patch', '/agenda/citas/:id', (tx, ctx, req) => agenda.updateAppointmentState(tx, ctx, req.params.id, String(req.body?.estado), req.body?.motivo ? String(req.body.motivo) : undefined));
   r('post', '/agenda/citas/:id/reprogramar', (tx, ctx, req) => agenda.rescheduleAppointment(tx, ctx, req.params.id, req.body));
+  // Calendario: rango (día, semana o mes), detalle, mover o estirar, bloqueos, series, lista de espera y ajustes.
+  r('get', '/agenda/rango', (tx, ctx, req) => agenda.listarRango(tx, ctx, { desde: req.query?.desde, hasta: req.query?.hasta }));
+  r('get', '/agenda/citas/:id', (tx, ctx, req) => agenda.detalleCita(tx, ctx, req.params.id));
+  r('post', '/agenda/citas/:id/mover', async (tx, ctx, req) => {
+    const m = await agenda.rescheduleAppointment(tx, ctx, req.params.id, req.body);
+    if (!m.avisar) return { ...m, aviso: null };
+    // «Avisar al cliente» (marcado por defecto): misma regla de la ventana de 24 horas que los demás avisos.
+    const c = (await tx.query(`SELECT customer_id, inicio FROM appointment WHERE id=$1`, [m.id])).rows[0];
+    const aviso = await avisar(tx, ctx, {
+      tipo: 'CAMBIO_CITA', referencia: `${m.id}:${new Date(c.inicio).getTime()}`, customerId: c.customer_id, appointmentId: m.id,
+      texto: `Hola, tu cita de *${m.servicio}* cambió: ahora es el ${m.fecha} a las ${m.hora} con ${m.recurso}. Si no te sirve, escríbenos y buscamos otro horario.`,
+      asunto: `Tu cita de ${m.servicio} cambió de horario`, variables: { servicio: m.servicio, fecha: m.fecha, hora: m.hora, recurso: m.recurso },
+    });
+    return { ...m, aviso };
+  });
+  r('post', '/agenda/bloqueos', (tx, ctx, req) => agenda.crearBloqueo(tx, ctx, req.body));
+  r('delete', '/agenda/bloqueos/:id', (tx, ctx, req) => agenda.quitarBloqueo(tx, ctx, req.params.id));
+  r('post', '/agenda/series', (tx, ctx, req) => agenda.crearSerie(tx, ctx, req.body));
+  r('get', '/agenda/lista-espera', (tx, ctx) => agenda.listarListaEspera(tx, ctx));
+  r('post', '/agenda/lista-espera', async (tx, ctx, req) => {
+    requirePerm(ctx, 'appointment:create');
+    requireWritable(ctx);
+    return agenda.unirseListaEspera(tx, ctx, agenda.ListaEsperaInput.parse(req.body ?? {}));
+  });
+  r('get', '/agenda/ajustes', (tx, ctx) => agenda.obtenerAjustesAgenda(tx, ctx));
+  r('patch', '/agenda/ajustes', (tx, ctx, req) => agenda.guardarAjustesAgenda(tx, ctx, req.body));
+
+  // --- Imágenes del catálogo (subidas, búsqueda con IA, aprobación); archivos del panel con sesión.
+  r('get', '/catalogo/productos/:id/imagenes', (tx, ctx, req) => imagenes.listar(tx, ctx, req.params.id));
+  app.route({ method: 'POST', url: '/api/t/catalogo/productos/:id/imagenes', preHandler: guard, bodyLimit: Math.ceil(config.imagenes.maxBytes * 1.4) + 4096,
+    handler: (req, reply) => T((tx, ctx, rq) => imagenes.subir(tx, ctx, rq.params.id, rq.body))(req, reply) });
+  rx('post', '/catalogo/productos/:id/imagenes/buscar', (ctx, req) => imagenes.buscarConIA(db, ctx, req.params.id));
+  rx('post', '/catalogo/imagenes/completar', (ctx) => imagenes.completarFaltantes(db, ctx));
+  r('post', '/catalogo/imagenes/:id/aprobar', (tx, ctx, req) => imagenes.aprobar(tx, ctx, req.params.id));
+  r('delete', '/catalogo/imagenes/:id', (tx, ctx, req) => imagenes.eliminar(tx, ctx, req.params.id));
+  r('get', '/catalogo/imagenes/:id/archivo', async (tx, ctx, req, reply) => {
+    const datos = await imagenes.archivoTenant(tx, ctx, req.params.id, req.query?.min === '1');
+    reply.header('content-type', 'image/webp').header('cache-control', 'private, max-age=300').header('x-content-type-options', 'nosniff');
+    return datos;
+  });
+
+  // --- La IA que atiende: autonomía, lo que hizo hoy, métricas y aprobaciones (SUPERVISADO)
+  r('get', '/ia/ajustes', (tx, ctx) => iaAutonoma.obtenerAjustes(tx, ctx));
+  r('patch', '/ia/ajustes', (tx, ctx, req) => iaAutonoma.guardarAjustes(tx, ctx, req.body));
+  r('get', '/ia/hoy', (tx, ctx) => iaAutonoma.hoy(tx, ctx));
+  r('get', '/ia/metricas', (tx, ctx, req) => iaAutonoma.metricas(tx, ctx, { desde: req.query?.desde, hasta: req.query?.hasta }));
+  r('get', '/ia/aprobaciones', (tx, ctx) => aprobaciones.listarAprobaciones(tx, ctx));
+  rx('post', '/ia/aprobaciones/:id', (ctx, req) => aprobaciones.decidirDesdePanel(db, ctx, req.params.id, req.body));
 
   r('get','/equipo/responsables',(tx,ctx)=>commissions.eligible(tx,ctx));
   r('get','/equipo/comisiones',(tx,ctx)=>commissions.settings(tx,ctx));
   r('patch','/equipo/comisiones',(tx,ctx,req)=>commissions.save(tx,ctx,req.body));
   r('get','/equipo/comisiones/informe',(tx,ctx,req)=>commissions.report(tx,ctx,req.query.fecha));
   // --- Ventas
-  r('get', '/ventas', (tx, ctx, req) => orders.listOrders(tx, ctx, { estado_fiscal: req.query?.estado_fiscal, q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina, pago: req.query?.pago, metodo: req.query?.metodo }));
+  r('get', '/ventas', (tx, ctx, req) => orders.listOrders(tx, ctx, { estado_fiscal: req.query?.estado_fiscal, q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina, pago: req.query?.pago, metodo: req.query?.metodo, comprobante: req.query?.comprobante }));
   r('get', '/ventas/caja', (tx, ctx, req) => pagos.cajaDelDia(tx, ctx, req.query?.fecha));
   r('get', '/ventas.csv', async (tx, ctx, req, reply) => { descarga(reply, 'ventas.csv'); return exportsMod.exportOrders(tx, ctx, req.query?.desde, req.query?.hasta); });
   r('post', '/ventas', (tx, ctx, req) => orders.createOrder(tx, ctx, req.body));
@@ -143,6 +197,22 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('post', '/ventas/:id/pagos/:pago/anular', (tx, ctx, req) => pagos.anularPago(tx, ctx, req.params.id, req.params.pago, req.body));
   r('get', '/cobros/metodos', async (tx, ctx) => { requirePerm(ctx, 'order:read'); return pagos.metodosDePago(tx); });
   r('post', '/ventas/:id/facturar', (tx, ctx, req) => fiscal.createInvoiceForOrder(tx, ctx, req.params.id));
+  r('post', '/ventas/:id/comprobante', (tx, ctx, req) => comprobantes.emitir(tx, ctx, req.params.id, req.body ?? {}));
+
+  // --- Comprobantes de venta (soporte interno, sin validez fiscal ante la DIAN)
+  const filtrosComprobante = (q: any) => ({ desde: q?.desde, hasta: q?.hasta, q: q?.q, estado: q?.estado, numero: q?.numero, pagina: q?.pagina, por_pagina: q?.por_pagina });
+  r('get', '/comprobantes', (tx, ctx, req) => comprobantes.listar(tx, ctx, filtrosComprobante(req.query)));
+  r('get', '/comprobantes.csv', async (tx, ctx, req, reply) => { descarga(reply, 'comprobantes.csv'); return comprobantes.exportar(tx, ctx, filtrosComprobante(req.query)); });
+  r('get', '/comprobantes/ajustes', (tx, ctx) => comprobantes.ajustes(tx, ctx));
+  r('patch', '/comprobantes/ajustes', (tx, ctx, req) => comprobantes.guardarAjustes(tx, ctx, req.body));
+  r('get', '/comprobantes/:id', (tx, ctx, req) => comprobantes.ver(tx, ctx, req.params.id));
+  r('get', '/comprobantes/:id/pdf', async (tx, ctx, req, reply) => {
+    const { archivo, nombre } = await comprobantes.pdf(tx, ctx, req.params.id);
+    descarga(reply, nombre, 'application/pdf');
+    return archivo;
+  });
+  r('post', '/comprobantes/:id/reenviar', (tx, ctx, req) => comprobantes.reenviar(tx, ctx, req.params.id, req.body));
+  r('post', '/comprobantes/:id/anular', (tx, ctx, req) => comprobantes.anular(tx, ctx, req.params.id, String(req.body?.motivo ?? '')));
 
   // --- Facturación
   r('get', '/facturacion', (tx, ctx) => fiscal.listDocuments(tx, ctx));

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { quoteModules, quoteClassification } from '../src/onboarding/pricing.js';
+import { config } from '../src/config.js';
 describe('Cotización modular', () => {
   it('incluye base y directorio sin duplicar funciones', () => {
     const q = quoteModules({ modulos: ['agenda', 'agenda'] });
@@ -12,7 +13,13 @@ describe('Cotización modular', () => {
     expect(q.lineas.find(m => m.id === 'ventas')?.requerida).toBe(true);
   });
   it('IA y selección manual usan exactamente el mismo motor', () => {
-    expect(quoteClassification({ modulos_sugeridos: ['ia'], factura_electronica: true })).toEqual(quoteModules({ modulos: ['ia', 'facturacion'] }));
+    config.fiscal.dianHabilitada = true;
+    try {
+      expect(quoteClassification({ modulos_sugeridos: ['ia'], factura_electronica: true })).toEqual(quoteModules({ modulos: ['ia', 'facturacion'] }));
+    } finally { config.fiscal.dianHabilitada = false; }
+  });
+  it('con la facturación DIAN apagada, pedir factura no suma el módulo (queda como interés)', () => {
+    expect(quoteClassification({ modulos_sugeridos: ['ia'], factura_electronica: true })).toEqual(quoteModules({ modulos: ['ia'] }));
   });
   it('rechaza módulos desconocidos y precios enviados por el navegador', () => {
     expect(() => quoteModules({ modulos: ['admin'] })).toThrow();

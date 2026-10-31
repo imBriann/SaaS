@@ -108,7 +108,7 @@ export const GUIAS: Record<string, Guia> = {
     titulo: 'Conectar el número de WhatsApp',
     pasos: [
       { ancla: 'menu/whatsapp/numero', titulo: 'Número de WhatsApp', texto: 'Todo lo del número está aquí.', opcional: true },
-      { ancla: 'whatsapp/opciones', ruta: '/whatsapp/numero', titulo: 'Dos caminos', texto: 'Conecta el número que ya tienes, o adquiere uno nuevo: verás el precio real y la activación con Meta paso a paso.' },
+      { ancla: 'whatsapp/opciones', ruta: '/whatsapp/numero', titulo: 'Usa tu propio número', texto: 'Escribe tu número, recibe un código por SMS y queda conectado a tu asistente. No necesitas entrar a Meta. Comprar un número nuevo llegará pronto.' },
     ],
   },
 };

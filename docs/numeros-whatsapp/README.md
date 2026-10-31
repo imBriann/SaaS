@@ -1,5 +1,7 @@
 # Compra y activación de números de WhatsApp desde Omnegia
 
+> **Actualización del 24 de octubre de 2026.** La forma principal de conectar WhatsApp es ahora «Usar mi propio número» (sección 10): SMS y listo, sin entrar a Meta. La compra con Telnyx queda en el código, intacta, y se muestra como «Próximamente» mientras `NUMEROS_COMPRA_HABILITADA=0`.
+
 Fecha: 19 de octubre de 2026. Este documento resume la investigación, lo implementado, lo probado y lo que falta para vender números reales.
 
 **Resumen honesto.** El flujo está completo de punta a punta: selección, requisitos regulatorios, resumen con precios, pago con Wompi, compra del número, registro con Meta, verificación por llamada, conexión con el asistente de IA, mensualidades y cancelación. Funciona en simulación y lo cubren 33 pruebas automáticas. **Ninguna operación se ha validado contra Telnyx ni Meta reales**, porque este entorno no tiene credenciales. Las llamadas a esas APIs siguen su documentación oficial, y las pruebas comprueban la forma de cada petición y la interpretación de cada respuesta. Para vender en producción hacen falta los pasos de la sección 9.
@@ -201,3 +203,131 @@ La suite completa del servidor, el typecheck de servidor y web y `vite build` pa
 5. Probar el pago en Wompi de pruebas (`WOMPI_ENTORNO=sandbox`) y luego uno real de bajo valor.
 6. Liberar el número de prueba y comprobar `DELETE /v2/phone_numbers/{id}` en el portal.
 7. Revisar en el panel del operador los incidentes `NUMERO_*` y asignar a una persona responsable.
+
+---
+
+## 10. Usar mi propio número (forma principal desde el 24 de octubre de 2026)
+
+**Resumen honesto.** Es la forma principal de conectar WhatsApp. La empresa escribe su número, recibe un código por SMS (o una llamada), lo escribe en Omnegia y queda conectada a la IA. **Nunca entra a Meta, Facebook ni Meta Developers.** El flujo funciona en simulación y lo cubren pruebas automáticas, pero **no se ha validado contra Meta real**: este entorno no tiene el token ni la WABA de producción. La compra de números con Telnyx sigue en el código, sin cambios, y el panel la muestra como «Próximamente» mientras `NUMEROS_COMPRA_HABILITADA=0`.
+
+### Cómo funciona
+
+El número se registra dentro de la cuenta de WhatsApp Business (WABA) **de Omnegia**, no en una cuenta de la empresa. Omnegia usa el token del usuario del sistema que ya tiene (`WHATSAPP_ACCESS_TOKEN`) y la WABA de `WHATSAPP_PLATFORM_WABA_ID`. Cada llamada sigue la [guía oficial de registro de números](https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/registering-phone-numbers/):
+
+| Paso | Llamada a la Graph API | Estado en Omnegia |
+|---|---|---|
+| 1. La empresa escribe país y número, y acepta el aviso | `POST /{WABA}/phone_numbers` con `cc`, `phone_number` y `verified_name` (el nombre del negocio) → `id` | `NUMERO_INGRESADO` |
+| 2. Código | `POST /{id}/request_code?code_method=SMS&language=es` («Prefiero una llamada» usa `VOICE`) | `CODIGO_ENVIADO` |
+| 3. La empresa escribe el código | `POST /{id}/verify_code?code=…` | `CODIGO_VERIFICADO` |
+| 4. Registro | `POST /{id}/register` con `messaging_product=whatsapp` y un PIN de 6 dígitos generado por el servidor, guardado cifrado con `APP_KEY` en `numero_credencial` | `REGISTRADO` |
+| 5. Comprobación y vinculación | `GET /{id}?fields=…`. Con `status=CONNECTED`, se guarda `phone_number_id` en el tenant | `CONECTADO` |
+| Desconectar | `POST /{id}/deregister` y se libera el `phone_number_id` | `CANCELADO` |
+
+Si falla, el estado pasa a `CONEXION_FALLIDA`. Es la misma tabla `numero_contratacion`, con `origen='PROPIO'`: sin pago, sin Telnyx y sin cotización (migración `026_numero_propio.sql`). El registro y la conexión se intentan en la misma petición. Si Meta tarda o limita, el trabajador reintenta (`numero_propio`) y la empresa ve «Conectando…».
+
+**Mensajes entrantes.** Meta envía los webhooks a la app suscrita a la WABA (`subscribed_apps`). Como todos los números quedan en la WABA de Omnegia, sus mensajes llegan a `/api/webhooks/whatsapp` sin configurar nada por empresa. `channelInbound` resuelve la empresa por `tenant.whatsapp_phone_number_id` y los entrega a su IA, igual que antes. El canal responde con el token de la plataforma.
+
+**Reglas y seguridad.**
+- Permiso `tenant:configure`. Recepción no puede. Cada consulta pasa por la RLS del tenant.
+- Máximo 5 intentos de código por proceso. Al quinto fallo se cierra el proceso y hay un bloqueo de 60 minutos. Máximo 3 reenvíos por hora, con 60 s de espera entre uno y otro.
+- Meta no documenta cuánto dura el código: Omnegia lo da por vencido a los 10 minutos y pide otro.
+- Cada intento queda en `numero_evento` y en la auditoría, sin el código ni el PIN.
+- Una empresa con un número conectado (por este flujo o en Configuración › WhatsApp) no puede iniciar otro.
+- Si Meta responde que la WABA alcanzó su límite de números, se crea el incidente `NUMERO_LIMITE_WABA` (gravedad crítica) para el operador.
+- Un proceso abandonado antes de verificar se cierra solo a las 48 horas.
+
+**Simulación.** Con `SIMULADORES` (desarrollo), la Meta simulada acepta el código `123456`. Los cuatro últimos dígitos del número fuerzan errores: `0001` número ya en WhatsApp, `0002` límite de la WABA, `0003` nombre rechazado y `0004` número inválido.
+
+### Qué configura Omnegia una sola vez en Meta
+
+1. **WABA de la plataforma.** En el Administrador comercial de Omnegia, la cuenta de WhatsApp Business donde vivirán los números de las empresas. Copia su identificador en `WHATSAPP_PLATFORM_WABA_ID`.
+2. **Usuario del sistema.** Su token permanente (`WHATSAPP_ACCESS_TOKEN`) necesita `whatsapp_business_management`, además de `whatsapp_business_messaging`, y acceso a esa WABA.
+3. **Suscripción de la app a la WABA** (`POST /{WABA}/subscribed_apps`) y webhook de la app con el campo `messages`. Si el número de Omnegia (`WHATSAPP_PLATFORM_PHONE_NUMBER_ID`) ya recibe mensajes en esa misma WABA, este paso está hecho.
+4. **Verificación del negocio de Omnegia.** Sin verificar, el portafolio admite pocos números (la documentación de Meta habla de 2). Verificar el negocio, y pedir más si hace falta, es lo que permite atender a muchas empresas.
+5. **Método de pago en la WABA**, porque Meta cobra las plantillas a Omnegia (ver costos).
+
+En producción, si existe `WHATSAPP_ACCESS_TOKEN` y falta `WHATSAPP_PLATFORM_WABA_ID`, **el servidor no arranca**. Configura la variable antes de desplegar.
+
+### Costos
+
+- **Omnegia no cobra mensualidad** por conectar un número propio. Tampoco hay costo de número, porque la empresa pone su chip.
+- **Meta cobra a Omnegia,** como dueña de la WABA, las plantillas que inicie el negocio, por mensaje entregado y según su categoría (marketing, utilidad, autenticación).
+- **Responder dentro de las 24 horas** siguientes al mensaje del cliente no tiene cargo de Meta.
+- Falta una decisión comercial: cómo trasladar a cada empresa el costo de sus plantillas. Hoy no se le factura.
+
+### Riesgos
+
+- **El número deja de funcionar en la app de WhatsApp del celular.** El panel lo advierte y pide confirmarlo. Recomendamos un chip nuevo para el negocio.
+- **Revisión del nombre visible.** Meta revisa el nombre (`name_status`). Mientras está `PENDING_REVIEW`, el panel lo muestra sin alarmar. Si Meta lo rechaza (`DECLINED`), pide escribir a soporte.
+- **Límite de números de la WABA.** Hasta verificar el negocio de Omnegia, unas pocas empresas agotan el cupo. El incidente avisa al operador.
+- **Calidad compartida.** Todos los números viven en la WABA de Omnegia. El mal uso de una empresa (spam, bloqueos) puede afectar a la cuenta y, con ella, a las demás. Conviene vigilar `quality_rating` y tener una política de uso.
+- **Titularidad.** Omnegia administra el número en su WABA. Si la empresa se va, el número se desconecta (`deregister`) y puede volver a la app. Revisar con el abogado cómo queda en los términos.
+- **Números no se borran por API.** Tras desconectar, el número sigue listado en la WABA (sin registrar). Si se vuelve a conectar, Omnegia intenta recuperar su identificador cuando Meta responde que ya está en la cuenta (2388012); falta confirmar que ese es el código real en este caso.
+
+### Qué quedó sin validar contra Meta real
+
+- **Ninguna llamada se ha hecho contra la Graph API real.** Las pruebas comprueban la forma de cada petición con un `fetch` falso.
+- **Idioma del código:** la referencia describe `language` como un código de dos letras (`en`), pero su ejemplo usa `en_US`. Omnegia envía `es`. Falta confirmar que el SMS y la llamada llegan en español (TODO en `meta.ts`).
+- **Códigos de error:** Meta documenta `136024` (ya verificado), `133016` y `133008` (demasiados intentos), `133005` (PIN) y `2388012` (ya está en la cuenta). **No documenta** un código para número ya en uso, número inválido, código incorrecto o vencido, límite de números ni nombre rechazado. Para esos casos Omnegia clasifica el texto del error (`motivoRegistro`, TODO en `meta.ts`). Hay que registrar los códigos reales en la primera prueba y reemplazar las heurísticas.
+- **Vigencia del código:** Meta no la documenta. Los 10 minutos son una regla de Omnegia.
+- **Límite exacto de números** de la WABA de Omnegia y el texto del error cuando se alcanza.
+- **Que un número nuevo de la WABA reciba mensajes** en el webhook sin pasos adicionales (es lo esperado según la suscripción por WABA, pero no se probó).
+- **Números que venían de otro proveedor** con verificación en dos pasos: se informa `PIN_EXISTENTE`, pero no se probó el caso real.
+
+**Prueba controlada recomendada.** Con un chip nuevo de Omnegia: conectarlo desde una empresa de prueba, anotar cada respuesta de Meta, escribirle desde otro celular, comprobar la respuesta de la IA y desconectarlo. Repetir con un número que siga en la app de WhatsApp, para capturar el error real de «número en uso».
+
+## 11. Vincular el número desde el panel, sin código (desde el 30 de octubre de 2026)
+
+**Decisión.** Omnegia no es todavía empresa constituida ni Tech Provider de Meta. Por eso el **único camino activo** es que el número quede en la WABA de Omnegia (`WHATSAPP_PLATFORM_WABA_ID`) y se vincule a la empresa desde el panel. Nadie toca código, `.env` ni Meta Developers para conectar un número.
+
+| Opción en «Conectar WhatsApp» | Estado | Interruptor |
+|---|---|---|
+| Usar mi propio número (SMS o llamada) | Activa | — |
+| Comprar un número nuevo (Telnyx) | Próximamente | `NUMEROS_COMPRA_HABILITADA=0` |
+| Conectar mi propia cuenta de WhatsApp Business (registro integrado) | Próximamente | `WHATSAPP_CUENTA_PROPIA_HABILITADA=0` |
+
+El código de la compra y del registro integrado sigue en el repositorio, apagado.
+
+### Para la empresa: una sola pantalla «Conectar WhatsApp»
+
+- El campo «Identificador del número (phone_number_id)» **ya no aparece**. En demostración queda un bloque «Opciones avanzadas (demostración)», cerrado por defecto, que solo acepta identificadores `sim-…`. La API rechaza un identificador real escrito por la empresa (`PATCH /api/t/configuracion/empresa` responde 400): así una empresa no puede tomar un número de la WABA que no es suyo.
+- **Estado siempre visible** (`GET /api/t/numeros/whatsapp`): «Sin conectar», «Esperando el código», «Conectando…», «Conectado: +57 322 750 0767 · Patitas del Zulia», «Desconectado» y «Necesita atención» (con qué hacer).
+- **Probar conexión** (`POST /api/t/numeros/whatsapp/probar`): envía un mensaje de prueba al celular que indique la persona. Sin plantillas aprobadas, WhatsApp solo deja escribir a quien escribió en las últimas 24 horas; si no, el panel explica que escriba primero «hola» desde ese celular.
+- **Desconectar** (`POST /api/t/numeros/whatsapp/desconectar`, escribiendo DESCONECTAR): hace `deregister` y deja el número libre. Si se conectó con «Usar mi propio número», lo hace ese flujo.
+- «Usar mi propio número» termina siempre con `register` y una comprobación `GET /{id}` en `CONNECTED`. Guarda `whatsapp_phone_number_id`, `whatsapp_estado` y `whatsapp_numero_visible` sin que la persona escriba ningún identificador.
+
+### Para el operador: «Números de WhatsApp» (`/operador/numeros`, rol ADMIN)
+
+`numeros/plataforma.ts` y `/api/operador/numeros/*`. Permiso de operador `numeros:gestionar` (solo ADMIN; SOPORTE recibe 403).
+
+| Acción | Llamada a Meta | Qué cambia en Omnegia |
+|---|---|---|
+| Ver la lista (en vivo) | `GET /{WABA}/phone_numbers?fields=id,display_phone_number,verified_name,status,code_verification_status,name_status,quality_rating,platform_type` | Nada. Se cruza con `tenant.whatsapp_phone_number_id` (asignado o libre) y con los procesos «propio» en curso. El número de `WHATSAPP_PLATFORM_PHONE_NUMBER_ID` sale como **reservado** y no se asigna. |
+| Asignar a una empresa (buscador por nombre o subdominio) | Ninguna | `tenant.whatsapp_phone_number_id`, `whatsapp_estado`, `whatsapp_numero_visible`. Un número, una empresa (`UNIQUE` de 001). `channelInbound` resuelve la empresa en cada mensaje: vale desde el siguiente mensaje, sin reiniciar. |
+| Registrar en la API (verificado, pero `status ≠ CONNECTED` o `platform_type ≠ CLOUD_API`) | `POST /{id}/register` con PIN aleatorio de 6 dígitos y luego `GET /{id}` hasta ver `CONNECTED` | PIN cifrado con `APP_KEY` en `numero_credencial_plataforma` (migración 028), guardado **antes** de llamar a Meta. |
+| Ver PIN | Ninguna | Pide motivo y queda en `auditoria_plataforma` (sin el PIN). |
+| Enviar código / verificar (número sin verificar) | `request_code` (SMS o VOICE) y `verify_code` | Nada (auditoría). |
+| Agregar número a la WABA | `POST /{WABA}/phone_numbers`. **Antes** se compara con `WHATSAPP_WABA_LIMITE_NUMEROS` (2 con el portafolio sin verificar): si se alcanzó, se explica y **no se llama a Meta**. | Nada (auditoría). |
+| Desasignar | Ninguna (no desregistra) | El número queda libre. |
+| Desregistrar (escribiendo DESREGISTRAR) | `POST /{id}/deregister` | El número queda libre y la empresa, si la tenía, pasa a «Desconectado». |
+
+**Por qué el PIN no va en `numero_credencial`.** Esa tabla (016) exige una contratación y una empresa. Un número de la WABA puede estar libre, así que su PIN vive en `numero_credencial_plataforma`, solo al alcance del rol de plataforma (ni `app_rt`, ni `app_operador`, ni `app_soporte`).
+
+**El camino manual nunca deja un número a medias.** `verificarWhatsapp` (botón «Comprobar estado» y trabajo `verificar_whatsapp`) pide ahora `status` y `platform_type`. Un número verificado pero no registrado queda `PENDIENTE_REGISTRO`, la empresa ve «Necesita atención» y el operador, «Registrar en la API». Nunca se muestra como conectado.
+
+**Errores de Meta** traducidos con `motivoRegistro` y `mensaje` de `propio.ts`. Ningún token ni PIN aparece en respuestas, registros ni en el frontend.
+
+### Qué debe hacer el operador con el número de Patitas del Zulia
+
+El +57 322 750 0767 (identificador 1444821255372205) se agregó y registró a mano el 30 de octubre desde el Graph API Explorer. No está en el código, las semillas ni las migraciones.
+
+1. Entrar al panel del operador con una cuenta ADMIN › **Números de WhatsApp**.
+2. El número aparece «Conectado · sin asignar».
+3. **Asignar** › buscar «Patitas» › elegir la empresa › Asignar.
+4. Desde ese momento sus mensajes los atiende la IA de Patitas del Zulia. En el panel de la empresa se ve «Conectado: +57 322 750 0767 · Patitas del Zulia». Para comprobarlo, alguien escribe «hola» al número y la empresa usa «Probar conexión» con ese celular.
+
+### Pruebas
+
+`server/test/numeros-waba.test.ts` (Meta simulada): lista en vivo, número reservado, aislamiento (la empresa recibe 404 en `/api/operador/numeros` y 400 si escribe un identificador real), SOPORTE sin permiso, asignación y doble asignación (409 con el nombre de la otra empresa), mensajes que llegan a la empresa asignada sin reiniciar, desasignación sin `deregister`, camino manual con número `PENDING` → `PENDIENTE_REGISTRO` y la acción «registrar», registro con PIN cifrado que no aparece en respuestas, consola ni auditoría, «Ver PIN» con motivo, alta → código → verificación → registro → asignación → desasignación → desregistro, límite de la WABA sin llamar a Meta, y el panel de la empresa (opciones, prueba con ventana de 24 horas y desconexión).
+
+**Sigue sin validar contra Meta real** lo de la sección 10, más el listado `GET /{WABA}/phone_numbers` y el tiempo que tarda un número en pasar a `CONNECTED` después de `register`.

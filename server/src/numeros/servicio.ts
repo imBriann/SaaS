@@ -16,7 +16,8 @@ import * as plantillas from '../email/plantillas.js';
 import { encolarDocumentos } from '../documentos/servicio.js';
 import { elegibleWhatsApp, ErrorProveedor, NumeroNoDisponible, proveedorNumeros, type NumeroDisponible, type Orden, type ProveedorNumeros, type Requisito, type TipoNumero, type ValorRequisito } from './proveedor.js';
 import { cargosMeta, cotizar, tasaUsdCop, type Cotizacion } from './tarifas.js';
-import { codigoDeTranscripcion, ErrorMeta, metaOnboarding, type MetaOnboarding } from './meta.js';
+import { codigoDeTranscripcion, ErrorMeta, metaOnboarding, metaPlataforma, type DatosNumeroMeta, type MetaOnboarding } from './meta.js';
+import { PAISES_PROPIO, vistaPropio } from './propio.js';
 
 /**
  * Contratación de un número de WhatsApp desde Omnegia: máquina de estados persistente.
@@ -36,7 +37,9 @@ import { codigoDeTranscripcion, ErrorMeta, metaOnboarding, type MetaOnboarding }
 export type Estado =
   | 'SELECCION_NUMERO' | 'CONFIRMACION_PENDIENTE' | 'PAGO_PENDIENTE' | 'PAGO_CONFIRMADO'
   | 'APROVISIONANDO_NUMERO' | 'NUMERO_APROVISIONADO' | 'REGISTRO_WHATSAPP_PENDIENTE' | 'VERIFICACION_PENDIENTE'
-  | 'CONEXION_PENDIENTE' | 'CONECTADO' | 'APROVISIONAMIENTO_FALLIDO' | 'CONEXION_FALLIDA' | 'CANCELACION_PENDIENTE' | 'CANCELADO';
+  | 'CONEXION_PENDIENTE' | 'CONECTADO' | 'APROVISIONAMIENTO_FALLIDO' | 'CONEXION_FALLIDA' | 'CANCELACION_PENDIENTE' | 'CANCELADO'
+  // Origen PROPIO («Usar mi propio número», ver ./propio.ts): sin pago ni proveedor telefónico.
+  | 'NUMERO_INGRESADO' | 'CODIGO_ENVIADO' | 'CODIGO_VERIFICADO' | 'REGISTRADO';
 
 const ANTES_DEL_PAGO: Estado[] = ['SELECCION_NUMERO', 'CONFIRMACION_PENDIENTE', 'PAGO_PENDIENTE'];
 /** Con mensualidad en curso: el número ya se compró (el primer mes cuenta desde la compra, no desde el pago). */
@@ -49,16 +52,16 @@ const MAX_LLAMADAS = 4;
 const MAX_INTENTOS_CONEXION = 6;
 const LIMITE_DOCUMENTO = 4 * 1024 * 1024;
 
-const SISTEMA = { tipo: 'SISTEMA' as const, id: null, nombre: 'Números de WhatsApp' };
-type Fila = Record<string, any>;
+export const SISTEMA = { tipo: 'SISTEMA' as const, id: null, nombre: 'Números de WhatsApp' };
+export type Fila = Record<string, any>;
 
-const actorDe = (ctx: Ctx) => ctx.actor;
-const nombreActor = (a: { tipo: string; nombre: string }) => `${a.tipo}:${a.nombre}`.slice(0, 120);
+export const actorDe = (ctx: Ctx) => ctx.actor;
+export const nombreActor = (a: { tipo: string; nombre: string }) => `${a.tipo}:${a.nombre}`.slice(0, 120);
 
 // ---------------------------------------------------------------------------
 // Transiciones
 // ---------------------------------------------------------------------------
-interface Mover {
+export interface Mover {
   de?: Estado[];
   subestado?: string | null;
   accion?: string | null;
@@ -73,7 +76,7 @@ interface Mover {
 const aParametro = (v: unknown) => (v !== null && typeof v === 'object' && !(v instanceof Date) && !Array.isArray(v) ? JSON.stringify(v) : v);
 
 /** Transición condicionada: solo ocurre si la fila sigue en un estado de origen permitido. */
-async function mover(tx: Tx, c: Fila, a: Estado, tipo: string, o: Mover = {}): Promise<Fila | null> {
+export async function mover(tx: Tx, c: Fila, a: Estado, tipo: string, o: Mover = {}): Promise<Fila | null> {
   const de = o.de ?? [c.estado];
   const sets = ['estado=$3', 'actualizado_en=now()'];
   const params: unknown[] = [c.id, de, a];
@@ -97,7 +100,7 @@ async function mover(tx: Tx, c: Fila, a: Estado, tipo: string, o: Mover = {}): P
 }
 
 /** Cambio de datos sin cambio de estado (también queda en la bitácora si lleva tipo). */
-async function anotar(tx: Tx, c: Fila, campos: Record<string, unknown>, tipo?: string, detalle: Record<string, unknown> = {}) {
+export async function anotar(tx: Tx, c: Fila, campos: Record<string, unknown>, tipo?: string, detalle: Record<string, unknown> = {}) {
   const sets = ['actualizado_en=now()'];
   const params: unknown[] = [c.id];
   for (const [k, v] of Object.entries(campos)) {
@@ -111,7 +114,7 @@ async function anotar(tx: Tx, c: Fila, campos: Record<string, unknown>, tipo?: s
   return f;
 }
 
-const cargar = async (tx: Tx, id: string, bloquear = false) =>
+export const cargar = async (tx: Tx, id: string, bloquear = false) =>
   (await tx.query(`SELECT * FROM numero_contratacion WHERE id=$1 ${bloquear ? 'FOR UPDATE' : ''}`, [id])).rows[0] as Fila | undefined;
 
 /** Contratación de la empresa (la RLS la limita a su tenant aunque se pase otro id). */
@@ -127,12 +130,12 @@ const permisoCompra = async (db: Database, ctx: Ctx) => db.withTenant(ctx.tenant
 // ---------------------------------------------------------------------------
 // Credenciales cifradas
 // ---------------------------------------------------------------------------
-async function credencial(tx: Tx, id: string) {
+export async function credencial(tx: Tx, id: string) {
   const r = (await tx.query(`SELECT * FROM numero_credencial WHERE contratacion_id=$1`, [id])).rows[0];
   const des = (v: string | null) => { try { return v ? decrypt(config.appKey, v) : null; } catch { return null; } };
   return { token: des(r?.token_cifrado ?? null), pin: des(r?.pin_cifrado ?? null), codigo: des(r?.codigo_cifrado ?? null), codigoEn: r?.codigo_en ?? null };
 }
-async function guardarCredencial(tx: Tx, c: Fila, v: { token?: string | null; pin?: string | null; codigo?: string | null }) {
+export async function guardarCredencial(tx: Tx, c: Fila, v: { token?: string | null; pin?: string | null; codigo?: string | null }) {
   const enc = (x: string | null | undefined) => (x == null ? null : encrypt(config.appKey, x));
   await tx.query(`INSERT INTO numero_credencial (contratacion_id, tenant_id) VALUES ($1,$2) ON CONFLICT (contratacion_id) DO NOTHING`, [c.id, c.tenant_id]);
   if (v.token !== undefined) await tx.query(`UPDATE numero_credencial SET token_cifrado=$2, actualizado_en=now() WHERE contratacion_id=$1`, [c.id, enc(v.token)]);
@@ -141,7 +144,7 @@ async function guardarCredencial(tx: Tx, c: Fila, v: { token?: string | null; pi
 }
 
 /** Token de negocio por número, para el canal (caché corta; el token nunca sale del servidor). */
-const cacheTokens = new Map<string, { t: string | null; en: number }>();
+export const cacheTokens = new Map<string, { t: string | null; en: number }>();
 export function instalarResolverToken(db: Database) {
   setResolverToken(async (pid) => {
     const c = cacheTokens.get(pid);
@@ -161,17 +164,25 @@ export function instalarResolverToken(db: Database) {
 // ---------------------------------------------------------------------------
 const NOMBRE_TIPO: Record<TipoNumero, string> = { local: 'Fijo local', mobile: 'Móvil', national: 'Nacional', toll_free: 'Gratuito (01 8000)' };
 const NOMBRE_PAIS: Record<string, string> = { CO: 'Colombia', MX: 'México', PE: 'Perú', CL: 'Chile', EC: 'Ecuador', US: 'Estados Unidos' };
-const INDICATIVO: Record<string, string> = { CO: '57', MX: '52', PE: '51', CL: '56', EC: '593', US: '1' };
+export const INDICATIVO: Record<string, string> = { CO: '57', MX: '52', PE: '51', CL: '56', EC: '593', US: '1' };
+
+export const MOTIVO_PROXIMAMENTE = 'La compra de números nuevos estará disponible próximamente. Mientras tanto, conecta tu propio número: solo necesitas recibir un SMS.';
+
+/** Con NUMEROS_COMPRA_HABILITADA=0 la compra no se inicia ni se paga (lo ya pagado sigue su curso). */
+function exigirCompraHabilitada() {
+  if (!config.numeros.compraHabilitada) throw new AppError('CONFLICT', MOTIVO_PROXIMAMENTE, { proximamente: true });
+}
 
 /** ¿Se puede vender ahora? Devuelve el motivo en lenguaje claro si no. */
 async function bloqueoVenta(p: ProveedorNumeros | null): Promise<string | null> {
+  if (!config.numeros.compraHabilitada) return MOTIVO_PROXIMAMENTE;
   if (!p) return 'La compra de números está pendiente de conectar con el proveedor. Mientras tanto, puedes conectar un número propio.';
   if (!cuentaPlataforma()) return 'Los pagos en línea están pendientes de conectar.';
   if (p.entorno === 'real' && !config.numeros.comercial.confirmadas && !config.simuladores) return 'Los precios de los números aún no están confirmados por Omnegia. Mientras tanto, puedes conectar un número propio.';
   return null;
 }
 
-async function contratacionViva(tx: Tx, tenantId: string) {
+export async function contratacionViva(tx: Tx, tenantId: string) {
   return (await tx.query(`SELECT * FROM numero_contratacion WHERE tenant_id=$1 AND estado <> 'CANCELADO' ORDER BY creado_en DESC LIMIT 1`, [tenantId])).rows[0] as Fila | undefined;
 }
 
@@ -185,6 +196,7 @@ export async function opciones(db: Database, ctx: Ctx) {
     viva: await contratacionViva(tx, ctx.tenantId),
   }));
   const propioConectado = !!t?.whatsapp_phone_number_id && t.whatsapp_estado === 'CONECTADO' && (!viva || viva.phone_number_id !== t.whatsapp_phone_number_id);
+  const mp = metaPlataforma();
   const paises = [];
   for (const pais of config.numeros.paises) {
     let tipos: { tipo: TipoNumero; nombre: string; caracteristicas: string[]; reservable: boolean; elegible: boolean; motivo: string }[] = [];
@@ -204,7 +216,16 @@ export async function opciones(db: Database, ctx: Ctx) {
     paises,
     plan: plan ? { nombre: plan.nombre, precio_mensual: Number(plan.precio_mensual), estado: plan.estado, periodo_fin: plan.periodo_fin } : null,
     meta: cargosMeta(),
-    propio: { conectado: propioConectado, numero: t?.whatsapp_numero_visible ?? null },
+    propio: {
+      conectado: propioConectado, numero: t?.whatsapp_numero_visible ?? null,
+      // «Usar mi propio número»: Omnegia registra el número en su cuenta de WhatsApp Business.
+      disponible: !!mp && !propioConectado && !viva,
+      motivo: !mp ? 'La conexión con WhatsApp está pendiente de configurar en Omnegia. Escribe a soporte.' : null,
+      simulado: !!mp?.meta.simulado,
+      nombre: t?.nombre ?? null,
+      paises: PAISES_PROPIO,
+    },
+    compra_habilitada: config.numeros.compraHabilitada,
     contratacion_id: viva?.id ?? null,
   };
 }
@@ -227,6 +248,7 @@ function ofertaDe(n: NumeroDisponible, q: Cotizacion) {
 
 export async function buscar(db: Database, ctx: Ctx, query: unknown) {
   await db.withTenant(ctx.tenantId, async () => requirePerm(ctx, 'subscription:manage'));
+  exigirCompraHabilitada();
   const f = Busqueda.parse(query);
   if (!config.numeros.paises.includes(f.pais)) throw invalid('Ese país todavía no está disponible.');
   const p = await proveedorNumeros();
@@ -255,6 +277,7 @@ export async function buscar(db: Database, ctx: Ctx, query: unknown) {
 // ---------------------------------------------------------------------------
 export async function seleccionar(db: Database, ctx: Ctx, body: unknown) {
   await permisoCompra(db, ctx);
+  exigirCompraHabilitada();
   const b = z.object({ numero: z.string().regex(/^\+[1-9]\d{6,14}$/), pais: z.string().regex(/^[A-Z]{2}$/), tipo: z.enum(['local', 'mobile', 'national', 'toll_free']) }).parse(body);
   const op = await opciones(db, ctx);
   if (!op.disponible) throw new AppError('CONFLICT', op.motivo ?? 'No disponible.');
@@ -311,6 +334,7 @@ const Archivo = z.object({ nombre: z.string().trim().min(1).max(120).regex(/\.(p
 
 export async function enviarRequisitos(db: Database, ctx: Ctx, id: string, body: unknown) {
   await permisoCompra(db, ctx);
+  exigirCompraHabilitada();
   const c = await propia(db, ctx, id);
   if (c.estado !== 'SELECCION_NUMERO') throw new AppError('CONFLICT', 'Los requisitos de este número ya se enviaron.');
   const lista: Requisito[] = c.requisitos?.lista ?? [];
@@ -382,6 +406,7 @@ const VERSION_CONDICIONES = 'numeros-2026-10';
 
 export async function confirmar(db: Database, ctx: Ctx, id: string, body: unknown) {
   await permisoCompra(db, ctx);
+  exigirCompraHabilitada();
   const b = Confirmacion.safeParse(body);
   if (!b.success) throw invalid(b.error.issues[0]?.message ?? 'Confirma las condiciones.');
   let c = await propia(db, ctx, id);
@@ -477,11 +502,11 @@ export async function pagoNumeroNoAprobado(tx: Tx, pago: Fila, estado: string, c
 // Trabajador: aprovisionamiento del número
 // ---------------------------------------------------------------------------
 /** Turno exclusivo para hablar con terceros sobre una contratación. */
-async function tomarTurno(db: Database, id: string): Promise<Fila | null> {
+export async function tomarTurno(db: Database, id: string): Promise<Fila | null> {
   return db.withPlatform(async (tx) => (await tx.query(
     `UPDATE numero_contratacion SET bloqueo_hasta=now() + interval '3 minutes' WHERE id=$1 AND (bloqueo_hasta IS NULL OR bloqueo_hasta < now()) RETURNING *`, [id])).rows[0] ?? null);
 }
-const soltarTurno = (db: Database, id: string) => db.withPlatform((tx) => tx.query(`UPDATE numero_contratacion SET bloqueo_hasta=NULL WHERE id=$1`, [id]));
+export const soltarTurno = (db: Database, id: string) => db.withPlatform((tx) => tx.query(`UPDATE numero_contratacion SET bloqueo_hasta=NULL WHERE id=$1`, [id]));
 
 async function fallarAprovisionamiento(db: Database, c: Fila, subestado: string, mensaje: string, correlacion: string) {
   await db.withPlatform(async (tx) => {
@@ -689,7 +714,7 @@ async function fallarConexion(db: Database, c: Fila, mensaje: string, correlacio
   });
 }
 
-const pinNuevo = () => String(randomInt(100000, 1_000_000));
+export const pinNuevo = () => String(randomInt(100000, 1_000_000));
 
 /** Trabajador: lleva el número de «comprado» a «conectado» con la Graph API, paso a paso y sin repetir. */
 export async function pasoWhatsApp(db: Database, id: string, correlacion: string): Promise<void | 'reintentar'> {
@@ -765,12 +790,7 @@ export async function pasoWhatsApp(db: Database, id: string, correlacion: string
     const d = await meta.consultar(c.phone_number_id, tk);
     const operativo = d.estado === 'CONNECTED' && d.verificacion !== 'NOT_VERIFIED';
     await db.withPlatform(async (tx) => {
-      const diagnostico = { ok: operativo, numero: d.numero, nombre: d.nombre, calidad: d.calidad, estado_nombre: d.estadoNombre, comprobado: new Date().toISOString() };
-      await tx.query(
-        `UPDATE tenant SET whatsapp_phone_number_id=$2, whatsapp_estado=$3, whatsapp_numero_visible=coalesce($4, whatsapp_numero_visible), whatsapp_diagnostico=$5,
-           whatsapp_verificado_en=CASE WHEN $6 THEN now() ELSE whatsapp_verificado_en END WHERE id=$1`,
-        [c.tenant_id, c.phone_number_id, operativo ? (meta.simulado ? 'SIMULADO' : 'CONECTADO') : 'PENDIENTE_VERIFICAR', d.numero ?? c.numero_e164, JSON.stringify(diagnostico), operativo]);
-      cacheTokens.delete(c.phone_number_id);
+      await vincularEmpresa(tx, c, d, operativo, meta.simulado);
       wa.estado_meta = d.estado; wa.estado_nombre = d.estadoNombre; wa.calidad = d.calidad;
       if (operativo) {
         await mover(tx, c, 'CONECTADO', 'whatsapp_conectado', { de: ['CONEXION_PENDIENTE'], subestado: null, accion: 'prueba', campos: { whatsapp: wa, conectado_en: new Date(), ultimo_error: null }, correlacion, detalle: { estado_nombre: d.estadoNombre } });
@@ -794,6 +814,19 @@ export async function pasoWhatsApp(db: Database, id: string, correlacion: string
   } finally {
     await soltarTurno(db, id);
   }
+}
+
+/**
+ * Deja el número en la empresa: desde aquí channelInbound enruta sus mensajes a la IA de este tenant.
+ * Solo se marca CONECTADO (o SIMULADO) cuando Meta lo reporta operativo.
+ */
+export async function vincularEmpresa(tx: Tx, c: Fila, d: DatosNumeroMeta, operativo: boolean, simulado: boolean) {
+  const diagnostico = { ok: operativo, numero: d.numero, nombre: d.nombre, calidad: d.calidad, estado_nombre: d.estadoNombre, comprobado: new Date().toISOString() };
+  await tx.query(
+    `UPDATE tenant SET whatsapp_phone_number_id=$2, whatsapp_estado=$3, whatsapp_numero_visible=coalesce($4, whatsapp_numero_visible), whatsapp_diagnostico=$5,
+       whatsapp_verificado_en=CASE WHEN $6 THEN now() ELSE whatsapp_verificado_en END WHERE id=$1`,
+    [c.tenant_id, c.phone_number_id, operativo ? (simulado ? 'SIMULADO' : 'CONECTADO') : 'PENDIENTE_VERIFICAR', simulado ? c.numero_e164 : d.numero ?? c.numero_e164, JSON.stringify(diagnostico), operativo]);
+  cacheTokens.delete(c.phone_number_id);
 }
 
 /** Primer mensaje recibido en el número conectado: la prueba de punta a punta (llega y lo atiende la IA). */
@@ -928,7 +961,7 @@ export async function ciclo(db: Database, correlacion: string) {
   const g = config.numeros.graciaDias;
   const r = await db.withPlatform(async (tx) => {
     // Altas abandonadas antes del pago (la reserva del proveedor ya venció).
-    const abandonadas = (await tx.query(`SELECT * FROM numero_contratacion WHERE estado IN ('SELECCION_NUMERO','CONFIRMACION_PENDIENTE') AND actualizado_en < now() - interval '48 hours' LIMIT 50`)).rows;
+    const abandonadas = (await tx.query(`SELECT * FROM numero_contratacion WHERE estado IN ('SELECCION_NUMERO','CONFIRMACION_PENDIENTE','NUMERO_INGRESADO','CODIGO_ENVIADO') AND actualizado_en < now() - interval '48 hours' LIMIT 50`)).rows;
     for (const c of abandonadas) await mover(tx, c, 'CANCELADO', 'abandonada', { subestado: 'abandonada', accion: null, campos: { cancelado_en: new Date() }, correlacion });
     const pendientesPago = (await tx.query(`SELECT * FROM numero_contratacion WHERE estado='PAGO_PENDIENTE' AND actualizado_en < now() - interval '72 hours'
                                               AND NOT EXISTS (SELECT 1 FROM payment p WHERE p.numero_contratacion_id=numero_contratacion.id AND p.estado='PENDIENTE' AND (p.expira_en IS NULL OR p.expira_en > now())) LIMIT 50`)).rows;
@@ -956,10 +989,11 @@ export async function ciclo(db: Database, correlacion: string) {
       `SELECT id, tenant_id, estado, orden_id FROM numero_contratacion
         WHERE ((estado='PAGO_CONFIRMADO' AND actualizado_en < now() - interval '15 minutes')
             OR (estado='APROVISIONANDO_NUMERO' AND actualizado_en < now() - interval '1 hour')
-            OR (estado IN ('VERIFICACION_PENDIENTE','CONEXION_PENDIENTE') AND accion_cliente IS NULL AND actualizado_en < now() - interval '30 minutes'))
+            OR (estado IN ('VERIFICACION_PENDIENTE','CONEXION_PENDIENTE','CODIGO_VERIFICADO','REGISTRADO') AND accion_cliente IS NULL AND actualizado_en < now() - interval '30 minutes'))
           AND (bloqueo_hasta IS NULL OR bloqueo_hasta < now()) LIMIT 50`)).rows;
     for (const c of detenidas) {
-      const tipo = c.estado === 'PAGO_CONFIRMADO' ? 'numero_aprovisionar' : c.estado === 'APROVISIONANDO_NUMERO' ? 'numero_seguimiento' : 'numero_whatsapp';
+      const tipo = c.estado === 'PAGO_CONFIRMADO' ? 'numero_aprovisionar' : c.estado === 'APROVISIONANDO_NUMERO' ? 'numero_seguimiento'
+        : ['CODIGO_VERIFICADO', 'REGISTRADO'].includes(c.estado) ? 'numero_propio' : 'numero_whatsapp';
       await enqueue(tx, c.tenant_id, tipo, { contratacion_id: c.id }, { claveUnica: `num-rec:${c.id}:${hora}`, maxIntentos: 3 });
     }
     return { abandonadas: abandonadas.length + pendientesPago.length, gracia: vencidos.length, impagos: impagos.length, liberar: aLiberar.length, recuperadas: detenidas.length };
@@ -1031,6 +1065,7 @@ function etapas(c: Fila) {
 }
 
 async function vista(tx: Tx, c: Fila) {
+  if (c.origen === 'PROPIO') return vistaPropio(tx, c);
   const eventos = (await tx.query(`SELECT de, a, tipo, detalle, creado_en FROM numero_evento WHERE contratacion_id=$1 ORDER BY creado_en DESC LIMIT 40`, [c.id])).rows;
   const pagos = (await tx.query(`SELECT referencia, cargo_numero, monto, estado, creado_en, verificado_en, cubre_hasta FROM payment WHERE numero_contratacion_id=$1 AND estado <> 'REEMPLAZADO' ORDER BY creado_en DESC LIMIT 24`, [c.id])).rows
     .map((p: any) => ({ ...p, monto: Number(p.monto) }));

@@ -16,7 +16,8 @@
     "respaldo": "tsx src/db/respaldo.ts",
     "correo:prueba": "tsx src/email/prueba.ts",
     "operador": "tsx src/seed/operador.ts",
-    "reiniciar": "tsx src/seed/reiniciar.ts"
+    "reiniciar": "tsx src/seed/reiniciar.ts",
+    "borrar-todo": "tsx src/seed/borrarTodo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
@@ -35,6 +36,7 @@
     "pg": "^8.23.0",
     "qrcode": "^1.5.4",
     "resend": "^6.32.1",
+    "sharp": "^0.34.5",
     "zod": "^4.6.5"
   },
   "devDependencies": {

@@ -5,6 +5,7 @@ import { PERMISOS_PROHIBIDOS_A_AGENTES, type Permiso } from '../core/permissions
 import { AppError } from '../lib/errors.js';
 import { uuidv7 } from '../lib/util.js';
 import { ORDEN_RIESGO, TOOL_MAP, type NivelRiesgo, type ToolDef, type ToolRuntime } from './registry.js';
+import { ajustesIA, decidirRiesgo } from './politica.js';
 
 /**
  * AI Action Gateway (PRO-SW-002 fig. 07b).
@@ -21,6 +22,10 @@ import { ORDEN_RIESGO, TOOL_MAP, type NivelRiesgo, type ToolDef, type ToolRuntim
  *                 prohibidos a agentes y el nivel «crítica» se niegan siempre.
  *   4. Contexto:  límite por conversación, riesgo efectivo (confirmación) y
  *                 pertenencia de los recursos al tenant (vía RLS: «no encontrado»).
+ *
+ * El riesgo efectivo depende de la autonomía de la empresa (politica.ts): en AUTOMATICO una cita con todos
+ * los datos dichos por el cliente se ejecuta sin «SÍ»; en SUPERVISADO una venta grande espera al negocio.
+ * Cada registro guarda con qué política se decidió.
  */
 
 export interface AgentProfile {
@@ -44,6 +49,9 @@ export interface GatewayResult {
   pendingActionId?: string;
   resumen?: string;
   riesgo?: NivelRiesgo;
+  politica?: string;
+  /** La acción espera la aprobación del negocio (SUPERVISADO), no la del cliente. */
+  aprobacionNegocio?: boolean;
 }
 
 async function toolEnabled(tx: Tx, nombre: string): Promise<boolean> {
@@ -95,18 +103,19 @@ interface Record_ {
   confirmadoPor?: string;
   pendingId?: string;
   ms?: number;
+  politica?: string;
 }
 
 async function record(tx: Tx, ctx: Ctx, agent: AgentProfile, conversationId: string | null, nombre: string, args: unknown, r: Record_): Promise<string> {
   const id = uuidv7();
   await tx.query(
     `INSERT INTO ai_execution (id, tenant_id, agent_id, configuracion, conversation_id, herramienta, version_herramienta, argumentos,
-       nivel_riesgo, permiso_requerido, decision, motivo_denegacion, comprobacion_fallida, confirmado_por, resultado, pending_action_id, duracion_ms)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+       nivel_riesgo, permiso_requerido, decision, motivo_denegacion, comprobacion_fallida, confirmado_por, resultado, pending_action_id, duracion_ms, politica)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
     [
       id, ctx.tenantId, agent.id, agent.configuracion, conversationId, nombre.slice(0, 80), r.version ?? null,
       JSON.stringify(args ?? {}).slice(0, 4000), r.riesgo ?? null, r.permiso ?? null, r.decision, r.motivo ?? null,
-      r.comprobacion ?? null, r.confirmadoPor ?? null, r.resultado ? JSON.stringify(r.resultado) : null, r.pendingId ?? null, r.ms ?? null,
+      r.comprobacion ?? null, r.confirmadoPor ?? null, r.resultado ? JSON.stringify(r.resultado) : null, r.pendingId ?? null, r.ms ?? null, r.politica ?? null,
     ],
   );
   await audit(tx, ctx, {
@@ -114,7 +123,7 @@ async function record(tx: Tx, ctx: Ctx, agent: AgentProfile, conversationId: str
     recurso: 'ai_execution',
     recursoId: id,
     resultado: r.decision === 'DENEGADA' ? (r.motivo === 'recurso_no_encontrado' ? 'NO_ENCONTRADO' : 'DENEGADO') : r.decision === 'ERROR' ? 'ERROR' : 'PERMITIDO',
-    detalle: { agente: agent.configuracion, decision: r.decision, motivo: r.motivo, comprobacion: r.comprobacion, riesgo: r.riesgo, permiso: r.permiso, conversacion: conversationId },
+    detalle: { agente: agent.configuracion, decision: r.decision, motivo: r.motivo, comprobacion: r.comprobacion, riesgo: r.riesgo, permiso: r.permiso, conversacion: conversationId, politica: r.politica },
   });
   return id;
 }
@@ -167,15 +176,23 @@ export async function evaluateAndExecute(
     )).rows[0].n);
     if (n >= t.limitePorConversacion) return deny(4, 'limite_por_conversacion', { riesgo });
   }
-  if (riesgo === 'confirmable' && !opts.confirmacion) {
+  // Riesgo efectivo según la autonomía de la empresa (solo el agente de atención; el asistente del panel
+  // siempre pide el botón de confirmación a la persona).
+  const monto = t.monto ? await t.monto(parsed.data, rt).catch(() => null) : null;
+  const dec = agent.configuracion === 'atencion' && conversationId
+    ? await decidirRiesgo(tx, t.nombre, riesgo, parsed.data, conversationId, monto)
+    : { riesgo, politica: agent.configuracion === 'atencion' ? 'sin_conversacion' : 'panel:confirma_persona', aprobacionNegocio: false };
+  if (dec.riesgo === 'confirmable' && !opts.confirmacion) {
     const resumen = t.resumen ? await t.resumen(parsed.data, rt).catch(() => t.descripcion) : t.descripcion;
     const pendingId = uuidv7();
     if (conversationId) {
-      await tx.query(`UPDATE pending_action SET estado='EXPIRADA' WHERE conversation_id=$1 AND estado='PENDIENTE'`, [conversationId]);
+      const tipo = dec.aprobacionNegocio ? 'NEGOCIO' : 'CLIENTE';
+      const minutos = dec.aprobacionNegocio ? (await ajustesIA(tx)).aprobacion_espera_min : 15;
+      await tx.query(`UPDATE pending_action SET estado='EXPIRADA' WHERE conversation_id=$1 AND estado='PENDIENTE' AND tipo=$2`, [conversationId, tipo]);
       await tx.query(
-        `INSERT INTO pending_action (id, tenant_id, conversation_id, agent_id, herramienta, argumentos, resumen, estado, expira_en)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'PENDIENTE', now() + interval '15 minutes')`,
-        [pendingId, ctx.tenantId, conversationId, agent.id, t.nombre, JSON.stringify(parsed.data), resumen],
+        `INSERT INTO pending_action (id, tenant_id, conversation_id, agent_id, herramienta, argumentos, resumen, estado, expira_en, tipo)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'PENDIENTE', now() + ($8 || ' minutes')::interval, $9)`,
+        [pendingId, ctx.tenantId, conversationId, agent.id, t.nombre, JSON.stringify(parsed.data), resumen, String(minutos), tipo],
       );
     } else if (rt.solicitante) {
       // Asistente del panel: queda a nombre de quien preguntó; solo esa persona la confirma (con un botón).
@@ -186,9 +203,9 @@ export async function evaluateAndExecute(
       );
     }
     const executionId = await record(tx, ctx, agent, conversationId, t.nombre, parsed.data, {
-      decision: 'PENDIENTE_CONFIRMACION', riesgo, permiso: t.permiso, version: t.version, pendingId, resultado: { resumen },
+      decision: 'PENDIENTE_CONFIRMACION', riesgo: dec.riesgo, permiso: t.permiso, version: t.version, pendingId, resultado: { resumen, aprobacion_negocio: !!dec.aprobacionNegocio }, politica: dec.politica,
     });
-    return { decision: 'PENDIENTE_CONFIRMACION', executionId, herramienta: t.nombre, pendingActionId: pendingId, resumen, riesgo };
+    return { decision: 'PENDIENTE_CONFIRMACION', executionId, herramienta: t.nombre, pendingActionId: pendingId, resumen, riesgo: dec.riesgo, politica: dec.politica, aprobacionNegocio: !!dec.aprobacionNegocio };
   }
 
   // Ejecución: única salida hacia los datos, aislada en un savepoint.
@@ -199,10 +216,10 @@ export async function evaluateAndExecute(
     await tx.query('RELEASE SAVEPOINT tool_exec');
     const decision: Decision = opts.confirmacion ? 'CONFIRMADA' : 'PERMITIDA';
     const executionId = await record(tx, ctx, agent, conversationId, t.nombre, parsed.data, {
-      decision, riesgo, permiso: t.permiso, version: t.version, resultado, confirmadoPor: opts.confirmacion?.por,
-      pendingId: opts.confirmacion?.pendingActionId, ms: Date.now() - t0,
+      decision, riesgo: dec.riesgo, permiso: t.permiso, version: t.version, resultado, confirmadoPor: opts.confirmacion?.por,
+      pendingId: opts.confirmacion?.pendingActionId, ms: Date.now() - t0, politica: dec.politica,
     });
-    return { decision, executionId, herramienta: t.nombre, resultado, riesgo };
+    return { decision, executionId, herramienta: t.nombre, resultado, riesgo: dec.riesgo, politica: dec.politica };
   } catch (e) {
     await tx.query('ROLLBACK TO SAVEPOINT tool_exec');
     if (e instanceof AppError && e.code === 'NOT_FOUND') {
@@ -215,7 +232,7 @@ export async function evaluateAndExecute(
     const resultado = Array.isArray(alternativas) ? { alternativas: alternativas.map((s: any) => ({ inicio: s.inicio, fecha: s.fecha, hora: s.hora, recurso_id: s.recurso_id, recurso: s.recurso })) } : undefined;
     if (!(e instanceof AppError)) console.error(`[gateway ${ctx.correlacion}] ${t.nombre}:`, (e as Error).message);
     const executionId = await record(tx, ctx, agent, conversationId, t.nombre, parsed.data, {
-      decision: 'ERROR', motivo, riesgo, permiso: t.permiso, version: t.version, ms: Date.now() - t0, resultado,
+      decision: 'ERROR', motivo, riesgo: dec.riesgo, permiso: t.permiso, version: t.version, ms: Date.now() - t0, resultado, politica: dec.politica,
     });
     return { decision: 'ERROR', executionId, herramienta: t.nombre, motivo, riesgo, resultado };
   }

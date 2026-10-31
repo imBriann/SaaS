@@ -58,7 +58,7 @@ export function faltantesDePago(d: any, cuenta: { proveedor: string } | null): s
   if (!n.email) faltan.push('email');
   if (!n.slug) faltan.push('subdominio');
   if (!d.email_verificado_en || d.email_verificado !== n.email) faltan.push('correo_verificado');
-  if (d.clasificacion?.factura_electronica && (!n.nit || !n.nit_dv || !nitValido(`${n.nit}-${n.nit_dv}`))) faltan.push('nit');
+  if (d.clasificacion?.factura_electronica && config.fiscal.dianHabilitada && (!n.nit || !n.nit_dv || !nitValido(`${n.nit}-${n.nit_dv}`))) faltan.push('nit');
   if (!n.telefono) faltan.push('telefono');
   if (!n.pais || !n.departamento || !n.municipio || !n.direccion) faltan.push('direccion');
   if (!aceptacionVigente(d.aceptacion_legal)) faltan.push('aceptacion_legal');

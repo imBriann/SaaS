@@ -20,6 +20,15 @@ import type { Personalizacion } from './personalization.js';
  * porque el tenant todavía no existe.
  */
 
+/** Textos sugeridos para enviar a aprobación de Meta (categoría «utilidad»), uno por tipo de aviso proactivo. */
+export const PLANTILLAS_PROACTIVAS = [
+  { clave: 'recordatorio_cita', tipo: 'RECORDATORIO', cuerpo: 'Hola {{cliente}}, te recordamos tu cita de {{servicio}} el {{fecha}} a las {{hora}} con {{recurso}}. Responde 1 para confirmar, 2 para reprogramar o 3 para cancelar.' },
+  { clave: 'seguimiento_cita', tipo: 'SEGUIMIENTO', cuerpo: 'Hola {{cliente}}, gracias por tu visita. ¿Cómo te fue con tu {{servicio}}? Si quieres, te agendamos la próxima.' },
+  { clave: 'pago_pendiente', tipo: 'PAGO_PENDIENTE', cuerpo: 'Hola {{cliente}}, tu compra #{{numero}} por {{total}} sigue pendiente de pago. Puedes pagarla aquí: {{enlace}}' },
+  { clave: 'cupo_lista_espera', tipo: 'LISTA_ESPERA', cuerpo: 'Hola {{cliente}}, se liberó un cupo de {{servicio}} el {{fecha}} a las {{hora}}. Responde SÍ para tomarlo.' },
+  { clave: 'reprogramar_inasistencia', tipo: 'INASISTENCIA', cuerpo: 'Hola {{cliente}}, te esperábamos para tu cita de {{servicio}}. ¿Quieres que te busquemos otro horario?' },
+] as const;
+
 export async function ensurePlatformCatalog(tx: Tx): Promise<void> {
   for (const p of PLANES) {
     await tx.query(
@@ -163,6 +172,9 @@ export async function createTenantFromTemplate(tx: Tx, d: NuevoTenant, etapa: (e
     await tx.query(`INSERT INTO role (id, tenant_id, clave, nombre, es_agente) VALUES ($1,$2,$3,$4,$5)`, [id, tenantId, r.clave, r.nombre, r.es_agente]);
     for (const p of r.permisos) await tx.query(`INSERT INTO role_permission (tenant_id, role_id, permiso) VALUES ($1,$2,$3)`, [tenantId, id, p]);
   }
+  // Autonomía de la IA (AUTOMATICO por defecto) y política de la agenda (029).
+  await tx.query(`INSERT INTO ia_ajustes (tenant_id) VALUES ($1) ON CONFLICT DO NOTHING`, [tenantId]);
+  await tx.query(`INSERT INTO agenda_ajustes (tenant_id) VALUES ($1) ON CONFLICT DO NOTHING`, [tenantId]);
   await tx.query(`INSERT INTO sla_policy (tenant_id, prioridad, minutos_primera_respuesta) SELECT $1, k, v::int FROM jsonb_each_text($2::jsonb) AS x(k, v)`, [tenantId, JSON.stringify(tpl.sla_minutos)]);
 
   // Agentes (una runtime, varias configuraciones).
@@ -173,6 +185,12 @@ export async function createTenantFromTemplate(tx: Tx, d: NuevoTenant, etapa: (e
     // Variables en el orden en que aparecen: así se envían como parámetros {{1}}, {{2}}… a Meta.
     const variables = [...new Set([...m.cuerpo.matchAll(/\{\{(\w+)\}\}/g)].map((x) => x[1]))];
     await tx.query(`INSERT INTO message_template (tenant_id, clave, categoria, cuerpo, variables) VALUES ($1,$2,$3,$4,$5)`, [tenantId, m.clave, m.categoria, m.cuerpo, variables]);
+  }
+  // Plantillas por tipo de aviso proactivo: quedan NO_REGISTRADA hasta que Meta las apruebe (docs/ia-autonoma).
+  for (const m of PLANTILLAS_PROACTIVAS) {
+    const variables = [...new Set([...m.cuerpo.matchAll(/\{\{(\w+)\}\}/g)].map((x) => x[1]))];
+    await tx.query(`INSERT INTO message_template (tenant_id, clave, categoria, cuerpo, variables, tipo_proactivo) VALUES ($1,$2,'UTILIDAD',$3,$4,$5) ON CONFLICT (tenant_id, clave) DO UPDATE SET tipo_proactivo=EXCLUDED.tipo_proactivo`,
+      [tenantId, m.clave, m.cuerpo, variables, m.tipo]);
   }
   for (const r of tpl.reglas_automatizacion) {
     await tx.query(`INSERT INTO automation_rule (id, tenant_id, evento, condicion, accion, parametros) VALUES ($1,$2,$3,$4,$5,$6)`, [uuidv7(), tenantId, r.evento, JSON.stringify(r.condicion), r.accion, JSON.stringify(r.parametros)]);

@@ -60,6 +60,8 @@ async function hastaPago(cli: ReturnType<typeof api>, numero?: string) {
 
 beforeAll(async () => {
   E = await setup();
+  // La compra de números se prueba con el flag encendido (por defecto está apagado: «Próximamente»).
+  config.numeros.compraHabilitada = true;
   config.numeros.comercial.tasaUsdCop = 4000;
   setProveedorNumeros(sim);
   setMetaOnboarding(meta);
@@ -67,6 +69,7 @@ beforeAll(async () => {
   B = api(E.app, await login(E.app, ...CRED.gym), 'fuerzanorte');
 });
 afterAll(async () => {
+  config.numeros.compraHabilitada = false;
   config.numeros.comercial.tasaUsdCop = tasaOriginal;
   setProveedorNumeros(null);
   setMetaOnboarding(null);

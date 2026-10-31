@@ -6,6 +6,8 @@ import { config } from '../../config.js';
 import { tenantGuard } from '../context.js';
 import { verificarRetorno } from '../../modules/billing.js';
 import * as numeros from '../../numeros/servicio.js';
+import * as propio from '../../numeros/propio.js';
+import * as conexion from '../../numeros/conexion.js';
 import { texmlLlamada, verificarFirmaTelnyx } from '../../numeros/telnyx.js';
 
 type Req = FastifyRequest & { params: any; query: any; body: any };
@@ -13,6 +15,7 @@ type Req = FastifyRequest & { params: any; query: any; body: any };
 /**
  * Números de WhatsApp contratados desde Omnegia.
  *  - /api/t/numeros/…              panel de la empresa (sesión + permisos; la RLS limita al tenant)
+ *  - /api/t/numeros/propio/…       «Usar mi propio número» (tenant:configure)
  *  - /api/webhooks/telnyx          eventos de órdenes (firma Ed25519)
  *  - /api/webhooks/telnyx/voz      llamada entrante (TeXML): la verificación de Meta
  *  - /api/webhooks/telnyx/transcripcion   transcripción de esa llamada (firma + enlace firmado)
@@ -23,6 +26,10 @@ export async function registerNumerosRoutes(app: FastifyInstance, db: Database) 
     app.route({ method: method.toUpperCase() as any, url: `/api/t/numeros${path}`, preHandler: guard, ...opts, handler: (req, reply) => h(req.ctx!, req as Req, reply) });
 
   rx('get', '/opciones', (ctx) => numeros.opciones(db, ctx));
+  // «Conectar WhatsApp»: estado en lenguaje simple, prueba de conexión y desconexión (deregister).
+  rx('get', '/whatsapp', (ctx) => conexion.estado(db, ctx));
+  rx('post', '/whatsapp/probar', (ctx, req) => conexion.probar(db, ctx, req.body));
+  rx('post', '/whatsapp/desconectar', (ctx, req) => conexion.desconectar(db, ctx, req.body));
   rx('get', '/disponibles', (ctx, req) => numeros.buscar(db, ctx, req.query ?? {}));
   rx('get', '/contratacion', (ctx) => numeros.estado(db, ctx));
   rx('post', '/contrataciones', (ctx, req) => numeros.seleccionar(db, ctx, req.body));
@@ -36,6 +43,11 @@ export async function registerNumerosRoutes(app: FastifyInstance, db: Database) 
   rx('post', '/contrataciones/:id/otro-numero', (ctx, req) => numeros.elegirOtro(db, ctx, req.params.id, req.body));
   rx('post', '/contrataciones/:id/renovar', (ctx, req) => numeros.renovar(db, ctx, req.params.id));
   rx('post', '/contrataciones/:id/cancelar', (ctx, req) => numeros.cancelar(db, ctx, req.params.id, req.body));
+  // «Usar mi propio número»: SMS de Meta, sin pago ni proveedor telefónico.
+  rx('post', '/propio', (ctx, req) => propio.iniciar(db, ctx, req.body));
+  rx('post', '/propio/:id/reenviar', (ctx, req) => propio.reenviar(db, ctx, req.params.id, req.body));
+  rx('post', '/propio/:id/verificar', (ctx, req) => propio.verificar(db, ctx, req.params.id, req.body));
+  rx('post', '/propio/:id/desconectar', (ctx, req) => propio.desconectar(db, ctx, req.params.id, req.body));
   // Vuelta del checkout: el servidor consulta la transacción a Wompi (nunca confía en la URL).
   rx('post', '/pago/verificar', (ctx, req) => numeros.verificarPagoRetorno(db, ctx, String(req.body?.id ?? ''), (id) => verificarRetorno(db, id, req.correlacion)));
 

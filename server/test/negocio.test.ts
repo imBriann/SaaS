@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { config } from '../src/config.js';
 import { setup, login, api, CRED, type Env } from './helpers.js';
 import { drain } from '../src/worker/jobs.js';
 import { addDays, localToUtc, todayLocal } from '../src/lib/time.js';
@@ -11,6 +12,8 @@ let cookieAdmin: string;
 const ids: Record<string, string> = {};
 
 beforeAll(async () => {
+  // Estas pruebas recorren la facturación electrónica: el interruptor (apagado por defecto) se enciende aquí.
+  config.fiscal.dianHabilitada = true;
   E = await setup();
   cookieAdmin = await login(E.app, ...CRED.admin);
   admin = api(E.app, cookieAdmin, 'elparche');
@@ -58,9 +61,11 @@ describe('Agenda', () => {
     expect(ok.status).toBe(200);
     // Moverla a su propia franja actual es válido (no choca consigo misma).
     expect((await admin.post(`/agenda/citas/${cita.id}/reprogramar`, { inicio: proximoMartes('17:00'), resource_id: ids.recurso })).status).toBe(200);
-    await drain(E.db);
-    const rec = await E.db.withPlatform(async (tx) => (await tx.query(`SELECT payload FROM job WHERE tipo='recordatorio' AND payload->>'appointment_id'=$1 ORDER BY creado_en`, [cita.id])).rows);
-    expect(rec.at(-1).payload.inicio).toBe(proximoMartes('17:00'));
+    // Los recordatorios los calcula el ciclo proactivo sobre la hora vigente: al mover la cita se reinician.
+    const movida = (await E.db.withPlatform(async (tx) => (await tx.query(`SELECT inicio, recordatorios, reprogramada_desde FROM appointment WHERE id=$1`, [cita.id])).rows[0]));
+    expect(new Date(movida.inicio).toISOString()).toBe(new Date(proximoMartes('17:00')).toISOString());
+    expect(movida.recordatorios).toEqual({});
+    expect(new Date(movida.reprogramada_desde).toISOString()).toBe(new Date(proximoMartes('16:00')).toISOString());
   });
 
   it('transiciones de la cita: no se marca atendida antes de tiempo ni se cancela una atendida', async () => {

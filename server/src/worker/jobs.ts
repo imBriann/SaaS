@@ -16,11 +16,14 @@ import { aplicarEstadoPlataforma, cerrarInactivasPlataforma, enviarPlataforma, p
 import { verificarWhatsapp } from '../modules/channelStatus.js';
 import { aprovisionarConReintento, conciliarPagosPendientes, ofertaRenovacion } from '../modules/billing.js';
 import { config } from '../config.js';
+import { cicloProactivo, ofrecerCupo } from '../modules/proactivo.js';
+import { revisarEnlaces } from '../modules/imagenes.js';
 import { emitirFacturaPago, encolarCorreoFactura, encolarCorreoPago, generarDocumentosPago } from '../documentos/servicio.js';
 import { cop, uuidv7 } from '../lib/util.js';
 import { formatFechaLarga, utcToLocal } from '../lib/time.js';
 import { crearEspacio } from '../onboarding/creation.js';
 import * as numeros from '../numeros/servicio.js';
+import * as numeroPropio from '../numeros/propio.js';
 
 /**
  * Proceso trabajador. Toda llamada saliente a un tercero sale de aquí, con
@@ -70,6 +73,9 @@ async function runRule(tx: Tx, ctx: Ctx, rule: any, ev: any) {
       return;
     }
     case 'programar_recordatorio': {
+      // Los recordatorios de cita los envía el ciclo proactivo (proactivo.ts) según ia_ajustes.recordatorios_horas,
+      // con la regla de la ventana de 24 horas. La regla antigua por plantilla ya no programa nada (evita duplicados).
+      if (!config.recordatoriosPorRegla) return;
       const a = (await tx.query(`SELECT inicio FROM appointment WHERE id=$1`, [p.appointment_id])).rows[0];
       if (!a) return;
       const cuando = new Date(new Date(a.inicio).getTime() - Number(rule.parametros.horas_antes ?? 24) * 3600000);
@@ -80,7 +86,7 @@ async function runRule(tx: Tx, ctx: Ctx, rule: any, ev: any) {
     }
     case 'emitir_factura': {
       const activo = (await tx.query(`SELECT activo FROM tenant_module WHERE modulo='facturacion'`)).rows[0]?.activo;
-      if (!activo || fiscalProvider().nombre === 'ninguno' || !p.order_id) return;
+      if (!activo || !config.fiscal.dianHabilitada || fiscalProvider().nombre === 'ninguno' || !p.order_id) return;
       await createInvoiceForOrder(tx, { ...ctx, actor: { tipo: 'SISTEMA', id: null, nombre: 'Facturación automática' } }, p.order_id);
       return;
     }
@@ -158,6 +164,10 @@ export const HANDLERS: Record<string, Handler> = {
     if (info.tipo === 'PLANTILLA' && info.estado_aprobacion === 'APROBADA' && info.nombre_proveedor) {
       const vars = (info.metadatos?.variables ?? {}) as Record<string, string>;
       r = await ch.sendTemplate(info.whatsapp_phone_number_id, to, { nombre: info.nombre_proveedor, idioma: info.idioma ?? config.whatsapp.idiomaPlantillas, parametros: (info.variables as string[]).map((k) => String(vars[k] ?? '')) });
+    } else if (ventana && info.tipo === 'MEDIA' && info.metadatos?.imagen && ch.sendImage) {
+      r = await ch.sendImage(info.whatsapp_phone_number_id, to, { enlace: String(info.metadatos.imagen), texto: info.contenido });
+    } else if (ventana && info.tipo === 'DOCUMENTO' && info.metadatos?.enlace && ch.sendDocument) {
+      r = await ch.sendDocument(info.whatsapp_phone_number_id, to, { enlace: String(info.metadatos.enlace), archivo: String(info.metadatos.archivo ?? 'documento.pdf'), texto: info.contenido });
     } else if (ventana) {
       r = await ch.sendText(info.whatsapp_phone_number_id, to, info.contenido);
     } else {
@@ -208,6 +218,8 @@ export const HANDLERS: Record<string, Handler> = {
   verificar_whatsapp: async (db, tenantId, _p, job) => { await verificarWhatsapp(db, tenantId!, job.id); },
 
   emitir_documento: async (db, tenantId, p, job) => {
+    // FACTURACION_DIAN_HABILITADA=0: un trabajo viejo en la cola no transmite nada (el documento queda como estaba).
+    if (!config.fiscal.dianHabilitada) return;
     const r = await db.withTenant(tenantId!, (tx) => emitDocument(tx, systemCtx(tenantId!, job.id, 'Facturación electrónica'), p.fiscal_document_id, p.motivo));
     if (r === 'REINTENTAR') {
       if (!ultimoIntento(job)) return 'reintentar';
@@ -281,6 +293,13 @@ export const HANDLERS: Record<string, Handler> = {
     });
   },
 
+  // La IA actúa por su cuenta: recordatorios, inasistencias, seguimientos, pagos pendientes, lista de espera
+  // y aprobaciones vencidas. Cada aviso respeta la ventana de 24 horas de WhatsApp.
+  ciclo_proactivo: async (db, _t, _p, job) => { await cicloProactivo(db, job.id); },
+  ciclo_proactivo_tenant: async (db, tenantId, _p, job) => { await cicloProactivo(db, job.id, tenantId!); },
+  revisar_imagenes: async (db, _t, _p, job) => { await revisarEnlaces(db, job.id); },
+  ofrecer_cupo: async (db, tenantId, p, job) => { await ofrecerCupo(db, tenantId!, { inicio: p.inicio, product_id: p.product_id, resource_id: p.resource_id ?? null }, job.id); },
+
   reintentar_aprovisionamiento: async (db, _t, p, job) => { await aprovisionarConReintento(db, p.draft_token, job.id); },
   crear_espacio_ia: async (db, _t, p, job) => { await crearEspacio(db, p.draft_token, p.intento, job.id); },
 
@@ -315,6 +334,7 @@ export const HANDLERS: Record<string, Handler> = {
   numero_seguimiento: async (db, _t, p, job) => numeros.seguimientoOrden(db, p.contratacion_id, job.id),
   numero_whatsapp: async (db, _t, p, job) => numeros.pasoWhatsApp(db, p.contratacion_id, job.id),
   numero_liberar: async (db, _t, p, job) => numeros.liberar(db, p.contratacion_id, job.id),
+  numero_propio: async (db, _t, p, job) => numeroPropio.conectar(db, p.contratacion_id, job.id),
   ciclo_numeros: async (db, _t, _p, job) => { await numeros.ciclo(db, job.id); },
 
   /** Recuperación: checkouts de Wompi sin evento (retraso o caída) y altas pagadas sin terminar. */
@@ -437,7 +457,7 @@ export async function runJobsOnce(db: Database, limite = 20): Promise<number> {
         const clase = clasificarError(error);
         const codigo = j.tipo === 'reintentar_aprovisionamiento' ? 'APROVISIONAMIENTO_FALLIDO'
           : j.tipo === 'numero_aprovisionar' || j.tipo === 'numero_seguimiento' ? 'NUMERO_APROVISIONAMIENTO_FALLIDO'
-          : j.tipo === 'numero_whatsapp' ? 'NUMERO_CONEXION_FALLIDA' : j.tipo === 'numero_liberar' ? 'NUMERO_LIBERACION_FALLIDA'
+          : j.tipo === 'numero_whatsapp' || j.tipo === 'numero_propio' ? 'NUMERO_CONEXION_FALLIDA' : j.tipo === 'numero_liberar' ? 'NUMERO_LIBERACION_FALLIDA'
           : j.tipo === 'enviar_mensaje' ? (clase === 'CREDENCIAL' ? 'WHATSAPP_CREDENCIAL' : 'WHATSAPP_ENVIO_FALLIDO')
           : clase === 'CREDENCIAL' ? 'TRABAJO_CREDENCIAL' : clase === 'TIEMPO_AGOTADO' ? 'TRABAJO_TIEMPO_AGOTADO' : clase === 'LIMITE' ? 'TRABAJO_LIMITE' : 'TRABAJO_FALLIDO';
         await registrarIncidente(tx, { codigo, servicio: j.tipo, tenantId: j.tenant_id, trabajoId: j.id, detalle: { tipo_trabajo: j.tipo, intentos, clase_error: clase } });
@@ -476,6 +496,8 @@ export function startWorker(db: Database): () => Promise<void> {
           await enqueue(tx, null, 'mantenimiento', {}, { claveUnica: `mant:${hora}` });
           await enqueue(tx, null, 'conciliar_pagos', {}, { claveUnica: `conciliar:${Math.floor(Date.now() / 300_000)}` });
           await enqueue(tx, null, 'ciclo_numeros', {}, { claveUnica: `numeros:${Math.floor(Date.now() / 600_000)}` });
+          await enqueue(tx, null, 'ciclo_proactivo', {}, { claveUnica: `proactivo:${Math.floor(Date.now() / 300_000)}` });
+          await enqueue(tx, null, 'revisar_imagenes', {}, { claveUnica: `imagenes:${new Date().toISOString().slice(0, 10)}` });
         });
       }
     } catch (e) {

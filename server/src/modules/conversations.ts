@@ -108,7 +108,7 @@ export function ventanaAbierta(ultimoMensajeCliente: string | Date | null | unde
 // ---------------------------------------------------------------------------
 // Bandeja
 // ---------------------------------------------------------------------------
-const FILTROS = ['todas', 'escaladas', 'ia', 'mias', 'cola', 'cerradas'] as const;
+const FILTROS = ['persona', 'todas', 'escaladas', 'ia', 'mias', 'cola', 'cerradas'] as const;
 
 /** Un asesor sin supervisión solo ve sus casos, la cola sin asignar y las conversaciones sin caso. */
 function soloLasSuyas(ctx: Ctx, params: unknown[]): string | null {
@@ -159,6 +159,8 @@ export async function listInbox(tx: Tx, ctx: Ctx, filtro: string = 'todas', q?: 
   const f = (FILTROS as readonly string[]).includes(filtro) ? filtro : 'todas';
   const params: unknown[] = [];
   const where: string[] = [];
+  // «Necesitan a una persona»: con una persona al frente y abiertas. Lo demás lo resuelve la IA y no pide nada.
+  if (f === 'persona') where.push(`v.control='HUMANO' AND v.estado <> 'CERRADA'`);
   if (f === 'escaladas') where.push(`v.estado='ESCALADA'`);
   if (f === 'ia') where.push(`v.control='AI' AND v.estado='ABIERTA'`);
   if (f === 'cerradas') where.push(`v.estado='CERRADA'`);
@@ -176,6 +178,10 @@ export async function listInbox(tx: Tx, ctx: Ctx, filtro: string = 'todas', q?: 
             (SELECT contenido FROM message m WHERE m.conversation_id=v.id AND m.tipo<>'NOTA_INTERNA' ORDER BY coalesce(m.ocurrido_en, m.creado_en) DESC LIMIT 1) AS ultimo,
             (SELECT count(*)::int FROM ai_execution e WHERE e.conversation_id=v.id AND e.decision IN ('PERMITIDA','CONFIRMADA')) AS ia_ejecutadas,
             (SELECT count(*)::int FROM ai_execution e WHERE e.conversation_id=v.id AND e.decision='DENEGADA') AS ia_bloqueadas,
+            (SELECT e.herramienta FROM ai_execution e WHERE e.conversation_id=v.id AND e.decision IN ('PERMITIDA','CONFIRMADA')
+               AND e.herramienta IN ('crear_cita','reprogramar_cita','cancelar_cita','registrar_venta','generar_enlace_pago','reenviar_comprobante','unirse_lista_espera','enviar_imagen_producto')
+             ORDER BY e.creado_en DESC LIMIT 1) AS ia_resolvio,
+            k.regla,
             k.id AS case_id, k.radicado, k.prioridad, k.estado AS estado_caso, k.sla_vence_en, k.primera_respuesta_en, k.asignado_a,
             u.nombre AS asignado,
             (v.ultimo_mensaje_cliente_en IS NOT NULL AND v.ultimo_mensaje_cliente_en > now() - interval '${DIAS_AVISO} days'
@@ -193,6 +199,7 @@ export async function listInbox(tx: Tx, ctx: Ctx, filtro: string = 'todas', q?: 
             count(*) FILTER (WHERE v.estado='CERRADA')::int AS cerradas,
             (SELECT count(*)::int FROM support_case WHERE estado='EN_COLA') AS cola,
             (SELECT count(*)::int FROM support_case WHERE estado <> 'CERRADO' AND asignado_a = $1) AS mias,
+            count(*) FILTER (WHERE v.control='HUMANO' AND v.estado <> 'CERRADA')::int AS persona,
             count(*)::int AS todas FROM conversation v`,
     [ctx.actor.id],
   )).rows[0];

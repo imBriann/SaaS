@@ -113,6 +113,7 @@ const ESTADOS: Record<string, [Tono, string, string]> = {
   LEIDO: ['ok', 'ok', 'Leído'], SIMULADO: ['neutro', 'info', 'Simulado'], FALLIDO: ['err', 'alerta', 'No entregado'],
   // invitaciones e integraciones
   ACEPTADA: ['ok', 'ok', 'Aceptada'], REVOCADA: ['neutro', 'x', 'Retirada'], EXPIRADA: ['neutro', 'reloj', 'Vencida'],
+  EMITIDO: ['ok', 'ok', 'Emitido'], PENDIENTE_REGISTRO: ['warn', 'alerta', 'Necesita atención'], DESCONECTADO: ['neutro', 'info', 'Desconectado'],
   CONECTADO: ['ok', 'ok', 'Conectado'], SIN_CONFIGURAR: ['neutro', 'info', 'Sin configurar'], PENDIENTE_VERIFICAR: ['warn', 'reloj', 'Por verificar'],
   conectado: ['ok', 'ok', 'Conectado'], simulado: ['warn', 'info', 'Simulado'], pendiente: ['err', 'alerta', 'Pendiente de conectar'],
   APROBADA: ['ok', 'ok', 'Aprobada en Meta'], NO_REGISTRADA: ['neutro', 'info', 'Sin registrar'], PAUSADA: ['warn', 'alerta', 'Pausada'],

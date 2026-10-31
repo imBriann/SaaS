@@ -10,6 +10,9 @@ import { setLlm, llm } from '../ai/llm/index.js';
 import { ScriptedLlm } from '../ai/llm/scripted.js';
 import { hashPassword, uuidv7, token } from '../lib/util.js';
 import { addDays, localToUtc, todayLocal } from '../lib/time.js';
+import { config } from '../config.js';
+import { almacen } from '../lib/almacen.js';
+import { procesarImagen } from '../modules/imagenes.js';
 
 /**
  * Datos de demostración coherentes con los mockups de PRO-SW-003 §8: una barbería
@@ -117,7 +120,49 @@ export async function seedDemo(db: Database) {
           ini.getTime() < ahora ? 'ATENDIDA' : 'CONFIRMADA', origen],
       );
     }
+
+    // Agenda automática: recursos con color y descanso, servicios con buffers y repetición, y la IA atendiendo sola.
+    const COLORES = ['#2f6fdf', '#b4469b', '#1f8a70'];
+    for (const [i, r] of recursos.entries()) await tx.query(`UPDATE resource SET color=$2, descanso='{"inicio":"13:00","fin":"14:00"}' WHERE id=$1`, [r.id, COLORES[i % COLORES.length]]);
+    await tx.query(`UPDATE product SET buffer_despues_min=10, repetir_cada_semanas=4 WHERE nombre IN ('Corte clásico','Corte + barba')`);
+    await tx.query(`UPDATE product SET buffer_despues_min=15, repetir_cada_semanas=3 WHERE nombre='Arreglo de barba'`);
+    await tx.query(`UPDATE ia_ajustes SET contacto_urgencias='Línea de atención 300 555 0101', recordatorios_horas='{24,2}' WHERE tenant_id=$1`, [parche.tenantId]);
+    // Citas de ejemplo en el resto de la semana (fuera de las pruebas, que necesitan la agenda libre).
+    if (!config.test) {
+      const futuras: [number, string, string, number, 'AGENTE' | 'PANEL' | 'AUTOMATIZACION'][] = [
+        [1, '10:00', 'Corte clásico', 0, 'AGENTE'], [1, '11:30', 'Corte + barba', 1, 'PANEL'], [2, '09:30', 'Arreglo de barba', 2, 'AGENTE'],
+        [2, '16:00', 'Combo completo', 0, 'AUTOMATIZACION'], [3, '15:00', 'Corte clásico', 1, 'AGENTE'], [4, '17:30', 'Corte + barba', 2, 'PANEL'],
+      ];
+      for (const [d, h, serv, ri, origen] of futuras) {
+        const fecha = addDays(hoy, d);
+        const ini = localToUtc(fecha, h, 'America/Bogota');
+        await tx.query(`INSERT INTO appointment (id, tenant_id, customer_id, product_id, resource_id, inicio, fin, estado, origen) VALUES ($1,$2,$3,$4,$5,$6,$7,'RESERVADA',$8)`,
+          [uuidv7(), parche.tenantId, ids[(d + ri) % ids.length], P(serv), recursos[ri].id, ini.toISOString(), new Date(ini.getTime() + dur[serv] * 60000).toISOString(), origen]);
+      }
+    }
   });
+
+  // Imágenes de licencia abierta para el catálogo de demostración: generadas aquí (dominio público, CC0), sin red.
+  if (!config.test) {
+    const sharp = (await import('sharp')).default;
+    const fotos: [string, string][] = [['Cera para peinar', '#7a4a1f'], ['Aceite para barba', '#2b6a3f'], ['Corte clásico', '#2f3f6f']];
+    await db.withTenant(parche.tenantId, async (tx) => {
+      for (const [nombre, color] of fotos) {
+        const p = (await tx.query(`SELECT id FROM product WHERE nombre=$1`, [nombre])).rows[0];
+        if (!p) continue;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800"><rect width="800" height="800" fill="${color}"/><text x="400" y="420" font-family="sans-serif" font-size="56" fill="#fff" text-anchor="middle">${nombre}</text></svg>`;
+        const proc = await procesarImagen(await sharp(Buffer.from(svg)).png().toBuffer());
+        const id = uuidv7();
+        const base = `t/${parche.tenantId}/${p.id}/${id}`;
+        await almacen().guardar(`${base}.webp`, proc.imagen);
+        await almacen().guardar(`${base}_min.webp`, proc.miniatura);
+        await tx.query(
+          `INSERT INTO producto_imagen (id, tenant_id, product_id, origen, ruta_archivo, miniatura, licencia, autor, atribucion, estado, ancho, alto, bytes, verificada_en, creado_por)
+           VALUES ($1,$2,$3,'SUBIDA',$4,$5,'CC0 1.0 (dominio público)','Omnegia','Imagen generada para la demostración','ACTIVA',$6,$7,$8,now(),'SISTEMA:Datos de demostración')`,
+          [id, parche.tenantId, p.id, `${base}.webp`, `${base}_min.webp`, proc.ancho, proc.alto, proc.imagen.length]);
+      }
+    });
+  }
 
   await db.withTenant(fuerza.tenantId, async (tx) => {
     await tx.query(`INSERT INTO customer (id, tenant_id, nombre, telefono, consentimiento_en) VALUES ($1,$2,'Valentina Mora','+573185550101', now())`, [uuidv7(), fuerza.tenantId]);
