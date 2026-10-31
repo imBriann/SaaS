@@ -43,7 +43,7 @@ const Fallo = ({ error }: { error: ApiError | null }) => error ? <div className=
 // ---------------------------------------------------------------------------
 // Paso 1 · país y número
 // ---------------------------------------------------------------------------
-export function PasoNumero({ paises, nombre, onCreada }: { paises: Pais[]; nombre: string | null; onCreada: (c: C) => void }) {
+export function PasoNumero({ paises, nombre, onCreada, cambio }: { paises: Pais[]; nombre: string | null; onCreada: (c: C) => void; cambio?: boolean }) {
   const [pais, setPais] = useState(paises[0]?.pais ?? 'CO');
   const [numero, setNumero] = useState('');
   const [visible, setVisible] = useState(nombre ?? '');
@@ -57,7 +57,7 @@ export function PasoNumero({ paises, nombre, onCreada }: { paises: Pais[]; nombr
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
     if (!formatoOk || !acepto) return;
-    const r = await run(() => api.post('/api/t/numeros/propio', { pais, numero: digitos, acepto_aviso: true, nombre_visible: visible.trim() || undefined }), undefined, { silencioso: true });
+    const r = await run(() => api.post('/api/t/numeros/propio', { pais, numero: digitos, acepto_aviso: true, nombre_visible: visible.trim() || undefined, ...(cambio ? { cambio: true } : {}) }), undefined, { silencioso: true });
     if (r) onCreada(r);
   };
   return (

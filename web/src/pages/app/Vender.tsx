@@ -25,7 +25,16 @@ const claveEspera = () => `omnegia.pos.espera.${tenantSlug() ?? 'local'}`;
 const leerEspera = (): Espera[] => { try { const v = JSON.parse(leer(claveEspera()) ?? '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
 const ATAJOS: [string, string][] = [['F2', 'Buscar un producto'], ['Enter', 'Agregar el primer resultado (o el SKU escaneado)'], ['F4', 'Elegir el cliente'], ['F9', 'Cobrar'], ['Ctrl + Z', 'Deshacer la última acción del carrito'], ['Esc', 'Vaciar el carrito'], ['?', 'Ver esta ayuda']];
 
+/** ¿Pantalla de celular? (el carrito pasa a ser una hoja inferior fija a la pantalla) */
+function useMovil() {
+  const q = '(max-width: 900px)';
+  const [m, setM] = useState(() => typeof window !== 'undefined' && window.matchMedia(q).matches);
+  useEffect(() => { const mq = window.matchMedia(q); const f = () => setM(mq.matches); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f); }, []);
+  return m;
+}
+
 export function Vender() {
+  const movil = useMovil();
   const { s, puede } = useSesion();
   const toast = useToast();
   const productos = useApi<any[]>(() => api.get('/api/t/productos'), []);
@@ -159,37 +168,7 @@ export function Vender() {
   // Sin hoja inferior abierta en pantallas grandes.
   useEffect(() => { if (hecha || buscarCliente) setHoja(false); }, [hecha, buscarCliente]);
 
-  return (
-    <>
-      <Cabecera titulo="Ventas" sub="Toca un producto para agregarlo. El total lo confirma el servidor con tu catálogo." pestanas={<PestanasVentas activa="vender" />}>
-        <button className="btn sutil" onClick={() => setAyuda(true)} aria-label="Atajos de teclado"><kbd className="tecla">?</kbd>Atajos</button>
-      </Cabecera>
-      <div className="contenido pos">
-        {productos.error ? <ErrorCarga error={productos.error} reintentar={productos.recargar} /> : !productos.data ? <Cargando filas={6} /> : activos.length === 0 ? (
-          <Vacio titulo="Todavía no tienes productos ni servicios para vender" accion={<span className="fila envolver" style={{ gap: 8 }}><Link className="btn primario" to="/inventario">Crear productos</Link><Link className="btn" to="/inventario">Importar desde Excel</Link></span>}>
-            El punto de venta se arma con tu catálogo. Crea tus productos o impórtalos y vuelve aquí.
-          </Vacio>
-        ) : (
-          <div className="pos-rejilla">
-            <section className="pos-catalogo" aria-label="Catálogo">
-              <label className="buscar"><Icon n="buscar" className="" size={16} />
-                <input ref={buscador} type="search" autoFocus placeholder="Buscar o escanear un producto (Enter para agregar)" value={q} onChange={(e) => setQ(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); alEnter(); } }} aria-label="Buscar producto" enterKeyHint="done" autoComplete="off" />
-              </label>
-              <div className="pos-atajos" aria-label="Atajos de teclado">
-                <span><kbd className="tecla">F2</kbd> Buscar</span><span><kbd className="tecla">F4</kbd> Cliente</span><span><kbd className="tecla">F9</kbd> Cobrar</span><span><kbd className="tecla">Esc</kbd> Vaciar</span>
-                <button type="button" className="enlace" onClick={() => setAyuda(true)}>Ver todos</button>
-              </div>
-              {categorias.length > 0 && <div className="tabs pos-cats" role="tablist" aria-label="Categorías">
-                <button role="tab" aria-selected={!cat} className={!cat ? 'on' : ''} onClick={() => setCat('')}>Todo</button>
-                {categorias.map((c) => <button key={c} role="tab" aria-selected={cat === c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>{c}</button>)}
-              </div>}
-              <div className="pos-productos" data-guia="venta/items">
-                {visibles.map((p) => <TarjetaProducto key={p.id} p={p} enCarrito={carrito.find((l) => l.product_id === p.id)?.cantidad ?? 0} alAgregar={(el) => agregar(p.id, 1, el)} alElegirCantidad={() => setCantidadDe(p)} />)}
-                {!visibles.length && <p className="tenue">Nada coincide con «{q}».</p>}
-              </div>
-            </section>
-
+  const carritoAside = (
             <aside className={`pos-carrito tarjeta ${hoja ? 'abierta' : ''}`} aria-label="Carrito">
               <HojaAsa abierta={hoja} onAlternar={setHoja} unidades={unidades} total={total} />
               <div className="cuerpo col pos-carrito-cuerpo" style={{ gap: 10 }}>
@@ -229,6 +208,40 @@ export function Vender() {
                 {carrito.length > 0 && <button className="btn sutil" onClick={() => setVaciar(true)}>Vaciar el carrito</button>}
               </div>
             </aside>
+  );
+
+  return (
+    <>
+      <Cabecera titulo="Ventas" sub="Toca un producto para agregarlo. El total lo confirma el servidor con tu catálogo." pestanas={<PestanasVentas activa="vender" />}>
+        <button className="btn sutil" onClick={() => setAyuda(true)} aria-label="Atajos de teclado"><kbd className="tecla">?</kbd>Atajos</button>
+      </Cabecera>
+      <div className="contenido pos">
+        {productos.error ? <ErrorCarga error={productos.error} reintentar={productos.recargar} /> : !productos.data ? <Cargando filas={6} /> : activos.length === 0 ? (
+          <Vacio titulo="Todavía no tienes productos ni servicios para vender" accion={<span className="fila envolver" style={{ gap: 8 }}><Link className="btn primario" to="/inventario">Crear productos</Link><Link className="btn" to="/inventario">Importar desde Excel</Link></span>}>
+            El punto de venta se arma con tu catálogo. Crea tus productos o impórtalos y vuelve aquí.
+          </Vacio>
+        ) : (
+          <div className="pos-rejilla">
+            <section className="pos-catalogo" aria-label="Catálogo">
+              <label className="buscar"><Icon n="buscar" className="" size={16} />
+                <input ref={buscador} type="search" autoFocus placeholder="Buscar o escanear un producto (Enter para agregar)" value={q} onChange={(e) => setQ(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); alEnter(); } }} aria-label="Buscar producto" enterKeyHint="done" autoComplete="off" />
+              </label>
+              <div className="pos-atajos" aria-label="Atajos de teclado">
+                <span><kbd className="tecla">F2</kbd> Buscar</span><span><kbd className="tecla">F4</kbd> Cliente</span><span><kbd className="tecla">F9</kbd> Cobrar</span><span><kbd className="tecla">Esc</kbd> Vaciar</span>
+                <button type="button" className="enlace" onClick={() => setAyuda(true)}>Ver todos</button>
+              </div>
+              {categorias.length > 0 && <div className="tabs pos-cats" role="tablist" aria-label="Categorías">
+                <button role="tab" aria-selected={!cat} className={!cat ? 'on' : ''} onClick={() => setCat('')}>Todo</button>
+                {categorias.map((c) => <button key={c} role="tab" aria-selected={cat === c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>{c}</button>)}
+              </div>}
+              <div className="pos-productos" data-guia="venta/items">
+                {visibles.map((p) => <TarjetaProducto key={p.id} p={p} enCarrito={carrito.find((l) => l.product_id === p.id)?.cantidad ?? 0} alAgregar={(el) => agregar(p.id, 1, el)} alElegirCantidad={() => setCantidadDe(p)} />)}
+                {!visibles.length && <p className="tenue">Nada coincide con «{q}».</p>}
+              </div>
+            </section>
+
+            {movil ? createPortal(carritoAside, document.body) : carritoAside}
           </div>
         )}
       </div>

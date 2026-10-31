@@ -14,7 +14,7 @@ import { deriveTheme } from '../onboarding/theme.js';
 import { MODULOS } from '../templates/index.js';
 import { gatewayAccount } from './payments.js';
 import { listInvitations } from './team.js';
-import { config, integraciones } from '../config.js';
+import { config } from '../config.js';
 import { ofertaRenovacion } from './billing.js';
 import { type Ciclo, DIAS_GRACIA, QUE_SE_PAUSA, preciosDe } from './planes.js';
 import { nitValido } from '../adapters/fiscal.js';
@@ -347,8 +347,7 @@ export async function settings(tx: Tx, ctx: Ctx) {
     tenant: { ...t, ia_tope_mensual: t.ia_tope_mensual === null ? null : Number(t.ia_tope_mensual) },
     personas, soy_propietario: !!ctx.propietario, invitaciones: can(ctx, 'user:manage') ? await listInvitations(tx, ctx) : [], roles, modulos, recursos, plantillas,
     catalogo_permisos: PERMISOS, pasarela: await gatewayAccount(tx, ctx),
-    integraciones: integraciones().map(({ clave, nombre, estado, detalle }) => ({ clave, nombre, estado, detalle })),
-    webhook_whatsapp: `${config.apiPublicUrl}/api/webhooks/whatsapp`,
+    // El estado técnico de los proveedores es solo del operador de Omnegia (/operador/integraciones): una empresa no lo ve.
   };
 }
 
