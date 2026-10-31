@@ -30,12 +30,12 @@ export const GUIAS: Record<string, Guia> = {
   registrar_venta: {
     titulo: 'Registrar una venta',
     pasos: [
-      { ancla: 'menu/ventas', titulo: 'Ventas', texto: 'Las ventas se registran desde Ventas.', opcional: true },
-      { ancla: 'ventas/registrar', ruta: '/ventas', titulo: 'Registrar venta', texto: 'Este botón abre el formulario de la venta. Lo abro por ti.', abrir: true },
-      { ancla: 'venta/cliente', titulo: 'El cliente', texto: 'Busca al cliente por nombre, teléfono o documento. Si es nuevo, créalo aquí mismo con «Crear cliente nuevo».' },
-      { ancla: 'venta/items', titulo: 'Qué compró', texto: 'Agrega cada producto o servicio con «Agregar ítem». Puedes cambiar la cantidad y aplicar un descuento.' },
+      { ancla: 'menu/ventas', titulo: 'Ventas', texto: 'Las ventas se registran desde Ventas, en la pestaña «Vender».', opcional: true },
+      { ancla: 'ventas/pestana-vender', ruta: '/ventas/vender', titulo: 'Vender', texto: 'Esta pestaña es el punto de venta. Te llevo allí.', abrir: true },
+      { ancla: 'venta/cliente', titulo: 'El cliente', texto: 'Elige a un cliente reciente, búscalo por nombre o teléfono (F4) o crea uno nuevo. Si no hace falta, deja «Mostrador».' },
+      { ancla: 'venta/items', titulo: 'Qué compró', texto: 'Toca cada producto para agregarlo; mantén presionado para elegir la cantidad. También puedes escribir en el buscador y pulsar Enter.' },
       { ancla: 'venta/cobro', titulo: 'Cómo pagó', texto: 'Elige el método. En efectivo escribe lo que te entregó y calculo el cambio. También puedes dejarla por cobrar.', opcional: true },
-      { ancla: 'venta/registrar', titulo: 'Confirmar', texto: 'Revisa el total y pulsa este botón. Si aplica, la factura electrónica se emite sola. Esto lo haces tú: yo no lo pulso.' },
+      { ancla: 'venta/registrar', titulo: 'Confirmar', texto: 'Revisa el total y pulsa «Cobrar» (F9). Si lo tienes activado, el comprobante se genera solo. Esto lo haces tú: yo no lo pulso.' },
     ],
   },
   registrar_pago: {

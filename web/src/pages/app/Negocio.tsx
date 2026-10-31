@@ -7,7 +7,6 @@ import { Campo, Cargando, CicloFiscal, Cifra, Confirmar, ErrorCarga, Estado, Mod
 import { Icon } from '../../components/icons';
 import { CamposCobro, CobroExitoso, cuerpoPago, type Metodos, NOMBRE_METODO, nuevaClave, type PagoElegido, validarPago } from '../../components/Cobro';
 import { Contador, escalon } from '../../components/Movimiento';
-import { TarjetaFacturaDian } from '../../components/Proximamente';
 import { DetalleComprobante, descargarComprobante } from './Comprobantes';
 import { ImagenesProducto } from '../../components/ImagenesProducto';
 import { ModalCompletarImagenes } from '../../components/BusquedaImagenes';
@@ -137,78 +136,12 @@ function FichaCliente({ id, onCambio, onCerrar }: { id: string; onCambio: () => 
 }
 
 // =================================================================== Ventas
-const FILTROS_VENTA: [string, string][] = [['', 'Todas'], ['pago:PENDIENTE', 'Por cobrar'], ['RECHAZADO', 'Factura rechazada'], ['PENDIENTE', 'Factura en trámite'], ['ENTREGADO', 'Facturadas'], ['SIN_FACTURA', 'Sin factura']];
-/** Con la facturación DIAN apagada, las ventas se filtran por su comprobante de venta. */
-const FILTROS_COMPROBANTE: [string, string][] = [['', 'Todas'], ['pago:PENDIENTE', 'Por cobrar'], ['comprobante:CON', 'Con comprobante'], ['comprobante:SIN', 'Sin comprobante']];
-
-export function Ventas() {
-  const nav = useNavigate();
-  const { s } = useSesion();
-  const dian = !!s.factura_dian;
-  const [params] = useSearchParams();
-  const [filtro, setFiltro] = useState(params.get('pago') ? `pago:${params.get('pago')}` : '');
-  const [metodo, setMetodo] = useState('');
-  const [q, setQ] = useState('');
-  const qr = useRetardo(q);
-  const [pagina, setPagina] = useState(1);
-  const [nueva, setNueva] = useState(false);
-  const [caja, setCaja] = useState(params.get('caja') === '1');
-  const { run } = useAccion();
-  useEffect(() => setPagina(1), [qr, filtro, metodo]);
-  const consulta = (filtro.startsWith('pago:') ? `pago=${filtro.slice(5)}` : filtro.startsWith('comprobante:') ? `comprobante=${filtro.slice(12)}` : filtro ? `estado_fiscal=${filtro}` : '') + (metodo ? `&metodo=${metodo}` : '');
-  const { data, error, recargar } = useApi<any>(() => api.get(`/api/t/ventas?pagina=${pagina}&por_pagina=50&${consulta}${qr ? `&q=${encodeURIComponent(qr)}` : ''}`), [consulta, qr, pagina]);
-  return (
-    <>
-      <Cabecera titulo="Ventas" sub="Registra lo que vendes y revisa qué está pagado y qué falta por cobrar.">
-        <label className="buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder={dian ? 'Número, cliente o factura' : 'Número, cliente o comprobante'} value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar ventas" /></label>
-        <button className="btn" onClick={() => setCaja(true)}><Icon n="caja" className="" size={16} />Caja del día</button>
-        <button className="btn" onClick={() => run(() => descargar(`/api/t/ventas.csv`, `ventas-${hoyLocal()}.csv`), 'Exportación lista')}>Exportar</button>
-        <Escritura permiso="order:create" modulo="ventas"><button className="btn primario" data-guia="ventas/registrar" onClick={() => setNueva(true)}><Icon n="mas" className="" size={16} />Registrar venta</button></Escritura>
-      </Cabecera>
-      <div className="contenido">
-        {error && <ErrorCarga error={error} reintentar={recargar} />}
-        <section className="tarjeta" hidden={!!error}>
-          <div className="filtros">
-            <div className="tabs" role="group" aria-label="Filtrar ventas">{(dian ? FILTROS_VENTA : FILTROS_COMPROBANTE).map(([k, v]) => <button key={k} className={filtro === k ? 'on' : ''} aria-pressed={filtro === k} onClick={() => setFiltro(k)}>{v}</button>)}</div>
-            <select className="input filtro-metodo" value={metodo} onChange={(e) => setMetodo(e.target.value)} aria-label="Filtrar por método de pago">
-              <option value="">Cualquier método</option>
-              {Object.entries(NOMBRE_METODO).map(([k, v]) => <option key={k} value={k}>Pagadas con {v.toLowerCase()}</option>)}
-            </select>
-          </div>
-          {!data ? <Cargando /> : data.ventas.length === 0 ? <Vacio titulo="No hay ventas en esta vista">{filtro || qr || metodo ? 'Prueba con otro filtro o búsqueda.' : 'Registra la primera venta o deja que el agente la cree desde WhatsApp.'}</Vacio> : (
-            <>
-              <div className="tabla-wrap"><table className="tabla tabla-movil">
-                <thead><tr><th>#</th><th>Fecha</th><th>Cliente</th><th>Detalle</th><th className="num">Total</th><th>Pago</th><th>{dian ? 'Factura' : 'Comprobante'}</th></tr></thead>
-                <tbody className="entra-escalonado">{data.ventas.map((o: any, i: number) => (
-                  <tr key={o.id} className="clic" style={escalon(i)} data-guia={i === 0 ? 'ventas/fila' : undefined} onClick={() => nav(`/ventas/${o.id}`)}>
-                    <td data-etiqueta="Venta" className="principal"><Link to={`/ventas/${o.id}`} className="mono" onClick={(e) => e.stopPropagation()}>#{o.numero}</Link> {o.origen === 'AGENTE' && <Estado v="AGENTE" texto="IA" />}</td>
-                    <td data-etiqueta="Fecha">{fechaHora(o.creado_en)}</td>
-                    <td data-etiqueta="Cliente">{o.cliente}</td>
-                    <td data-etiqueta="Detalle" className="sec cortar detalle-celda">{o.detalle}</td>
-                    <td data-etiqueta="Total" className="num"><b>{cop(o.total)}</b></td>
-                    <td data-etiqueta="Pago">{o.estado === 'ANULADA' ? <Estado v="ANULADA" /> : <span className="col" style={{ gap: 2 }}><Estado v={o.estado_pago === 'PAGADA' ? 'PAGADA' : 'PENDIENTE'} texto={o.estado_pago === 'PAGADA' ? 'Pagada' : 'Por cobrar'} />{o.estado_pago === 'PAGADA' && o.metodo_pago && <span className="tenue peq-txt">{NOMBRE_METODO[o.metodo_pago] ?? o.metodo_pago}</span>}</span>}</td>
-                    {!dian ? <td data-etiqueta="Comprobante">{o.comprobante ? <span className="mono">{o.comprobante}</span> : <span className="tenue">{o.estado === 'ANULADA' ? '—' : 'Sin comprobante'}</span>}</td>
-                    : <td data-etiqueta="Factura">{o.estado_fiscal ? <span className="fila" style={{ gap: 6 }}><Estado v={o.estado_fiscal} texto={o.proveedor_fiscal === 'sandbox' && ['VALIDADO', 'ENTREGADO'].includes(o.estado_fiscal) ? 'Prueba' : undefined} /><span className="mono tenue">{o.documento}</span></span> : <span className="tenue">Sin factura</span>}</td>}
-                  </tr>
-                ))}</tbody>
-              </table></div>
-              <Paginador pagina={data.pagina} total={data.total} porPagina={data.por_pagina} onPagina={setPagina} />
-            </>
-          )}
-        </section>
-      </div>
-      {nueva && <NuevaVenta onCerrar={() => { setNueva(false); recargar(); }} onGuardada={(id) => nav(`/ventas/${id}`)} />}
-      {caja && <CajaDelDia onCerrar={() => setCaja(false)} />}
-    </>
-  );
-}
-
 /**
  * Cierre de caja: lo cobrado en el día por método (según la fecha del pago), el efectivo recibido y el
  * cambio entregado, y lo que quedó por cobrar. Son los registros del sistema; el conteo físico del
  * dinero lo hace el negocio.
  */
-function CajaDelDia({ onCerrar }: { onCerrar: () => void }) {
+export function CajaDelDia({ onCerrar }: { onCerrar: () => void }) {
   const [dia, setDia] = useState(hoyLocal());
   const { data, error, recargar } = useApi<any>(() => api.get(`/api/t/ventas/caja?fecha=${dia}`), [dia]);
   return (
@@ -261,102 +194,6 @@ function CajaDelDia({ onCerrar }: { onCerrar: () => void }) {
   );
 }
 
-function NuevaVenta({ onCerrar, onGuardada }: { onCerrar: () => void; onGuardada: (id: string) => void }) {
-  const { puede } = useSesion();
-  const responsables=useApi<any[]>(()=>api.get('/api/t/equipo/responsables'),[]);
-  const [responsable,setResponsable]=useState('');
-  const [qCliente, setQCliente] = useState('');
-  const qc = useRetardo(qCliente);
-  const clientes = useApi<any>(() => api.get(`/api/t/clientes?por_pagina=30${qc ? `&q=${encodeURIComponent(qc)}` : ''}`), [qc]);
-  const productos = useApi<any[]>(() => api.get('/api/t/productos'), []);
-  const cobra = puede('payment:register');
-  const metodos = useApi<Metodos | null>(() => (cobra ? api.get('/api/t/cobros/metodos') : Promise.resolve(null)), [cobra]);
-  const [cliente, setCliente] = useState<any>(null);
-  const [nuevoCliente, setNuevoCliente] = useState<{ nombre: string; telefono: string } | null>(null);
-  const [items, setItems] = useState<{ product_id: string; cantidad: number; descuento_pct: number }[]>([]);
-  const [pago, setPago] = useState<PagoElegido>({ metodo: 'DESPUES', recibido: '', referencia: '' });
-  // Una clave por venta: un doble clic o un reintento no registra dos ventas pagadas.
-  const [clave, setClave] = useState(nuevaClave);
-  const [hecha, setHecha] = useState<any>(null);
-  const { run, ocupado, error, limpiarError } = useAccion();
-  const pagoInicial = (): PagoElegido => ({ metodo: metodos.data?.EFECTIVO ? 'EFECTIVO' : 'DESPUES', recibido: '', referencia: '' });
-  // Si el negocio acepta efectivo, es lo que se propone primero en el mostrador.
-  useEffect(() => { if (metodos.data?.EFECTIVO) setPago((p) => (p.metodo === 'DESPUES' ? { ...p, metodo: 'EFECTIVO' } : p)); }, [metodos.data]);
-  const otraVenta = () => { setHecha(null); setCliente(null); setItems([]); setResponsable(''); setQCliente(''); setPago(pagoInicial()); setClave(nuevaClave()); limpiarError(); productos.recargar(); };
-  const activos = (productos.data ?? []).filter((p) => p.activo);
-  const prod = (id: string) => activos.find((p) => p.id === id);
-  // Estimación en pantalla; el total real lo calcula el servidor con el catálogo vigente.
-  const total = items.reduce((a, i) => a + Math.round((prod(i.product_id)?.precio ?? 0) * i.cantidad * (1 - (i.descuento_pct || 0) / 100) * 100) / 100, 0);
-  const faltaStock = items.find((i) => { const p = prod(i.product_id); return p?.controla_stock && i.cantidad > p.stock; });
-  const errorPago = items.length ? validarPago(pago, total) : null;
-  const crearCliente = async () => {
-    const nombre = nuevoCliente?.nombre.trim();
-    if (!nombre) return;
-    const r = await run(() => api.post('/api/t/clientes', { nombre, telefono: nuevoCliente!.telefono.trim() || null }), undefined, { silencioso: true });
-    if (r) { setCliente({ id: r.id, nombre }); setNuevoCliente(null); setQCliente(''); }
-  };
-  const registrar = async () => {
-    const cuerpo = cobra ? cuerpoPago(pago, clave) : null;
-    const r = await run(() => api.post('/api/t/ventas', { customer_id: cliente.id, items, responsable_id: responsable || null, ...(cuerpo ? { pago: cuerpo } : {}) }), undefined, { silencioso: true });
-    if (r) setHecha(r);
-  };
-  if (hecha) {
-    return (
-      <Modal titulo={`Venta #${hecha.numero}`} className="modal-venta" onCerrar={onCerrar}>
-        <CobroExitoso titulo={hecha.pago ? `Venta #${hecha.numero} pagada` : `Venta #${hecha.numero} registrada`} pago={hecha.pago} total={hecha.total}>
-          <button className="btn primario" onClick={otraVenta} autoFocus><Icon n="mas" className="" size={16} />Registrar otra venta</button>
-          <button className="btn" onClick={() => onGuardada(hecha.id)}>Ver la venta</button>
-        </CobroExitoso>
-        <p className="tenue peq-txt" style={{ textAlign: 'center', margin: 0 }}>Después podrás generar su comprobante de venta desde el detalle.</p>
-      </Modal>
-    );
-  }
-  return (
-    <Modal titulo="Registrar venta" className="modal-venta" onCerrar={onCerrar} pie={<><span className="tenue" style={{ marginRight: 'auto' }}>Total <b>{cop(total)}</b> (IVA incluido)</span><button className="btn" onClick={onCerrar}>Cancelar</button>
-      <button className="btn primario" data-guia="venta/registrar" disabled={ocupado || !cliente || !items.length || !!faltaStock || !!errorPago} onClick={registrar}>{ocupado ? 'Registrando…' : cobra && pago.metodo !== 'DESPUES' ? 'Registrar y cobrar' : 'Registrar por cobrar'}</button></>}>
-      {error && <div className="bloqueado" role="alert"><Icon n="alerta" className="" size={16} />{error.message}</div>}
-      <Campo etiqueta="Persona responsable de la venta" ayuda="Opcional. Permite atribuir la actividad y calcular la comisión configurada."><select className="input" value={responsable} onChange={e=>setResponsable(e.target.value)}><option value="">Sin atribuir</option>{responsables.data?.map(p=><option value={p.id} key={p.id}>{p.nombre}</option>)}</select></Campo>
-        <Campo etiqueta="Cliente" guia="venta/cliente">
-        {cliente ? <span className="fila entre"><b>{cliente.nombre}</b><button type="button" className="btn peq sutil" onClick={() => setCliente(null)}>Cambiar</button></span> : nuevoCliente ? (
-          <span className="col nuevo-cliente">
-            <input className="input" value={nuevoCliente.nombre} maxLength={120} onChange={(e) => setNuevoCliente({ ...nuevoCliente, nombre: e.target.value })} placeholder="Nombre del cliente" aria-label="Nombre del cliente nuevo" />
-            <input className="input" inputMode="tel" value={nuevoCliente.telefono} maxLength={20} onChange={(e) => setNuevoCliente({ ...nuevoCliente, telefono: e.target.value })} placeholder="Teléfono (opcional), ej. 300 123 4567" aria-label="Teléfono del cliente nuevo" />
-            <span className="fila envolver" style={{ gap: 6 }}>
-              <button type="button" className="btn peq primario" disabled={ocupado || !nuevoCliente.nombre.trim()} onClick={crearCliente}>Crear y usar</button>
-              <button type="button" className="btn peq sutil" onClick={() => setNuevoCliente(null)}>Volver a buscar</button>
-            </span>
-          </span>
-        ) : <>
-          <input className="input" type="search" placeholder="Busca por nombre, teléfono o documento" value={qCliente} onChange={(e) => setQCliente(e.target.value)} />
-          <div className="opciones-busqueda" role="listbox" aria-label="Clientes encontrados">{clientes.data?.clientes?.slice(0, 6).map((c: any) => <button type="button" role="option" aria-selected="false" key={c.id} onClick={() => setCliente(c)}>{c.nombre}<span className="tenue peq-txt">{c.telefono ?? c.numero_documento ?? ''}</span></button>)}
-            {clientes.data && !clientes.data.clientes.length && <span className="tenue peq-txt">Nadie coincide{puede('customer:write') ? '.' : '. Pide a quien administra que lo registre en Clientes.'}</span>}</div>
-          {puede('customer:write') && <button type="button" className="btn peq sutil" style={{ alignSelf: 'flex-start' }} onClick={() => setNuevoCliente({ nombre: /\d{5,}/.test(qCliente) ? '' : qCliente.trim(), telefono: /\d{5,}/.test(qCliente) ? qCliente.trim() : '' })}><Icon n="mas" className="" size={14} />{qCliente.trim() && !/\d{5,}/.test(qCliente) ? `Crear cliente «${qCliente.trim().slice(0, 40)}»` : 'Crear cliente nuevo'}</button>}
-        </>}
-      </Campo>
-      <div className="col" data-guia="venta/items">
-        <span className="etiqueta">Productos y servicios</span>
-        {items.length === 0 && <span className="tenue peq-txt">Agrega al menos uno.</span>}
-        {items.map((it, i) => {
-          const p = prod(it.product_id);
-          return (
-            <div key={i} className="linea-venta">
-              <select className="input" value={it.product_id} onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, product_id: e.target.value } : x)))} aria-label={`Producto del ítem ${i + 1}`}>{activos.map((p2) => <option key={p2.id} value={p2.id}>{p2.nombre} · {cop(p2.precio)}{p2.controla_stock ? ` · quedan ${p2.stock}` : ''}</option>)}</select>
-              <label className="mini"><span>Cant.</span><input className="input" type="number" min={1} step={p?.tipo === 'SERVICIO' ? 1 : 'any'} value={it.cantidad} onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, cantidad: Math.max(0.01, Number(e.target.value) || 1) } : x)))} aria-label={`Cantidad del ítem ${i + 1}`} /></label>
-              <label className="mini"><span>Desc. %</span><input className="input" type="number" min={0} max={100} value={it.descuento_pct} onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, descuento_pct: Math.min(100, Math.max(0, Number(e.target.value) || 0)) } : x)))} aria-label={`Descuento del ítem ${i + 1} en porcentaje`} /></label>
-              <button className="btn sutil icono" onClick={() => setItems(items.filter((_, j) => j !== i))} aria-label={`Quitar ítem ${i + 1}`}><Icon n="x" className="" size={14} /></button>
-              {p?.controla_stock && it.cantidad > p.stock && <span className="error peq-txt" role="alert">Solo quedan {p.stock} de {p.nombre}.</span>}
-            </div>
-          );
-        })}
-        <button className="btn peq" style={{ alignSelf: 'flex-start' }} disabled={!activos.length} onClick={() => setItems([...items, { product_id: activos[0].id, cantidad: 1, descuento_pct: 0 }])}><Icon n="mas" className="" size={14} />Agregar ítem</button>
-      </div>
-      {cobra ? (items.length > 0 && <div data-guia="venta/cobro"><CamposCobro metodos={metodos.data} total={total} valor={pago} onCambio={setPago} /></div>)
-        : <p className="tenue peq-txt">La venta queda por cobrar. Tu rol no registra pagos: quien cobra lo hace desde el detalle de la venta.</p>}
-    </Modal>
-  );
-}
-
-/** Pago de una venta que quedó por cobrar (el cliente pagó después, por ejemplo al recoger). */
 function RegistrarPago({ venta, metodos, onCerrar, onHecho }: { venta: any; metodos: Metodos; onCerrar: () => void; onHecho: () => void }) {
   const [hecho, setHecho] = useState<any>(null);
   const inicial: PagoElegido['metodo'] = metodos.EFECTIVO ? 'EFECTIVO' : metodos.TRANSFERENCIA ? 'TRANSFERENCIA' : metodos.DATAFONO ? 'DATAFONO' : 'DESPUES';
@@ -481,7 +318,7 @@ export function VentaDetalle() {
               {comprobante?.estado === 'EMITIDO' ? (
                 <div className="col" style={{ gap: 10 }}>
                   <span className="fila entre envolver"><span className="mono">{comprobante.numero}</span><Estado v="EMITIDO" texto="Vigente" /></span>
-                  <span className="tenue peq-txt">Generado el {fechaHora(comprobante.emitido_en)}. No es una factura electrónica.</span>
+                  <span className="tenue peq-txt">Generado el {fechaHora(comprobante.emitido_en)}.</span>
                   <span className="fila envolver" style={{ gap: 8 }}>
                     <button className="btn peq primario" onClick={() => setVerComprobante(comprobante.id)}>Ver comprobante</button>
                     <button className="btn peq" disabled={ocupado} onClick={() => run(() => descargarComprobante(comprobante))}><Icon n="descargar" className="" size={14} />PDF</button>
@@ -497,7 +334,6 @@ export function VentaDetalle() {
                 </div>
               )}
             </Tarjeta>
-            {!dian && <TarjetaFacturaDian />}
             {(dian || factura) && <Tarjeta titulo="Factura electrónica" nivel={dian && factura?.estado === 'RECHAZADO' ? 3 : 2}>
               {!factura ? (
                 <div className="col"><span className="tenue">Esta venta no tiene factura.</span>{dian && data.estado === 'CONFIRMADA' && <Escritura permiso="invoice:issue" modulo="facturacion"><button className="btn primario" style={{ alignSelf: 'flex-start' }} disabled={ocupado} onClick={() => run(() => api.post(`/api/t/ventas/${id}/facturar`), 'Factura solicitada').then(recargar)}>Emitir factura</button></Escritura>}</div>
@@ -948,10 +784,6 @@ export function Facturacion() {
     <>
       <Cabecera titulo="Facturación electrónica" sub={data.resolucion ? `Numeración ${data.resolucion.prefijo} ${data.resolucion.numero_desde}–${data.resolucion.numero_hasta} · siguiente ${data.resolucion.siguiente}` : ''} />
       <div className="contenido">
-        {!data.dian_habilitada && <>
-          <TarjetaFacturaDian motivo={data.motivo_proximamente} />
-          <Link className="btn primario" style={{ alignSelf: 'flex-start' }} to="/comprobantes">Ir a Comprobantes de venta</Link>
-        </>}
         {!data.validez_fiscal && (
           <div className="aviso" role="note"><Icon n="alerta" className="" size={16} /><span>{data.proveedor === 'sandbox' ? 'Facturación en modo de pruebas: los documentos se generan para que veas el recorrido completo, pero NO tienen validez fiscal ni se transmiten a la DIAN.' : 'La facturación electrónica está pendiente de conectar con un proveedor habilitado por la DIAN.'}</span></div>
         )}

@@ -68,7 +68,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('get', '/informes/:tipo', (tx, ctx, req) => informes.generarInforme(tx, ctx, req.params.tipo, req.query));
 
   // --- Clientes
-  r('get', '/clientes', (tx, ctx, req) => customers.listCustomers(tx, ctx, { q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina }));
+  r('get', '/clientes', (tx, ctx, req) => customers.listCustomers(tx, ctx, { q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina, orden: req.query?.orden }));
   r('get', '/clientes.csv', async (tx, ctx, _req, reply) => { descarga(reply, 'clientes.csv'); return exportsMod.exportCustomers(tx, ctx); });
   r('post', '/clientes', (tx, ctx, req) => customers.createCustomer(tx, ctx, req.body));
   r('get', '/clientes/:id', (tx, ctx, req) => customers.getCustomer(tx, ctx, req.params.id));
@@ -191,7 +191,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('patch','/equipo/comisiones',(tx,ctx,req)=>commissions.save(tx,ctx,req.body));
   r('get','/equipo/comisiones/informe',(tx,ctx,req)=>commissions.report(tx,ctx,req.query.fecha));
   // --- Ventas
-  r('get', '/ventas', (tx, ctx, req) => orders.listOrders(tx, ctx, { estado_fiscal: req.query?.estado_fiscal, q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina, pago: req.query?.pago, metodo: req.query?.metodo, comprobante: req.query?.comprobante }));
+  r('get', '/ventas', (tx, ctx, req) => orders.listOrders(tx, ctx, { estado_fiscal: req.query?.estado_fiscal, q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina, pago: req.query?.pago, metodo: req.query?.metodo, comprobante: req.query?.comprobante, periodo: req.query?.periodo, origen: req.query?.origen }));
   r('get', '/ventas/caja', (tx, ctx, req) => pagos.cajaDelDia(tx, ctx, req.query?.fecha));
   r('get', '/ventas.csv', async (tx, ctx, req, reply) => { descarga(reply, 'ventas.csv'); return exportsMod.exportOrders(tx, ctx, req.query?.desde, req.query?.hasta); });
   r('post', '/ventas', (tx, ctx, req) => orders.createOrder(tx, ctx, req.body));

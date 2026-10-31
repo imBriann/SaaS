@@ -26,7 +26,7 @@ export const CustomerInput = z.object({
 
 const COLS = `id, nombre, telefono, email, tipo_documento, numero_documento, consentimiento_en, consentimiento_via, notas, creado_en`;
 
-export async function listCustomers(tx: Tx, ctx: Ctx, f: { q?: string; pagina?: number; por_pagina?: number } = {}) {
+export async function listCustomers(tx: Tx, ctx: Ctx, f: { q?: string; pagina?: number; por_pagina?: number; orden?: string } = {}) {
   requirePerm(ctx, 'customer:read');
   const params: unknown[] = [];
   let where = 'eliminado_en IS NULL';
@@ -44,7 +44,7 @@ export async function listCustomers(tx: Tx, ctx: Ctx, f: { q?: string; pagina?: 
        (SELECT count(*)::int FROM "order" o WHERE o.customer_id = c.id AND o.estado='CONFIRMADA') AS compras,
        (SELECT coalesce(sum(total),0) FROM "order" o WHERE o.customer_id = c.id AND o.estado='CONFIRMADA') AS total_compras,
        (SELECT max(inicio) FROM appointment a WHERE a.customer_id = c.id AND a.estado <> 'CANCELADA') AS ultima_cita
-     FROM customer c WHERE ${where} ORDER BY nombre LIMIT ${porPagina} OFFSET ${(pagina - 1) * porPagina}`,
+     FROM customer c WHERE ${where} ORDER BY ${f.orden === 'reciente' ? `(SELECT max(o.creado_en) FROM "order" o WHERE o.customer_id = c.id) DESC NULLS LAST, creado_en DESC` : 'nombre'} LIMIT ${porPagina} OFFSET ${(pagina - 1) * porPagina}`,
     params,
   );
   return { clientes: rows.map((r) => ({ ...r, total_compras: Number(r.total_compras) })), total, pagina, por_pagina: porPagina };

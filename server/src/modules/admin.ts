@@ -74,7 +74,8 @@ export async function dashboard(tx: Tx, ctx: Ctx) {
     [desde, hasta, semana],
   )).rows[0];
   const atencion: any[] = [];
-  if (can(ctx, 'invoice:read')) {
+  // Con la facturación DIAN apagada no hay facturas que rechazar ni ciclo fiscal: nada de eso sale al panel.
+  if (config.fiscal.dianHabilitada && can(ctx, 'invoice:read')) {
     for (const f of (await tx.query(
       `SELECT f.id, f.numero, f.motivo_rechazo, o.id AS order_id, o.numero AS orden FROM fiscal_document f JOIN "order" o ON o.id=f.order_id WHERE f.estado='RECHAZADO' ORDER BY f.creado_en DESC LIMIT 5`,
     )).rows) atencion.push({ tipo: 'factura_rechazada', nivel: 'error', titulo: `Factura ${f.numero} rechazada (venta #${f.orden})`, detalle: f.motivo_rechazo, accion: { etiqueta: 'Corregir', ruta: `/ventas/${f.order_id}` } });
@@ -118,13 +119,18 @@ export async function dashboard(tx: Tx, ctx: Ctx) {
      JOIN customer c ON c.id=a.customer_id JOIN product p ON p.id=a.product_id JOIN resource r ON r.id=a.resource_id
      WHERE a.inicio >= $1 AND a.inicio < $2 AND a.estado <> 'CANCELADA' ORDER BY a.inicio LIMIT 12`, [desde, hasta])).rows
     .map((a) => ({ ...a, hora: utcToLocal(new Date(a.inicio), zona).hora })) : [];
-  const fiscal = can(ctx, 'invoice:read') ? (await tx.query(
+  const fiscal = config.fiscal.dianHabilitada && can(ctx, 'invoice:read') ? (await tx.query(
     `SELECT (SELECT count(*)::int FROM "order" WHERE estado='CONFIRMADA' AND creado_en >= $1) AS ventas,
             count(*) FILTER (WHERE estado IN ('ENVIADO','VALIDADO','ENTREGADO'))::int AS emitidas,
             count(*) FILTER (WHERE estado IN ('VALIDADO','ENTREGADO'))::int AS validadas,
             count(*) FILTER (WHERE estado='ENTREGADO')::int AS entregadas,
             count(*) FILTER (WHERE estado='RECHAZADO')::int AS rechazadas
      FROM fiscal_document WHERE tipo='FACTURA' AND creado_en >= $1`, [desde])).rows[0] : null;
+  // «Ventas de hoy»: cuántas, cuánto, comprobantes generados y las que hizo la IA.
+  const ventasHoy = can(ctx, 'order:read') ? (await tx.query(
+    `SELECT count(*)::int AS n, coalesce(sum(total),0)::float AS total, count(*) FILTER (WHERE origen='AGENTE')::int AS ia,
+            (SELECT count(*)::int FROM comprobante_venta WHERE emitido_en >= $1 AND emitido_en < $2 AND estado <> 'ANULADO') AS comprobantes
+     FROM "order" WHERE estado='CONFIRMADA' AND creado_en >= $1 AND creado_en < $2`, [desde, hasta])).rows[0] : null;
   // Serie de 7 días completa (los días sin ventas valen 0: no se omiten).
   const porDia = new Map((await tx.query(
     `SELECT to_char(creado_en AT TIME ZONE $2, 'YYYY-MM-DD') AS dia, sum(total)::float AS total
@@ -143,7 +149,7 @@ export async function dashboard(tx: Tx, ctx: Ctx) {
     fecha: hoy, zona,
     cifras: { ...cifras, ventas_hoy: Number(cifras.ventas_hoy), ventas_semana: Number(cifras.ventas_semana), por_cobrar: Number(cifras.por_cobrar) },
     cobros_hoy: can(ctx, 'order:read') ? { efectivo: cobro('EFECTIVO'), transferencia: cobro('TRANSFERENCIA'), datafono: cobro('DATAFONO'), pasarela: cobro('PASARELA'), total: cobros.reduce((a: number, c: any) => a + c.total, 0), pagos: cobros.reduce((a: number, c: any) => a + c.n, 0) } : null,
-    atencion, hilo, agenda, fiscal, ingresos, ocupacion,
+    atencion, hilo, agenda, ...(fiscal ? { fiscal } : {}), ventas_hoy: ventasHoy, ingresos, ocupacion,
     pasos: can(ctx, 'tenant:configure') ? await primerosPasos(tx, ctx) : null,
     consumo: can(ctx, 'usage:read') ? await allQuotas(tx, ctx.tenantId) : null,
   };

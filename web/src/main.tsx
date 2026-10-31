@@ -26,7 +26,7 @@ import './pulido.css';
 import './premium.css';
 import './vivo.css';
 import { ToastProvider } from './components/ui';
-import { PanelLayout } from './components/Layout';
+import { PanelLayout, useSesion } from './components/Layout';
 import { slugDelHost, tenantSlug } from './api';
 import { CierreAlta, Catalogo, Datos, Describir, Empresas, Entrar, Invitacion, Landing, Pago, Pasarela, Recuperar, Restablecer, ResultadoPago } from './pages/public/Publico';
 import { Cargando } from './components/ui';
@@ -55,7 +55,7 @@ const Agenda = lazy(() => import('./pages/app/Agenda').then((m) => ({ default: m
 const Clientes = lazy(() => negocio().then((m) => ({ default: m.Clientes })));
 const Facturacion = lazy(() => negocio().then((m) => ({ default: m.Facturacion })));
 const Inventario = lazy(() => negocio().then((m) => ({ default: m.Inventario })));
-const Ventas = lazy(() => negocio().then((m) => ({ default: m.Ventas })));
+const Historial = lazy(() => import('./pages/app/ventas/Historial').then((m) => ({ default: m.Historial })));
 const Vender = lazy(() => import('./pages/app/Vender').then((m) => ({ default: m.Vender })));
 const Comprobantes = lazy(() => import('./pages/app/Comprobantes').then((m) => ({ default: m.Comprobantes })));
 const VentaDetalle = lazy(() => negocio().then((m) => ({ default: m.VentaDetalle })));
@@ -93,6 +93,12 @@ const OpAtencionEmpresas = lazy(() => atencionOp().then((m) => ({ default: m.OpA
 const OpConversacionCompartida = lazy(() => atencionOp().then((m) => ({ default: m.OpConversacionCompartida })));
 
 /** En el dominio raíz sin empresa elegida se muestra la landing; con subdominio o empresa, el panel. */
+/** La facturación electrónica solo existe con el interruptor encendido; si no, esta dirección lleva a los comprobantes. */
+function RutaFacturacion() {
+  const { s } = useSesion();
+  return s.factura_dian ? <Facturacion /> : <Navigate to="/ventas/comprobantes" replace />;
+}
+
 function Raiz() {
   if (!slugDelHost() && !tenantSlug()) return <Landing />;
   return <Navigate to="/panel" replace />;
@@ -169,13 +175,15 @@ function App() {
             <Route path="/conversaciones" element={<Conversaciones />} />
             <Route path="/conversaciones/:id" element={<Conversaciones />} />
             <Route path="/clientes" element={<Clientes />} />
-            <Route path="/ventas" element={<Ventas />} />
+            <Route path="/ventas" element={<Historial />} />
+            <Route path="/ventas/vender" element={<Vender />} />
+            <Route path="/ventas/comprobantes" element={<Comprobantes />} />
             <Route path="/ventas/:id" element={<VentaDetalle />} />
             <Route path="/inventario" element={<Inventario />} />
             <Route path="/agenda" element={<Agenda />} />
-            <Route path="/facturacion" element={<Facturacion />} />
-            <Route path="/comprobantes" element={<Comprobantes />} />
-            <Route path="/vender" element={<Vender />} />
+            <Route path="/facturacion" element={<RutaFacturacion />} />
+            <Route path="/comprobantes" element={<Navigate to="/ventas/comprobantes" replace />} />
+            <Route path="/vender" element={<Navigate to="/ventas/vender" replace />} />
             <Route path="/ia" element={<CentroIA />} />
             <Route path="/perfil" element={<PerfilPagina />} />
             <Route path="/configuracion" element={<Configuracion />} />
