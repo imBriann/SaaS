@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { config } from '../src/config.js';
 import { setup, login, api, CRED, type Env } from './helpers.js';
 import { drain } from '../src/worker/jobs.js';
 import { receiveChannelMessages } from '../src/modules/channelInbound.js';
@@ -12,6 +13,8 @@ import { uuidv7 } from '../src/lib/util.js';
 let E: Env;
 let admin: ReturnType<typeof api>;
 beforeAll(async () => {
+  // Estas pruebas recorren la facturación electrónica: el interruptor (apagado por defecto) se enciende aquí.
+  config.fiscal.dianHabilitada = true;
   E = await setup();
   admin = api(E.app, await login(E.app, ...CRED.admin), 'elparche');
 });

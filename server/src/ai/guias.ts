@@ -21,7 +21,7 @@ export const GUIAS: Record<IdGuia, { titulo: string; para: string; permiso?: str
   importar_catalogo: { titulo: 'Importar el catálogo', para: 'cargar muchos productos a la vez desde Excel o CSV', permiso: 'catalog:write' },
   responder_conversacion: { titulo: 'Responder una conversación', para: 'responder a un cliente de WhatsApp desde el panel', permiso: 'conversation:reply' },
   invitar_persona: { titulo: 'Invitar a alguien del equipo', para: 'dar acceso al panel a otra persona con un rol', permiso: 'user:manage' },
-  numero_whatsapp: { titulo: 'Conectar el número de WhatsApp', para: 'conectar el número propio o adquirir uno nuevo para WhatsApp', permiso: 'tenant:configure' },
+  numero_whatsapp: { titulo: 'Conectar el número de WhatsApp', para: 'conectar el número propio de WhatsApp con un código por SMS', permiso: 'tenant:configure' },
 };
 
 /** Normaliza para comparar sin tildes ni mayúsculas. */

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PLANES, caracteristicasPlan } from './planRules.js';
+import { config } from '../config.js';
 
 /** Tarifas de demostración: no son una oferta comercial ni habilitan cobros. */
 export const MODULE_CATALOG = [
@@ -57,6 +58,6 @@ export function quotePlan(codigo: string, ciclo: CicloAlta) {
 }
 export function quoteClassification(c: { modulos_sugeridos?: string[]; factura_electronica?: boolean | null }) {
   const modulos = (c.modulos_sugeridos ?? []).filter(m => ids.includes(m));
-  if (c.factura_electronica) modulos.push('facturacion');
+  if (c.factura_electronica && config.fiscal.dianHabilitada) modulos.push('facturacion');
   return quoteModules({ modulos });
 }

@@ -59,6 +59,8 @@ export const config = {
     return host === base || host.endsWith('.' + base) ? base : undefined;
   })(),
   databaseUrl: v('DATABASE_URL'),
+  /** Recordatorios por la regla antigua de plantilla (programar_recordatorio). Apagado: los envía el ciclo proactivo. */
+  recordatoriosPorRegla: v('RECORDATORIOS_POR_REGLA') === '1',
   dataDir: v('PGLITE_DIR') ?? './data/pglite',
   /** Clave para cifrar secretos de terceros en reposo (AES-256-GCM). */
   appKey: v('APP_KEY') ?? (dev ? 'dev-app-key-no-usar-en-produccion-0000' : ''),
@@ -75,6 +77,15 @@ export const config = {
     idiomaPlantillas: v('WHATSAPP_IDIOMA_PLANTILLAS') ?? 'es',
     /** Identificador del número de WhatsApp de Omnegia (no de un comercio): lo atiende el asistente de la plataforma. */
     plataformaPhoneNumberId: v('WHATSAPP_PLATFORM_PHONE_NUMBER_ID'),
+    /**
+     * Cuenta de WhatsApp Business (WABA) de Omnegia. «Usar mi propio número» registra el número de cada
+     * empresa dentro de esta cuenta con WHATSAPP_ACCESS_TOKEN: la empresa nunca entra a Meta.
+     */
+    plataformaWabaId: v('WHATSAPP_PLATFORM_WABA_ID'),
+    /** Números que admite la WABA de Omnegia (2 con el portafolio de Meta sin verificar). El operador lo ve antes de agregar uno. */
+    limiteNumerosWaba: Math.max(1, Number(v('WHATSAPP_WABA_LIMITE_NUMEROS') ?? 2) || 2),
+    /** Conectar la WABA propia de la empresa (registro integrado, Tech Provider). Apagada = «Próximamente». */
+    cuentaPropiaHabilitada: v('WHATSAPP_CUENTA_PROPIA_HABILITADA') === '1',
   },
   llm: {
     /** 'anthropic' con clave; 'mock' es el simulador determinista (solo con simuladores habilitados). */
@@ -142,9 +153,34 @@ export const config = {
       vigenciaHasta: v('FACTURACION_RESOLUCION_VIGENCIA'),
     },
   },
+  /**
+   * Imágenes del catálogo. Se guardan con un adaptador de almacenamiento (hoy: disco; la interfaz admite un
+   * almacenamiento de objetos después) y se sirven por una URL pública https (WhatsApp las envía por enlace).
+   */
+  imagenes: {
+    almacen: (v('IMAGENES_ALMACEN') ?? 'disco') as 'disco',
+    dir: v('IMAGENES_DIR') ?? './almacen/imagenes',
+    maxBytes: Math.round(Math.max(0.1, Number(v('IMAGENES_MAX_MB') ?? 5)) * 1024 * 1024),
+    anchoMax: Math.max(320, Number(v('IMAGENES_ANCHO_MAX') ?? 1600)),
+    anchoMiniatura: 320,
+    /**
+     * Búsqueda de imágenes con IA. openverse (por defecto): gratis, solo licencias abiertas con uso comercial.
+     * pexels: gratis con clave (PEXELS_API_KEY). brave: búsqueda web general de pago (BRAVE_SEARCH_API_KEY); sus
+     * imágenes quedan pendientes de aprobación. simulado: desarrollo y pruebas, sin red.
+     */
+    proveedor: (v('IMAGENES_PROVEEDOR') ?? (test ? 'simulado' : 'openverse')) as 'openverse' | 'pexels' | 'brave' | 'simulado' | 'ninguno',
+    pexelsKey: v('PEXELS_API_KEY'),
+    braveKey: v('BRAVE_SEARCH_API_KEY'),
+    descargaTimeoutMs: Number(env.IMAGENES_TIMEOUT_MS ?? 10_000),
+  },
   fiscal: {
     /** Solo existe el adaptador de pruebas: sin validez fiscal. */
     provider: (v('FISCAL_PROVIDER') ?? (simuladores ? 'sandbox' : 'ninguno')) as 'sandbox' | 'ninguno',
+    /**
+     * Facturación electrónica DIAN. Apagada (por defecto) el panel la muestra como «Próximamente», las rutas de
+     * emisión responden 409 y el trabajador no encola emisiones; las empresas usan comprobantes de venta internos.
+     */
+    dianHabilitada: v('FACTURACION_DIAN_HABILITADA') === '1',
   },
   /**
    * Correo transaccional. El remitente y el proveedor dependen solo del entorno:
@@ -179,6 +215,8 @@ export const config = {
    * compra queda «pendiente de conectar» y el cliente sigue con su propio número.
    */
   numeros: {
+    /** Compra de números nuevos (Telnyx). Apagada, el panel la muestra como «Próximamente» y sus rutas responden 409. */
+    compraHabilitada: v('NUMEROS_COMPRA_HABILITADA') === '1',
     proveedor: (v('NUMEROS_PROVEEDOR') ?? (v('TELNYX_API_KEY') ? 'telnyx' : simuladores ? 'simulado' : 'ninguno')) as 'telnyx' | 'simulado' | 'ninguno',
     telnyx: {
       apiKey: v('TELNYX_API_KEY'),
@@ -276,9 +314,21 @@ export function validarConfiguracion(c = config): ResultadoValidacion {
   if (c.whatsapp.accessToken && !c.whatsapp.appSecret) errores.push('Con WHATSAPP_ACCESS_TOKEN también se necesita WHATSAPP_APP_SECRET para verificar los webhooks.');
   if (c.whatsapp.accessToken && !c.whatsapp.verifyToken) errores.push('Con WHATSAPP_ACCESS_TOKEN también se necesita WHATSAPP_VERIFY_TOKEN para registrar el webhook.');
   errores.push(...erroresNumeros(c));
+  errores.push(...erroresNumeroPropio(c));
   if (c.numeros.proveedor === 'telnyx' && !c.numeros.comercial.confirmadas && !c.dev) avisos.push('Números de WhatsApp: falta NUMEROS_TARIFAS_CONFIRMADAS=1; la compra de números queda bloqueada hasta confirmar el modelo comercial.');
   if (c.numeros.proveedor === 'telnyx' && (!c.meta.appId || !c.meta.configId)) avisos.push('Números de WhatsApp: sin META_APP_ID y META_ES_CONFIG_ID se pueden comprar números, pero la activación de WhatsApp no puede iniciar el registro integrado de Meta.');
   return { errores, avisos };
+}
+
+/**
+ * «Usar mi propio número»: la función está activa cuando hay token de WhatsApp de la plataforma. En
+ * producción exige entonces la WABA de Omnegia, porque ahí se registra el número de cada empresa.
+ */
+export function erroresNumeroPropio(c = config): string[] {
+  const waba = c.whatsapp.plataformaWabaId;
+  if (waba && !/^\d{5,25}$/.test(waba)) return ['WHATSAPP_PLATFORM_WABA_ID debe ser el identificador numérico de la cuenta de WhatsApp Business de Omnegia (WhatsApp Manager › Configuración de la cuenta).'];
+  if (!c.dev && c.whatsapp.accessToken && !waba) return ['Con WHATSAPP_ACCESS_TOKEN también se necesita WHATSAPP_PLATFORM_WABA_ID: «Usar mi propio número» registra los números de las empresas en la cuenta de WhatsApp Business de Omnegia.'];
+  return [];
 }
 
 /** Reglas de la compra de números. */
@@ -420,15 +470,16 @@ export function integraciones(c = config): Integracion[] {
       clave: 'whatsapp', nombre: 'WhatsApp Cloud API (Meta)',
       estado: c.whatsapp.accessToken ? 'conectado' : c.simuladores ? 'simulado' : 'pendiente',
       detalle: c.whatsapp.accessToken ? `Graph ${c.whatsapp.graphVersion}. Cada empresa vincula su identificador de número.` : c.simuladores ? 'Los envíos se simulan; usa el Simulador del panel.' : 'Falta el token de acceso: no se envían mensajes.',
-      variables: ['WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_APP_SECRET', 'WHATSAPP_VERIFY_TOKEN'],
+      variables: ['WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_APP_SECRET', 'WHATSAPP_VERIFY_TOKEN', 'WHATSAPP_PLATFORM_WABA_ID'],
     },
     {
       clave: 'numeros', nombre: 'Números de WhatsApp (Telnyx)',
       estado: c.numeros.proveedor === 'telnyx' ? 'conectado' : c.numeros.proveedor === 'simulado' ? 'simulado' : 'pendiente',
-      detalle: c.numeros.proveedor === 'telnyx'
+      detalle: (c.numeros.proveedor === 'telnyx'
         ? `Países: ${c.numeros.paises.join(', ')}.${c.numeros.comercial.confirmadas ? '' : ' Precios sin confirmar: la compra está bloqueada.'}${c.meta.configId ? ' Registro integrado de Meta configurado.' : ' Falta el registro integrado de Meta.'}`
-        : c.numeros.proveedor === 'simulado' ? 'Inventario de demostración: no se compra ningún número real.' : 'Sin proveedor: las empresas conectan su propio número.',
-      variables: ['TELNYX_API_KEY', 'TELNYX_PUBLIC_KEY', 'TELNYX_TEXML_APP_ID', 'META_APP_ID', 'META_ES_CONFIG_ID', 'NUMEROS_TARIFAS_CONFIRMADAS'],
+        : c.numeros.proveedor === 'simulado' ? 'Inventario de demostración: no se compra ningún número real.' : 'Sin proveedor: las empresas conectan su propio número.')
+        + (c.numeros.compraHabilitada ? '' : ' Compra apagada (NUMEROS_COMPRA_HABILITADA=0): el panel la muestra como «Próximamente».'),
+      variables: ['NUMEROS_COMPRA_HABILITADA', 'TELNYX_API_KEY', 'TELNYX_PUBLIC_KEY', 'TELNYX_TEXML_APP_ID', 'META_APP_ID', 'META_ES_CONFIG_ID', 'NUMEROS_TARIFAS_CONFIRMADAS'],
     },
     {
       clave: 'ia', nombre: 'Modelo de lenguaje (Claude)',
@@ -445,9 +496,10 @@ export function integraciones(c = config): Integracion[] {
     },
     {
       clave: 'facturacion', nombre: 'Proveedor de facturación electrónica',
-      estado: c.fiscal.provider === 'sandbox' ? 'simulado' : 'pendiente',
-      detalle: c.fiscal.provider === 'sandbox' ? 'Entorno de pruebas propio: los documentos NO tienen validez fiscal.' : 'Sin proveedor habilitado: no se emiten facturas.',
-      variables: ['FISCAL_PROVIDER'],
+      estado: !c.fiscal.dianHabilitada ? 'pendiente' : c.fiscal.provider === 'sandbox' ? 'simulado' : 'pendiente',
+      detalle: !c.fiscal.dianHabilitada ? 'Apagada (FACTURACION_DIAN_HABILITADA=0): el panel la muestra como «Próximamente» y las empresas generan comprobantes de venta internos sin validez fiscal.'
+        : c.fiscal.provider === 'sandbox' ? 'Entorno de pruebas propio: los documentos NO tienen validez fiscal.' : 'Sin proveedor habilitado: no se emiten facturas.',
+      variables: ['FACTURACION_DIAN_HABILITADA', 'FISCAL_PROVIDER'],
     },
     {
       clave: 'correo', nombre: c.correo.proveedor === 'smtp' ? 'Correo transaccional (SMTP)' : 'Correo transaccional (Resend)',

@@ -149,3 +149,19 @@ export async function completarRequisitos(E: Env, tk: string) {
  const a=await E.app.inject({method:'POST',url:`/api/onboarding/borradores/${tk}/aceptacion-legal`,payload:{terminos:true,privacidad:true,inicio_servicio:true}});
  if(a.statusCode!==200)throw new Error(a.body);
 }
+
+import { festivoDe } from '../src/lib/festivos.js';
+import { addDays as sumarDias, todayLocal as hoyEn } from '../src/lib/time.js';
+/**
+ * Nombre de un día laborable próximo (martes a viernes, no festivo, desde pasado mañana) para frases como
+ * «el miércoles a las 10». «Mañana» o «pasado mañana» caen a veces en domingo o festivo y la prueba falla según el día.
+ */
+export function diaLaborable(): { nombre: string; fecha: string } {
+  const nombres = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  let f = sumarDias(hoyEn('America/Bogota'), 2);
+  for (;;) {
+    const d = new Date(`${f}T12:00:00Z`).getUTCDay();
+    if (d >= 2 && d <= 5 && !festivoDe(f)) return { nombre: nombres[d], fecha: f };
+    f = sumarDias(f, 1);
+  }
+}

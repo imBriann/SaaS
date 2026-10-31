@@ -11,6 +11,7 @@ import { Arco, Chispa, Construible, Cuenta, LineaViva, MiniBarras, Variacion } f
 import { OrbeCara } from '../../components/ia/OrbeCara';
 import { useIA } from '../../components/ia/contexto';
 import { usePuedeIA } from '../../components/ia/PanelIA';
+import { AsistenteHoy } from '../../components/AsistenteHoy';
 
 const TIPO: Record<string, TipoMensaje> = { CUSTOMER: 'cliente', AI: 'ia', HUMAN: 'humano' };
 const METODO: Record<string, string> = { EFECTIVO: 'Efectivo', TRANSFERENCIA: 'Transferencia', DATAFONO: 'Datáfono', PASARELA: 'Pasarela' };
@@ -50,6 +51,7 @@ export function Inicio() {
             <div className={`tv-grid ${activa ? 'en-obra' : ''}`} data-fase-obra={activa ? fase : undefined}>
               {data.pasos && data.pasos.completos < data.pasos.total && <Construible i={sig()} className="ancho-total"><PrimerosPasos p={data.pasos} /></Construible>}
               {personalizacion?.descripcion && <Construible i={sig()} className="ancho-total"><Personalizado p={personalizacion} /></Construible>}
+              {ver('conversation:read') && <Construible i={sig()} className="ancho-total" etiqueta="Lo que hizo tu asistente hoy"><AsistenteHoy /></Construible>}
               <Construible i={sig()} className={`ancho-total ${data.atencion.length ? 'tv-atencion' : 'tv-aldia'}`} etiqueta="Lo que requiere tu atención"><Atencion a={data.atencion} /></Construible>
 
               {ver('order:read') && data.mes ? <>

@@ -9,6 +9,8 @@ import { isUuid, uuidv7 } from '../lib/util.js';
 import { aPesos, calcularLinea, sumarLineas } from '../lib/money.js';
 import { registerMovement } from './catalog.js';
 import { createCreditNote } from './fiscal.js';
+import { config } from '../config.js';
+import { deVenta, emitir as emitirComprobante } from './comprobantes.js';
 import { anularPagosDeVenta, metodosDePago, PagoInput, pagosDeVenta, registrarPago } from './pagosVentas.js';
 
 export const OrderInput = z.object({
@@ -74,21 +76,50 @@ export async function insertOrder(
   return { id, numero, total: aPesos(tot.total), descuento: aPesos(tot.descuento), cliente: c.nombre, items: lineas.map((l) => ({ nombre: l.p.nombre, cantidad: l.cantidad, total: aPesos(l.c.total) })) };
 }
 
+/** Venta del panel o del punto de venta: cliente opcional («cliente de mostrador») y descuento sobre el total. */
+const VentaPanel = OrderInput.extend({
+  customer_id: z.uuid().optional().nullable(),
+  mostrador: z.boolean().optional(),
+  descuento_total_pct: z.number().min(0).max(100, 'El descuento no puede superar el 100 %.').optional(),
+});
+
+/** Cliente genérico de la empresa para ventas de mostrador sin datos del comprador. */
+async function clienteMostrador(tx: Tx, ctx: Ctx): Promise<string> {
+  const c = (await tx.query(`SELECT id FROM customer WHERE nombre='Cliente de mostrador' AND telefono IS NULL AND eliminado_en IS NULL ORDER BY creado_en LIMIT 1`)).rows[0];
+  if (c) return c.id;
+  const id = uuidv7();
+  await tx.query(`INSERT INTO customer (id, tenant_id, nombre) VALUES ($1,$2,'Cliente de mostrador')`, [id, ctx.tenantId]);
+  return id;
+}
+
 export async function createOrder(tx: Tx, ctx: Ctx, input: unknown) {
   requirePerm(ctx, 'order:create');
   requireWritable(ctx);
-  const d = OrderInput.parse(input);
+  const v = VentaPanel.parse(input);
   // El permiso de registrar el pago se comprueba antes de crear nada: la venta y su pago son una sola operación.
-  if (d.pago) requirePerm(ctx, 'payment:register');
+  if (v.pago) requirePerm(ctx, 'payment:register');
+  const customerId = v.customer_id && !v.mostrador ? v.customer_id : await clienteMostrador(tx, ctx);
+  const d = OrderInput.parse({
+    responsable_id: v.responsable_id, customer_id: customerId, appointment_id: v.appointment_id, pago: v.pago,
+    items: v.items.map((i) => ({ ...i, descuento_pct: i.descuento_pct ?? v.descuento_total_pct })),
+  });
   const r = await insertOrder(tx, ctx, d, { origen: 'PANEL' });
-  await audit(tx, ctx, { accion: 'venta.registrar', recurso: 'order', recursoId: r.id, resultado: 'EXITO', detalle: { numero: r.numero, total: r.total, pagada: !!d.pago } });
+  await audit(tx, ctx, { accion: 'venta.registrar', recurso: 'order', recursoId: r.id, resultado: 'EXITO', detalle: { numero: r.numero, total: r.total, pagada: !!d.pago, mostrador: customerId !== v.customer_id } });
   const pago = d.pago ? await registrarPago(tx, ctx, r.id, d.pago) : null;
-  return { ...r, pago };
+  // Comprobante automático: regla de la empresa (Configuración › Comprobantes), no una decisión de la IA.
+  let comprobante: { id: string; numero: string } | null = null;
+  const auto = (await tx.query(`SELECT auto_al_vender FROM comprobante_ajustes LIMIT 1`)).rows[0]?.auto_al_vender;
+  if (auto) {
+    const sistema: Ctx = { ...ctx, actor: { tipo: 'SISTEMA', id: null, nombre: 'Comprobante automático' }, permisos: new Set(['*']) };
+    const c = await emitirComprobante(tx, sistema, r.id, {});
+    comprobante = { id: c.id, numero: c.numero };
+  }
+  return { ...r, pago, comprobante };
 }
 
 const ESTADOS_FISCALES = ['PENDIENTE', 'ENVIADO', 'VALIDADO', 'RECHAZADO', 'ENTREGADO', 'SIN_FACTURA'];
 
-export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: string; q?: string; pagina?: number; por_pagina?: number; pago?: string; metodo?: string } = {}) {
+export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: string; q?: string; pagina?: number; por_pagina?: number; pago?: string; metodo?: string; comprobante?: string } = {}) {
   requirePerm(ctx, 'order:read');
   const where = ['o.eliminado_en IS NULL'];
   const params: unknown[] = [];
@@ -98,6 +129,8 @@ export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: st
     else if (filtros.estado_fiscal === 'ENTREGADO') where.push(`f.estado IN ('VALIDADO','ENTREGADO')`);
     else { params.push(filtros.estado_fiscal); where.push(`f.estado = $${params.length}`); }
   }
+  if (filtros.comprobante === 'CON') where.push(`EXISTS (SELECT 1 FROM comprobante_venta cv WHERE cv.order_id=o.id AND cv.estado='EMITIDO')`);
+  if (filtros.comprobante === 'SIN') where.push(`o.estado='CONFIRMADA' AND NOT EXISTS (SELECT 1 FROM comprobante_venta cv WHERE cv.order_id=o.id AND cv.estado='EMITIDO')`);
   if (filtros.pago === 'PENDIENTE') where.push(`o.estado='CONFIRMADA' AND o.estado_pago <> 'PAGADA'`);
   if (filtros.pago === 'PAGADA') where.push(`o.estado_pago='PAGADA'`);
   if (filtros.metodo && ['EFECTIVO', 'TRANSFERENCIA', 'DATAFONO', 'PASARELA'].includes(filtros.metodo)) {
@@ -107,7 +140,8 @@ export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: st
   const q = (filtros.q ?? '').trim().slice(0, 80);
   if (q) {
     params.push(`%${q.replace(/^#/, '')}%`);
-    where.push(`(c.nombre ILIKE $${params.length} OR o.numero::text ILIKE $${params.length} OR f.numero ILIKE $${params.length})`);
+    where.push(`(c.nombre ILIKE $${params.length} OR o.numero::text ILIKE $${params.length} OR f.numero ILIKE $${params.length}
+      OR EXISTS (SELECT 1 FROM comprobante_venta cv WHERE cv.order_id=o.id AND cv.numero ILIKE $${params.length}))`);
   }
   const porPagina = Math.min(Math.max(Number(filtros.por_pagina) || 50, 10), 200);
   const pagina = Math.max(Number(filtros.pagina) || 1, 1);
@@ -119,11 +153,12 @@ export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: st
     `SELECT o.id, o.numero, o.estado, o.origen, o.total, o.descuento, o.estado_pago, o.creado_en, c.nombre AS cliente,
             f.estado AS estado_fiscal, f.numero AS documento, f.proveedor_fiscal,
             (SELECT string_agg(descripcion, ', ') FROM order_item i WHERE i.order_id=o.id) AS detalle,
-            (SELECT p.metodo FROM order_payment p WHERE p.order_id=o.id AND p.estado='REGISTRADO' LIMIT 1) AS metodo_pago
+            (SELECT p.metodo FROM order_payment p WHERE p.order_id=o.id AND p.estado='REGISTRADO' LIMIT 1) AS metodo_pago,
+            (SELECT cv.numero FROM comprobante_venta cv WHERE cv.order_id=o.id AND cv.estado='EMITIDO' LIMIT 1) AS comprobante
      ${base} ORDER BY o.creado_en DESC LIMIT ${porPagina} OFFSET ${(pagina - 1) * porPagina}`,
     params,
   )).rows;
-  return { ventas: rows.map((r) => ({ ...r, total: Number(r.total), descuento: Number(r.descuento) })), total, pagina, por_pagina: porPagina };
+  return { ventas: rows.map((r) => ({ ...r, total: Number(r.total), descuento: Number(r.descuento) })), total, pagina, por_pagina: porPagina, factura_dian: config.fiscal.dianHabilitada };
 }
 
 export async function getOrderDetail(tx: Tx, ctx: Ctx, id: string) {
@@ -142,7 +177,8 @@ export async function getOrderDetail(tx: Tx, ctx: Ctx, id: string) {
     `SELECT * FROM ai_execution WHERE resultado->>'order_id' = $1 OR (conversation_id IS NOT NULL AND conversation_id = $2 AND herramienta='registrar_venta') ORDER BY creado_en`,
     [id, o.conversation_id],
   )).rows;
-  const docIds = documentos.map((d) => d.id);
+  // La traza incluye las facturas (si las hay) y los comprobantes de venta de esta venta.
+  const docIds = [...documentos.map((d) => d.id), ...(await tx.query(`SELECT id FROM comprobante_venta WHERE order_id=$1`, [id])).rows.map((c) => c.id)];
   const traza = (await tx.query(
     `SELECT id, actor_tipo, actor_nombre, accion, resultado, origen, creado_en, detalle FROM audit_event
      WHERE recurso_id = $1 OR recurso_id = ANY($2::text[]) ORDER BY creado_en`, [id, docIds])).rows;
@@ -151,6 +187,7 @@ export async function getOrderDetail(tx: Tx, ctx: Ctx, id: string) {
   return {
     ...o, subtotal: Number(o.subtotal), impuestos: Number(o.impuestos), total: Number(o.total), descuento: Number(o.descuento),
     items, documentos, recibos, traza, enlaces, pagos: await pagosDeVenta(tx, id), metodos_pago: await metodosDePago(tx),
+    comprobante: await deVenta(tx, id), factura_dian: config.fiscal.dianHabilitada,
   };
 }
 
@@ -165,7 +202,10 @@ export async function voidOrder(tx: Tx, ctx: Ctx, id: string, motivo: string) {
   if (o.estado === 'ANULADA') throw new AppError('CONFLICT', 'La venta ya está anulada.');
   const factura = (await tx.query(`SELECT id, estado FROM fiscal_document WHERE order_id=$1 AND tipo='FACTURA' ORDER BY creado_en DESC LIMIT 1`, [id])).rows[0];
   let notaCredito: string | null = null;
-  if (factura && ['VALIDADO', 'ENTREGADO'].includes(factura.estado)) {
+  if (!config.fiscal.dianHabilitada) {
+    // Facturación DIAN apagada: los documentos que existan son de prueba y no se transmite nada.
+    // La venta se anula igual; su comprobante de venta (si lo tiene) se anula aparte, con motivo.
+  } else if (factura && ['VALIDADO', 'ENTREGADO'].includes(factura.estado)) {
     requirePerm(ctx, 'invoice:void');
     notaCredito = (await createCreditNote(tx, ctx, factura.id, motivo)).id;
   } else if (factura && ['PENDIENTE', 'ENVIADO', 'RECHAZADO'].includes(factura.estado)) {

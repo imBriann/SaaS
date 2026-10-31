@@ -240,7 +240,7 @@ describe('Salud y migraciones', () => {
   it('readiness informa la base, las migraciones aplicadas y el estado de las integraciones sin secretos', async () => {
     const r = await E.app.inject({ method: 'GET', url: '/api/salud/listo' });
     expect(r.statusCode).toBe(200);
-    expect(r.json().migraciones).toEqual(['001_base', '002_operacion', '003_correo_operador', '004_institucional', '005_documentos_pago','006_registro','007_comisiones','008_creacion_asistida','009_legal','010_reembolsos','011_asistente','012_atencion_whatsapp','013_pagos_ventas','014_asistente_acciones','015_soporte_ia','016_numeros','017_asistente_informes','018_avisos','019_propietario','020_soporte_responde','021_guias_en_pantalla','022_planes_ciclo_cambio','023_alta_con_plan','024_asistente_web','025_perfil']);
+    expect(r.json().migraciones).toEqual(['001_base', '002_operacion', '003_correo_operador', '004_institucional', '005_documentos_pago','006_registro','007_comisiones','008_creacion_asistida','009_legal','010_reembolsos','011_asistente','012_atencion_whatsapp','013_pagos_ventas','014_asistente_acciones','015_soporte_ia','016_numeros','017_asistente_informes','018_avisos','019_propietario','020_soporte_responde','021_guias_en_pantalla','022_planes_ciclo_cambio','023_alta_con_plan','024_asistente_web','025_perfil','026_numero_propio','027_comprobantes_venta','028_numeros_waba_operador','029_ia_autonoma_agenda','030_producto_imagen']);
     expect(r.body).not.toMatch(/sk-ant|secret|token-de/);
   });
   void drain;

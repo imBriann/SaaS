@@ -80,3 +80,11 @@
 @media (prefers-reduced-motion: reduce) {
   .cobro-metodo, .cobro-cambio { transition: none; }
 }
+
+/* ---------------------------------------------------------------- comprobantes de venta y «Próximamente» */
+.tarjeta.proximamente { background: var(--superficie-2); border-style: dashed; box-shadow: none; }
+.tarjeta.proximamente b { color: var(--tinta-2); }
+.leyenda-comprobante { margin: 0; padding: 10px 14px; border-left: 3px solid var(--atencion); background: var(--atencion-tinte); border-radius: var(--r-sm); font-weight: 600; font-size: 14px; line-height: 1.45; color: var(--tinta); }
+details.avanzadas > summary { cursor: pointer; font-weight: 500; min-height: 44px; display: flex; align-items: center; color: var(--tinta-2); }
+details.avanzadas > summary:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+details.avanzadas[open] > summary { border-bottom: 1px solid var(--borde); }

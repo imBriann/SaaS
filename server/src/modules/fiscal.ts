@@ -7,12 +7,20 @@ import { AppError, notFound } from '../lib/errors.js';
 import { isUuid, token, uuidv7 } from '../lib/util.js';
 import { fiscalProvider, type DocumentoFiscalSolicitud } from '../adapters/fiscal.js';
 import { zonaValida } from '../lib/time.js';
+import { config } from '../config.js';
 
 /**
  * Documentos fiscales: entidad con estado propio (PENDIENTE → ENVIADO → VALIDADO →
  * ENTREGADO, con rama RECHAZADO). La emisión es asíncrona y con reintentos: la
  * venta no queda bloqueada esperando al proveedor (PRO-SW-002 fig. 09).
  */
+
+export const MOTIVO_DIAN_PROXIMAMENTE = 'La factura electrónica DIAN estará disponible próximamente. Mientras tanto, genera un comprobante de venta desde el detalle de la venta: es un soporte interno, sin validez fiscal.';
+
+/** Con FACTURACION_DIAN_HABILITADA=0 no se emite, reintenta ni anula nada ante la DIAN (409 «Próximamente»). */
+export function exigirDian() {
+  if (!config.fiscal.dianHabilitada) throw new AppError('CONFLICT', MOTIVO_DIAN_PROXIMAMENTE, { proximamente: true });
+}
 
 async function nextNumber(tx: Tx, tenantId: string): Promise<string> {
   const r = (await tx.query(
@@ -28,6 +36,7 @@ async function nextNumber(tx: Tx, tenantId: string): Promise<string> {
 export async function createInvoiceForOrder(tx: Tx, ctx: Ctx, orderId: string) {
   requirePerm(ctx, 'invoice:issue');
   requireWritable(ctx);
+  exigirDian();
   if (fiscalProvider().nombre === 'ninguno') throw new AppError('CONFLICT', 'La facturación electrónica está pendiente de conectar con un proveedor habilitado por la DIAN.');
   if (!isUuid(orderId)) throw notFound();
   const o = (await tx.query(`SELECT id, total, estado FROM "order" WHERE id=$1 FOR UPDATE`, [orderId])).rows[0];
@@ -50,6 +59,7 @@ export async function createInvoiceForOrder(tx: Tx, ctx: Ctx, orderId: string) {
 export async function createCreditNote(tx: Tx, ctx: Ctx, facturaId: string, motivo: string) {
   requirePerm(ctx, 'invoice:void');
   requireWritable(ctx);
+  exigirDian();
   if (!isUuid(facturaId)) throw notFound();
   const f = (await tx.query(`SELECT id, order_id, estado, total FROM fiscal_document WHERE id=$1 AND tipo='FACTURA'`, [facturaId])).rows[0];
   if (!f) throw notFound();
@@ -72,6 +82,7 @@ export async function createCreditNote(tx: Tx, ctx: Ctx, facturaId: string, moti
 export async function retryDocument(tx: Tx, ctx: Ctx, id: string) {
   requirePerm(ctx, 'invoice:issue');
   requireWritable(ctx);
+  exigirDian();
   if (!isUuid(id)) throw notFound();
   const d = (await tx.query(`SELECT id, estado, intentos FROM fiscal_document WHERE id=$1 FOR UPDATE`, [id])).rows[0];
   if (!d) throw notFound();
@@ -86,7 +97,9 @@ export async function retryDocument(tx: Tx, ctx: Ctx, id: string) {
  * Emisión ante el proveedor (la ejecuta el trabajador). Los datos fiscales del
  * emisor salen SIEMPRE del contexto del tenant, nunca de argumentos (amenaza T7).
  */
-export async function emitDocument(tx: Tx, ctx: Ctx, id: string, motivo?: string): Promise<'VALIDADO' | 'RECHAZADO' | 'REINTENTAR'> {
+export async function emitDocument(tx: Tx, ctx: Ctx, id: string, motivo?: string): Promise<'VALIDADO' | 'RECHAZADO' | 'REINTENTAR' | 'APAGADA'> {
+  // Apagada: el documento queda como estaba y nada sale hacia el proveedor.
+  if (!config.fiscal.dianHabilitada) return 'APAGADA';
   const d = (await tx.query(`SELECT * FROM fiscal_document WHERE id=$1 FOR UPDATE`, [id])).rows[0];
   if (!d || !['PENDIENTE', 'ENVIADO'].includes(d.estado)) return 'VALIDADO';
   const t = (await tx.query(`SELECT nit, nombre, ciudad FROM tenant WHERE id=$1`, [ctx.tenantId])).rows[0];
@@ -143,7 +156,12 @@ export async function listDocuments(tx: Tx, ctx: Ctx) {
   )).rows.map((r) => ({ ...r, total: Number(r.total) }));
   const resumen = (await tx.query(`SELECT estado, count(*)::int AS n FROM fiscal_document GROUP BY estado`)).rows;
   const resolucion = (await tx.query(`SELECT prefijo, numero_desde, numero_hasta, siguiente, resolucion FROM fiscal_resolution`)).rows[0] ?? null;
-  return { documentos: rows, resumen, resolucion, proveedor: fiscalProvider().nombre, validez_fiscal: fiscalProvider().nombre !== 'sandbox' && fiscalProvider().nombre !== 'ninguno' };
+  return {
+    documentos: rows, resumen, resolucion, proveedor: fiscalProvider().nombre,
+    validez_fiscal: config.fiscal.dianHabilitada && fiscalProvider().nombre !== 'sandbox' && fiscalProvider().nombre !== 'ninguno',
+    dian_habilitada: config.fiscal.dianHabilitada,
+    motivo_proximamente: config.fiscal.dianHabilitada ? null : MOTIVO_DIAN_PROXIMAMENTE,
+  };
 }
 
 /** Vista pública de un documento por token (enlace enviado por WhatsApp y correo). */

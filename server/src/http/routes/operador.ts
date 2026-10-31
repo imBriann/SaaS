@@ -6,6 +6,7 @@ import { loadUser } from '../context.js';
 import * as op from '../../modules/operador.js';
 import * as atencion from '../../modules/operadorAtencion.js';
 import * as reembolsos from '../../modules/reembolsos.js';
+import * as numerosWaba from '../../numeros/plataforma.js';
 
 /**
  * Rutas del panel interno de Omnegia (/api/operador/*).
@@ -57,6 +58,18 @@ export async function registerOperatorRoutes(app: FastifyInstance, db: Database)
 
   r('GET', '/integraciones', (o) => op.estadoIntegraciones(db, o));
   r('POST', '/empresas/:id/whatsapp/verificar', (o, req) => atencion.verificarWhatsappEmpresa(db, o, req.params.id));
+
+  // Números de la WABA de Omnegia: lista en vivo de Meta, asignación a empresas y registro en la Cloud API.
+  r('GET', '/numeros', (o) => numerosWaba.listar(db, o));
+  r('GET', '/numeros/empresas', (o, req) => numerosWaba.buscarEmpresas(db, o, req.query?.q));
+  r('POST', '/numeros', (o, req) => numerosWaba.agregar(db, o, req.body));
+  r('POST', '/numeros/:id/asignar', (o, req) => numerosWaba.asignar(db, o, req.params.id, req.body));
+  r('POST', '/numeros/:id/desasignar', (o, req) => numerosWaba.desasignar(db, o, req.params.id));
+  r('POST', '/numeros/:id/registrar', (o, req) => numerosWaba.registrar(db, o, req.params.id));
+  r('POST', '/numeros/:id/codigo', (o, req) => numerosWaba.enviarCodigo(db, o, req.params.id, req.body));
+  r('POST', '/numeros/:id/verificar', (o, req) => numerosWaba.verificarCodigo(db, o, req.params.id, req.body));
+  r('POST', '/numeros/:id/pin', (o, req) => numerosWaba.verPin(db, o, req.params.id, req.body));
+  r('POST', '/numeros/:id/desregistrar', (o, req) => numerosWaba.desregistrar(db, o, req.params.id, req.body));
 
   // WhatsApp de Omnegia: bandeja, detalle y acciones (cada una auditada).
   r('GET', '/conversaciones', (o, req) => atencion.listarConversaciones(db, o, req.query));

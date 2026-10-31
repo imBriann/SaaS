@@ -38,14 +38,14 @@ export function calcularValores(total: number, responsableIva: '1' | '0' | null,
   return { total, base: null, iva: null, ivaPct: null, regimen: 'PENDIENTE' };
 }
 
-const COLOR = { marca: MARCA.colorPrimario, tinta: MARCA.colorTexto, tenue: '#5B6475', borde: '#E3E6EC', fondo: '#F6F7FB', aviso: '#8A5A00', avisoFondo: '#FDF4DF', ok: '#1D6B40', okFondo: '#E5F2EA' };
+export const COLOR = { marca: MARCA.colorPrimario, tinta: MARCA.colorTexto, tenue: '#5B6475', borde: '#E3E6EC', fondo: '#F6F7FB', aviso: '#8A5A00', avisoFondo: '#FDF4DF', ok: '#1D6B40', okFondo: '#E5F2EA' };
 const RUTA_LOGO = join(dirname(fileURLToPath(import.meta.url)), '../../assets/omnegia-logo.png');
 const LOGO = existsSync(RUTA_LOGO) ? readFileSync(RUTA_LOGO) : null;
 
-const fechaHora = (d: Date) => d.toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+export const fechaHora = (d: Date) => d.toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
 const fecha = (d: Date) => d.toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'long', year: 'numeric' });
 /** Pesos con centavos solo cuando los hay (p. ej. la base y el IVA de un precio con IVA incluido). */
-const pesos = (n: number) => (Number.isInteger(n) ? `${cop(n)} COP` : `$${n.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP`);
+export const pesos = (n: number) => (Number.isInteger(n) ? `${cop(n)} COP` : `$${n.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} COP`);
 
 export async function generarPdf(d: DatosComprobante, contrasena: string): Promise<Buffer> {
   if (!contrasena) throw new Error('Falta la contraseña del PDF');

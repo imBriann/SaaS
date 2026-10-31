@@ -22,6 +22,12 @@ export const ProductInput = z.object({
   stock_minimo: z.number().min(0).default(0),
   sku: z.string().max(40).optional().nullable(),
   activo: z.boolean().default(true),
+  // Agenda del servicio (029): tiempo de preparación antes y después, quién lo presta, segundo recurso y repetición.
+  buffer_antes_min: z.number().int().min(0).max(240).optional(),
+  buffer_despues_min: z.number().int().min(0).max(240).optional(),
+  recursos_permitidos: z.array(z.uuid()).max(30).nullable().optional(),
+  recursos_secundarios: z.array(z.uuid()).max(30).nullable().optional(),
+  repetir_cada_semanas: z.number().int().min(1).max(104).nullable().optional(),
 });
 export type ProductData = z.infer<typeof ProductInput>;
 
@@ -30,10 +36,15 @@ const mapP = (r: any) => ({ ...r, precio: Number(r.precio), iva_pct: Number(r.iv
 export async function listProducts(tx: Tx, ctx: Ctx, opts: { soloActivos?: boolean } = {}) {
   requirePerm(ctx, 'catalog:read');
   const { rows } = await tx.query(
-    `SELECT id, tipo, nombre, categoria, precio, moneda, iva_pct, duracion_min, controla_stock, stock, stock_minimo, sku, activo
+    `SELECT id, tipo, nombre, categoria, precio, moneda, iva_pct, duracion_min, controla_stock, stock, stock_minimo, sku, activo,
+            buffer_antes_min, buffer_despues_min, recursos_permitidos, recursos_secundarios, repetir_cada_semanas
      FROM product WHERE eliminado_en IS NULL ${opts.soloActivos ? 'AND activo' : ''} ORDER BY categoria NULLS LAST, nombre`,
   );
-  return rows.map(mapP);
+  // Imagen principal ACTIVA (miniatura) para la cuadrícula del punto de venta y el catálogo.
+  const imagenes = new Map((await tx.query(`SELECT DISTINCT ON (product_id) product_id, id FROM producto_imagen WHERE estado='ACTIVA' ORDER BY product_id, orden, creado_en`)).rows
+    .map((r: any) => [r.product_id, `/api/t/catalogo/imagenes/${r.id}/archivo?min=1`]));
+  const pendientes = new Set((await tx.query(`SELECT DISTINCT product_id FROM producto_imagen WHERE estado='PENDIENTE_APROBACION'`)).rows.map((r: any) => r.product_id));
+  return rows.map((r) => ({ ...mapP(r), imagen: imagenes.get(r.id) ?? null, imagenes_pendientes: pendientes.has(r.id) }));
 }
 
 export async function getProduct(tx: Tx, ctx: Ctx, id: string) {
@@ -64,9 +75,11 @@ export async function findProductsByName(tx: Tx, texto: string) {
 export async function insertProduct(tx: Tx, ctx: Ctx, d: ProductData) {
   const id = uuidv7();
   await tx.query(
-    `INSERT INTO product (id, tenant_id, tipo, nombre, categoria, precio, iva_pct, duracion_min, controla_stock, stock, stock_minimo, sku, activo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-    [id, ctx.tenantId, d.tipo, d.nombre, d.categoria ?? null, d.precio, d.iva_pct, d.duracion_min ?? null, d.controla_stock, d.stock, d.stock_minimo, d.sku ?? null, d.activo],
+    `INSERT INTO product (id, tenant_id, tipo, nombre, categoria, precio, iva_pct, duracion_min, controla_stock, stock, stock_minimo, sku, activo,
+       buffer_antes_min, buffer_despues_min, recursos_permitidos, recursos_secundarios, repetir_cada_semanas)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+    [id, ctx.tenantId, d.tipo, d.nombre, d.categoria ?? null, d.precio, d.iva_pct, d.duracion_min ?? null, d.controla_stock, d.stock, d.stock_minimo, d.sku ?? null, d.activo,
+      d.buffer_antes_min ?? 0, d.buffer_despues_min ?? 0, d.recursos_permitidos?.length ? d.recursos_permitidos : null, d.recursos_secundarios?.length ? d.recursos_secundarios : null, d.repetir_cada_semanas ?? null],
   );
   return id;
 }

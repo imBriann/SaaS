@@ -2,7 +2,14 @@ import { z } from 'zod';
 import type { Tx } from '../db/index.js';
 import type { Ctx } from '../core/context.js';
 import type { Permiso } from '../core/permissions.js';
-import { availability, cancelAppointmentCore, customerAppointments, insertAppointment } from '../modules/agenda.js';
+import { alternatives, availability, cancelAppointmentCore, customerAppointments, insertAppointment, ListaEsperaInput, moverCita, unirseListaEspera } from '../modules/agenda.js';
+import { addMessage } from '../modules/conversations.js';
+import { ajustesIA } from './politica.js';
+import { AppError } from '../lib/errors.js';
+import { evaluarMensaje } from './escalamiento.js';
+import { escalarPorRegla } from './escalar.js';
+import { urlPublica } from '../modules/imagenes.js';
+import { ventanaAbierta } from '../modules/conversations.js';
 import { createProduct, findProductsByName, lowStock, updateProduct } from '../modules/catalog.js';
 import { insertOrder } from '../modules/orders.js';
 import { escalate } from '../modules/conversations.js';
@@ -13,6 +20,7 @@ import { cop } from '../lib/util.js';
 import { createPaymentLink } from '../modules/payments.js';
 import { cobradoPorMetodo } from '../modules/pagosVentas.js';
 import { GUIAS, IDS_GUIA } from './guias.js';
+import { delCliente as comprobantesDelCliente, reenviar as reenviarComprobante } from '../modules/comprobantes.js';
 
 /**
  * Registro de herramientas (PRO-SW-002 fig. 07a y contrato §7.1).
@@ -52,6 +60,8 @@ export interface ToolDef<A extends z.ZodType = z.ZodType> {
   limitePorConversacion?: number;
   /** Requiere que exista un cliente de conversación (herramientas de atención). */
   requiereCliente?: boolean;
+  /** Monto de la acción (ventas), para la política de aprobación del modo SUPERVISADO. */
+  monto?: (a: z.infer<A>, rt: ToolRuntime) => Promise<number>;
   /** Texto legible para pedir confirmación al humano. */
   resumen?: (a: z.infer<A>, rt: ToolRuntime) => Promise<string>;
   run: (a: z.infer<A>, rt: ToolRuntime) => Promise<Record<string, unknown>>;
@@ -70,13 +80,13 @@ function def<A extends z.ZodType>(d: ToolDef<A>): ToolDef<A> { return d; }
  */
 export const TEMAS_AYUDA = ['facturacion', 'agenda', 'catalogo', 'usuarios', 'ia', 'suscripcion', 'whatsapp', 'cobros', 'conversaciones'] as const;
 export const AYUDA: Record<(typeof TEMAS_AYUDA)[number], string> = {
-  facturacion: 'La factura electrónica de cada venta se ve en el detalle de la venta y en Facturación. Si la DIAN la rechaza, corrige el dato del cliente (por ejemplo, el NIT) desde su ficha en Clientes y pulsa «Volver a enviar». Una factura validada no se borra ni se edita: se anula con «Anular» en el detalle de la venta, que emite la nota crédito. Mientras no haya un proveedor autorizado por la DIAN conectado, los documentos son de prueba y no tienen validez fiscal.',
+  facturacion: 'La factura electrónica DIAN llegará más adelante («Próximamente»). Mientras tanto, en el detalle de una venta confirmada pulsa «Generar comprobante»: es un comprobante de venta para entregarle a tu cliente y llevar tu registro, NO una factura electrónica ni tiene validez ante la DIAN (lo dice el propio documento). En Comprobantes ves todos, los descargas, los reenvías por correo o WhatsApp, los exportas como libro de ventas y los anulas con motivo (un comprobante anulado no se borra). El prefijo, el régimen de IVA y los datos que salen en el PDF se ajustan en Configuración › Comprobantes.',
   agenda: 'En Agenda ves el día por persona o espacio (vistas «Por horas» y «Lista»). Con «Nueva cita» agendas en una franja libre; al tocar una cita puedes confirmarla, reprogramarla, marcarla como atendida o «No asistió», o cancelarla. Las citas que agendó el asistente de WhatsApp llevan la marca IA. Los horarios de atención se ajustan en Configuración › Horarios.',
   catalogo: 'En Catálogo (menú de la izquierda) creas productos y servicios con «Nuevo ítem» y los cambias con «Editar». Para cargar muchos a la vez usa «Importar» en esa misma pantalla, con un archivo .xlsx o .csv (allí hay una plantilla de ejemplo); revisas las filas antes de guardar. Los precios incluyen IVA. Un ítem que ya no ofreces se desactiva con la casilla «Activo» al editarlo: no se borra. La sección «Por revisar» señala ítems con datos incompletos. Si tu rol puede editar el catálogo, también puedo crear o editar ítems por ti: te muestro el cambio y tú lo confirmas antes de guardar.',
   usuarios: 'En Configuración › Equipo y comisiones, en «Personas con acceso», invitas a alguien con «Invitar» y eliges su rol; ahí mismo cambias el rol, decides quién recibe radicados o retiras el acceso. La tabla «Qué puede hacer cada rol» muestra los permisos de cada rol.',
   ia: 'En Centro de IA activas o apagas cada asistente y cada acción que pueden hacer, ves su actividad reciente y las acciones bloqueadas, y fijas un «Límite de gasto de IA» si quieres un tope menor que el de tu plan. Cada acción queda con su recibo en Auditoría.',
   suscripcion: 'En Suscripción ves el estado, el periodo y el consumo del mes; pagas o renuevas con Wompi (no hay cobros automáticos) y descargas los comprobantes en «Documentos de tus pagos». Si la suscripción se suspende, tu equipo conserva la lectura y la exportación de los datos.',
-  whatsapp: 'En Configuración › WhatsApp registras el identificador del número (Phone number ID, que Meta muestra junto a tu número) y pulsas «Probar conexión». Tus clientes escriben a ese número; el asistente responde y, si hace falta, pasa la conversación a una persona con un radicado. Tu equipo responde siempre desde Conversaciones.',
+  whatsapp: 'En «Número de WhatsApp» eliges «Usar mi propio número»: escribes el número, recibes un código por SMS o llamada y queda conectado, sin entrar a Meta ni copiar identificadores. Ahí ves el estado, pruebas la conexión enviando un mensaje a un celular y desconectas el número. Comprar un número nuevo y conectar tu propia cuenta de WhatsApp Business llegarán más adelante. Tus clientes escriben a ese número; el asistente responde y, si hace falta, pasa la conversación a una persona con un radicado. Tu equipo responde siempre desde Conversaciones.',
   cobros: 'Al registrar una venta eliges cómo se pagó (efectivo, transferencia o datáfono) o la dejas por cobrar. En efectivo escribes lo que entregó el cliente y se calcula el cambio; no se registran abonos: la venta se paga completa. Una venta por cobrar se paga después desde su detalle con «Registrar pago», y con tu cuenta de Wompi vinculada puedes enviar un «Enlace de pago». Un pago registrado por error se anula con motivo (queda en el historial). Los métodos se activan en Configuración › Cobros y el resumen del día está en Ventas, en «Caja del día».',
   conversaciones: 'En Conversaciones ves los chats de WhatsApp de tus clientes, quién atiende cada uno (la IA o una persona) y sus radicados. Al responder tomas la conversación y la IA deja de contestar; con «Devolver a la IA» vuelve a atender. Las notas internas solo las ve tu equipo. Si el soporte de Omnegia necesita revisar una conversación, quien administra la empresa puede compartirla por un tiempo con «Compartir con soporte».',
 };
@@ -114,13 +124,18 @@ export const TOOLS: ToolDef<any>[] = [
       const zona = await tz(tx);
       const f = a.fecha ?? todayLocal(zona);
       const slots = await availability(tx, a.servicio_id, f, a.recurso_id ?? null, 12, a.desde ?? null);
-      return { fecha: f, fecha_texto: formatFechaLarga(f), franjas: slots.map((s) => ({ inicio: s.inicio, hora: s.hora, recurso_id: s.recurso_id, recurso: s.recurso })) };
+      // Sin cupo ese día: los 3 huecos más cercanos, no una lista larga.
+      const cercanas = slots.length ? [] : await alternatives(tx, a.servicio_id, new Date(`${f}T${a.desde ?? '12:00'}:00-05:00`), a.recurso_id ?? null, 3);
+      return {
+        fecha: f, fecha_texto: formatFechaLarga(f), franjas: slots.map((s) => ({ inicio: s.inicio, hora: s.hora, recurso_id: s.recurso_id, recurso: s.recurso })),
+        ...(cercanas.length ? { sin_cupo_ese_dia: true, mas_cercanas: cercanas.map((s) => ({ inicio: s.inicio, fecha: formatFechaLarga(s.fecha!), hora: s.hora, recurso_id: s.recurso_id, recurso: s.recurso })) } : {}),
+      };
     },
   }),
   def({
     nombre: 'crear_cita', version: '1.0.0', modulo: 'agenda',
-    descripcion: 'Reserva un turno para el cliente de esta conversación en una franja libre (usa el "inicio" exacto devuelto por consultar_disponibilidad).',
-    args: z.object({ servicio_id: uuid, inicio: z.iso.datetime({ offset: true }), recurso_id: uuid.optional() }).strict(),
+    descripcion: 'Reserva un turno para el cliente de esta conversación en una franja libre (usa el "inicio" exacto devuelto por consultar_disponibilidad). Si el cliente ya dijo servicio, día y hora exactos, úsala de una vez: el sistema decide si hace falta su confirmación. En "notas" pon lo útil para el negocio (nombre de la mascota, a nombre de quién).',
+    args: z.object({ servicio_id: uuid, inicio: z.iso.datetime({ offset: true }), recurso_id: uuid.optional(), notas: z.string().max(200).optional() }).strict(),
     permiso: 'appointment:create', riesgo: 'confirmable', efectos: ['escribe appointment', 'emite evento cita_creada'],
     reversiblePor: 'cancelar_cita', limitePorConversacion: 3, requiereCliente: true,
     resumen: async (a, { tx }) => {
@@ -130,9 +145,35 @@ export const TOOLS: ToolDef<any>[] = [
       return `Cita de ${p?.nombre ?? 'servicio'} (${cop(Number(p?.precio ?? 0))}) el ${formatFechaLarga(l.fecha)} a las ${l.hora}${r ? ` con ${r.nombre}` : ''}`;
     },
     run: async (a, { tx, ctx, customerId }) => {
-      const r = await insertAppointment(tx, ctx, { customer_id: customerId!, product_id: a.servicio_id, resource_id: a.recurso_id ?? null, inicio: a.inicio }, 'AGENTE');
+      const r = await insertAppointment(tx, ctx, { customer_id: customerId!, product_id: a.servicio_id, resource_id: a.recurso_id ?? null, inicio: a.inicio, notas: a.notas ?? null }, 'AGENTE');
       const l = utcToLocal(new Date(r.inicio), await tz(tx));
-      return { appointment_id: r.id, servicio: r.servicio, recurso: r.recurso, fecha: formatFechaLarga(l.fecha), hora: l.hora };
+      return { appointment_id: r.id, servicio: r.servicio, recurso: r.recurso, fecha: formatFechaLarga(l.fecha), hora: l.hora, estado: r.estado };
+    },
+  }),
+  def({
+    nombre: 'reprogramar_cita', version: '1.0.0', modulo: 'agenda',
+    descripcion: 'Mueve una cita próxima del cliente de esta conversación a otra franja libre (usa el "inicio" exacto de consultar_disponibilidad). Respeta la política de horas del negocio.',
+    args: z.object({ cita_id: uuid, inicio: z.iso.datetime({ offset: true }), recurso_id: uuid.optional() }).strict(),
+    permiso: 'appointment:create', riesgo: 'confirmable', efectos: ['actualiza appointment', 'emite evento cita_reprogramada'], limitePorConversacion: 3, requiereCliente: true,
+    resumen: async (a, { tx }) => {
+      const l = utcToLocal(new Date(a.inicio), await tz(tx));
+      return `Mover tu cita al ${formatFechaLarga(l.fecha)} a las ${l.hora}`;
+    },
+    // Solo citas del propio cliente: una cita de otra persona es «no encontrada».
+    run: async (a, { tx, ctx, customerId }) => {
+      const r = await moverCita(tx, ctx, a.cita_id, { inicio: a.inicio, resource_id: a.recurso_id ?? null }, { soloCliente: customerId!, origen: 'AGENTE' });
+      return { appointment_id: r.id, servicio: r.servicio, fecha: r.fecha, hora: r.hora, recurso: r.recurso };
+    },
+  }),
+  def({
+    nombre: 'unirse_lista_espera', version: '1.0.0', modulo: 'agenda',
+    descripcion: 'Anota al cliente en la lista de espera de un servicio cuando no hay cupo en las fechas que quiere. Si se libera un cupo, se le ofrece por este chat.',
+    args: z.object({ servicio_id: uuid, desde: fecha, hasta: fecha, franjas: z.array(z.enum(['MANANA', 'TARDE', 'NOCHE'])).min(1).max(3).optional() }).strict(),
+    permiso: 'appointment:create', riesgo: 'reversible', efectos: ['escribe lista_espera'], limitePorConversacion: 2, requiereCliente: true,
+    run: async (a, { tx, ctx, customerId }) => {
+      const d = ListaEsperaInput.parse({ customer_id: customerId, product_id: a.servicio_id, desde: a.desde, hasta: a.hasta, franjas: a.franjas });
+      const r = await unirseListaEspera(tx, ctx, d);
+      return { anotado: true, servicio: r.servicio, ya_estaba: r.existente };
     },
   }),
   def({
@@ -169,10 +210,14 @@ export const TOOLS: ToolDef<any>[] = [
   }),
   def({
     nombre: 'registrar_venta', version: '1.0.0', modulo: 'ventas',
-    descripcion: 'Registra una venta de productos o servicios al cliente de esta conversación. La factura electrónica se emite automáticamente.',
+    descripcion: 'Registra una venta de productos o servicios al cliente de esta conversación. El cliente la confirma con «SÍ»; si el negocio revisa las ventas grandes, queda en revisión.',
     args: z.object({ items: z.array(z.object({ producto_id: uuid, cantidad: z.number().int().positive().max(20) }).strict()).min(1).max(10) }).strict(),
     permiso: 'order:create', riesgo: 'confirmable', efectos: ['escribe order', 'descuenta inventario', 'emite evento venta_registrada'],
     limitePorConversacion: 2, requiereCliente: true,
+    monto: async (a, { tx }) => {
+      const ps = (await tx.query(`SELECT id, precio FROM product WHERE id = ANY($1::uuid[])`, [a.items.map((i: any) => i.producto_id)])).rows;
+      return a.items.reduce((s: number, i: any) => s + Number(ps.find((p: any) => p.id === i.producto_id)?.precio ?? 0) * i.cantidad, 0);
+    },
     resumen: async (a, { tx }) => {
       const ps = (await tx.query(`SELECT id, nombre, precio FROM product WHERE id = ANY($1::uuid[])`, [a.items.map((i: any) => i.producto_id)])).rows;
       let total = 0;
@@ -212,14 +257,85 @@ export const TOOLS: ToolDef<any>[] = [
     }),
   }),
   def({
+    nombre: 'consultar_comprobantes', version: '1.0.0', modulo: 'ventas',
+    descripcion: 'Comprobantes de venta de las compras recientes del cliente con el que conversas (número, venta, total y si está vigente o anulado). Un comprobante de venta NO es una factura electrónica: no lo presentes como factura.',
+    args: z.object({}).strict(),
+    permiso: 'comprobante:read', riesgo: 'lectura', efectos: [], requiereCliente: true,
+    run: async (_a, { tx, customerId }) => ({ comprobantes: await comprobantesDelCliente(tx, customerId!), aviso: 'Documento no válido como factura electrónica de venta ante la DIAN.' }),
+  }),
+  def({
+    nombre: 'reenviar_comprobante', version: '1.0.0', modulo: 'ventas',
+    descripcion: 'Reenvía al cliente con el que conversas uno de SUS comprobantes de venta, por este chat de WhatsApp (o a su correo registrado). No genera ni anula comprobantes: eso lo hace una persona del negocio desde el panel.',
+    args: z.object({ comprobante_id: uuid, canal: z.enum(['WHATSAPP', 'CORREO']).default('WHATSAPP') }).strict(),
+    permiso: 'comprobante:send', riesgo: 'reversible', efectos: ['envía un mensaje o un correo al cliente', 'escribe comprobante_venta.entregas'], limitePorConversacion: 3, requiereCliente: true,
+    // Un comprobante de otro cliente o de otra empresa responde «no encontrado» (el Gateway lo registra);
+    // fuera de la ventana de 24 horas el error explica que no se puede enviar.
+    run: async (a, { tx, ctx, customerId }) => {
+      const r = await reenviarComprobante(tx, ctx, a.comprobante_id, { canal: a.canal }, { soloCliente: customerId });
+      return { enviado: true, numero: r.numero, canal: r.canal };
+    },
+  }),
+  def({
     nombre: 'escalar_a_humano', version: '1.0.0', modulo: 'conversaciones',
-    descripcion: 'Transfiere la conversación a una persona del equipo. Úsala para reclamos, reembolsos o lo que no puedas resolver.',
+    descripcion: 'Sugiere pasar la conversación a una persona. Solo procede si el cliente lo pidió, hay una queja fuerte, un tema de pagos o reembolsos, una urgencia o ya fallaste varias veces; si no, el sistema anota el pendiente para el negocio y sigues atendiendo tú.',
     args: z.object({ motivo: z.string().min(3).max(300), prioridad: z.enum(['BAJA', 'MEDIA', 'ALTA', 'URGENTE']).default('MEDIA') }).strict(),
     permiso: 'case:create', riesgo: 'reversible', efectos: ['crea support_case', 'cede el control a una persona'], limitePorConversacion: 1,
     run: async (a, { tx, ctx, conversationId }) => {
       if (!conversationId) return { error: 'sin_conversacion' };
-      const r = await escalate(tx, ctx, conversationId, a.motivo, a.prioridad);
-      return { radicado: r.radicado, escalado: true };
+      const aj = await ajustesIA(tx);
+      const t = (await tx.query(`SELECT nombre, sector FROM tenant LIMIT 1`)).rows[0];
+      if (aj.autonomia === 'ASESOR') {
+        const r = await escalate(tx, ctx, conversationId, a.motivo, a.prioridad);
+        return { radicado: r.radicado, escalado: true };
+      }
+      // El modelo sugiere; la regla decide. Se evalúa el último mensaje del cliente y el motivo propuesto.
+      const ultimo = (await tx.query(`SELECT contenido FROM message WHERE conversation_id=$1 AND remitente='CUSTOMER' ORDER BY creado_en DESC LIMIT 1`, [conversationId])).rows[0]?.contenido ?? '';
+      const contexto = { reglas: aj.reglas_escalamiento, sector: t?.sector ?? 'general', palabrasUrgencia: aj.palabras_urgencia };
+      const regla = evaluarMensaje(ultimo, contexto);
+      const fallos = Number((await tx.query(
+        `SELECT count(*)::int AS n FROM ai_execution WHERE conversation_id=$1 AND decision IN ('ERROR','DENEGADA')
+           AND creado_en > coalesce((SELECT max(cerrado_en) FROM support_case WHERE conversation_id=$1), '-infinity'::timestamptz)`, [conversationId])).rows[0].n);
+      const e = regla ?? (fallos >= 3 && aj.reglas_escalamiento.includes('SIN_SOLUCION') ? { regla: 'SIN_SOLUCION' as const, prioridad: 'ALTA' as const, motivo: `La IA falló ${fallos} veces: ${a.motivo}` } : null);
+      if (!e) {
+        await addMessage(tx, ctx, { conversation_id: conversationId, remitente: 'SYSTEM', tipo: 'NOTA_INTERNA', contenido: `Pendiente para el negocio (la IA sigue atendiendo): ${a.motivo}`, metadatos: { pendiente: true, sugerido_por_ia: true } });
+        return { escalado: false, pendiente_anotado: true, instruccion: 'No se pasó a una persona: ninguna regla de escalamiento aplica. Di con honestidad lo que no sabes, ofrece lo que sí puedes hacer y cuéntale que el negocio verá su pendiente.' };
+      }
+      const r = await escalarPorRegla(tx, ctx, conversationId, e, t?.nombre ?? 'el negocio');
+      return { radicado: r.radicado, escalado: true, regla: e.regla, mensaje_para_el_cliente: r.mensaje };
+    },
+  }),
+  def({
+    nombre: 'enviar_imagen_producto', version: '1.0.0', modulo: 'catalogo',
+    descripcion: 'Envía al cliente de esta conversación la foto de un producto o servicio del catálogo (usa el id de consultar_catalogo o consultar_precio) cuando pregunta por él o pide verlo.',
+    args: z.object({ producto_id: uuid }).strict(),
+    permiso: 'catalog:read', riesgo: 'reversible', efectos: ['envía una imagen por WhatsApp'], limitePorConversacion: 4, requiereCliente: true,
+    run: async (a, { tx, ctx, conversationId }) => {
+      if (!conversationId) return { error: 'sin_conversacion' };
+      // Solo imágenes ACTIVA del propio negocio (la RLS limita al tenant): una pendiente de aprobación nunca sale.
+      const img = (await tx.query(
+        `SELECT i.ruta_archivo, i.url, p.nombre FROM producto_imagen i JOIN product p ON p.id=i.product_id
+         WHERE i.product_id=$1 AND i.estado='ACTIVA' AND p.eliminado_en IS NULL ORDER BY i.orden, i.creado_en LIMIT 1`, [a.producto_id])).rows[0];
+      if (!img) {
+        const existe = (await tx.query(`SELECT 1 FROM product WHERE id=$1 AND eliminado_en IS NULL`, [a.producto_id])).rows[0];
+        if (!existe) throw new AppError('NOT_FOUND', 'no_encontrado');
+        return { enviada: false, motivo: 'Ese producto todavía no tiene foto.' };
+      }
+      const v = (await tx.query(`SELECT canal, ultimo_mensaje_cliente_en FROM conversation WHERE id=$1`, [conversationId])).rows[0];
+      if (v?.canal === 'WHATSAPP' && !ventanaAbierta(v.ultimo_mensaje_cliente_en)) return { enviada: false, motivo: 'Fuera de la ventana de 24 horas: WhatsApp no permite enviar la imagen.' };
+      const enlace = urlPublica(img);
+      await addMessage(tx, ctx, { conversation_id: conversationId, remitente: 'AI', tipo: 'MEDIA', contenido: img.nombre, metadatos: { imagen: enlace, producto: a.producto_id, media: { tipo: 'image', leyenda: img.nombre } } });
+      return { enviada: true, producto: img.nombre };
+    },
+  }),
+  def({
+    nombre: 'anotar_pendiente', version: '1.0.0', modulo: 'conversaciones',
+    descripcion: 'Deja anotado para el negocio algo que no puedes resolver ahora (sin pasarle la conversación a una persona). Úsala cuando no tengas la información o la herramienta.',
+    args: z.object({ pendiente: z.string().min(5).max(400) }).strict(),
+    permiso: 'case:create', riesgo: 'reversible', efectos: ['escribe una nota interna'], limitePorConversacion: 3,
+    run: async (a, { tx, ctx, conversationId }) => {
+      if (!conversationId) return { error: 'sin_conversacion' };
+      await addMessage(tx, ctx, { conversation_id: conversationId, remitente: 'SYSTEM', tipo: 'NOTA_INTERNA', contenido: `Pendiente para el negocio: ${a.pendiente}`, metadatos: { pendiente: true } });
+      return { anotado: true };
     },
   }),
   // ---- Asistente del negocio (panel) ----------------------------------------

@@ -22,7 +22,7 @@ const codigo = fuentes(WEB).map((p) => readFileSync(p, 'utf8')).join('\n');
 
 describe('Catálogo de guías (web ↔ servidor)', () => {
   it('las dos listas tienen exactamente las mismas guías', () => {
-    const web = [...catalogoWeb.matchAll(/^ {2}([a-z_]+): \{\n {4}titulo:/gm)].map((m) => m[1]).sort();
+    const web = [...catalogoWeb.matchAll(/^ {2}([a-z_]+): \{\r?\n {4}titulo:/gm)].map((m) => m[1]).sort();
     expect(web).toEqual([...IDS_GUIA].sort());
   });
 

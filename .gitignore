@@ -5,3 +5,5 @@ server/data/
 *.log
 server/.buzon-dev/
 tmp/
+.env.*
+!.env.example

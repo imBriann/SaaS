@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { setup, login, api, CRED, type Env } from './helpers.js';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+import { setup, login, api, CRED, diaLaborable, type Env } from './helpers.js';
 import { drain, runJobsOnce } from '../src/worker/jobs.js';
 import { receiveChannelMessages } from '../src/modules/channelInbound.js';
 import { signMeta, setChannelAdapter, type ChannelAdapter, type PlantillaEnvio } from '../src/adapters/channel.js';
@@ -219,9 +219,12 @@ describe('Agente de IA ante fallos y concurrencia', () => {
   });
 
   it('si la franja se ocupa entre la propuesta y el «sí», no hay doble reserva y se ofrecen alternativas', async () => {
+    // La confirmación del cliente existe en el modo ASESOR (en AUTOMATICO una cita con datos explícitos no espera «SÍ»).
+    await E.db.withPlatform((tx) => tx.query(`UPDATE ia_ajustes SET autonomia='ASESOR' WHERE tenant_id=$1`, [E.A]));
+    onTestFinished(() => E.db.withPlatform((tx) => tx.query(`UPDATE ia_ajustes SET autonomia='AUTOMATICO' WHERE tenant_id=$1`, [E.A])).then(() => undefined));
     const from = '573208880011';
     await wa(from, 'hola'); await wa(from, 'sí');
-    await wa(from, 'quiero una cita de corte clásico pasado mañana a las 10');
+    await wa(from, `quiero una cita de corte clásico el ${diaLaborable().nombre} a las 10`);
     const v = await conv(from);
     const pend = await E.db.withTenant(E.A, async (tx) => (await tx.query(`SELECT argumentos FROM pending_action WHERE conversation_id=$1 AND estado='PENDIENTE'`, [v.id])).rows[0]);
     expect(pend).toBeTruthy();

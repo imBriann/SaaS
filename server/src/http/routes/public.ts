@@ -18,6 +18,8 @@ import * as documentos from '../../documentos/servicio.js';
 import { parseWhatsAppWebhook, verifyMetaSignature } from '../../adapters/channel.js';
 import { receiveChannelMessages, receiveDeliveryStatuses } from '../../modules/channelInbound.js';
 import { publicDocumentData } from '../../modules/fiscal.js';
+import { pdfPublico } from '../../modules/comprobantes.js';
+import { archivoPublico } from '../../modules/imagenes.js';
 import { procesarEventoComercio, procesarEventoPago, verificarRetorno } from '../../modules/billing.js';
 import { ofertaAlta, resumenModalidad } from '../../onboarding/oferta.js';
 import * as auth from '../../modules/auth.js';
@@ -276,6 +278,21 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   });
 
   // ------------------------------------------------------------------ documento fiscal público
+  // Imágenes ACTIVA del catálogo por URL pública https (WhatsApp las descarga por enlace). Rutas aleatorias.
+  app.get('/api/publico/imagenes/*', async (req: any, reply) => {
+    const datos = await archivoPublico(db, String(req.params['*'] ?? ''));
+    if (!datos) return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'No encontramos eso.' } });
+    return reply.type('image/webp').header('cache-control', 'public, max-age=86400').header('x-content-type-options', 'nosniff').send(datos);
+  });
+
+  // Comprobante de venta (QR del PDF y botón del correo): token aleatorio, sin sesión. Sin validez fiscal.
+  app.get('/api/publico/comprobantes/:tk', async (req: any, reply) => {
+    const r = await db.withPlatform((tx) => pdfPublico(tx, String(req.params.tk)));
+    reply.header('x-robots-tag', 'noindex').header('cache-control', 'private, no-store');
+    if (!r) return reply.status(404).type('text/html; charset=utf-8').send('<!doctype html><meta charset="utf-8"><p style="font-family:system-ui;padding:24px">No encontramos ese comprobante.</p>');
+    return reply.type('application/pdf').header('content-disposition', `inline; filename="${r.nombre}"`).send(r.archivo);
+  });
+
   app.get('/api/publico/documentos/:tk', async (req: any, reply) => {
     const data = await db.withPlatform((tx) => publicDocumentData(tx, String(req.params.tk)));
     reply.header('x-robots-tag', 'noindex');

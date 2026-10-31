@@ -6,6 +6,8 @@ import { api, cop, descargar, descargarDocumentos, fecha, fechaHora, hora, num }
 import { Cabecera, Escritura, useSesion } from '../../components/Layout';
 import { accionIA, Campo, Cargando, Cifra, Confirmar, ErrorCarga, Estado, Interruptor, Medidor, Modal, motivoIA, Recibo, Tarjeta, useAccion, useApi, useToast, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
+import { TarjetaFacturaDian } from '../../components/Proximamente';
+import { ComoTrabaja } from '../../components/ComoTrabaja';
 
 const NOMBRE_AGENTE: Record<string, string> = { atencion: 'Atención por WhatsApp', asistente: 'Asistente del panel', copiloto: 'Copiloto del asesor' };
 const DESCRIPCION_AGENTE: Record<string, string> = {
@@ -94,7 +96,7 @@ export function CentroIA() {
 // =================================================================== Configuración
 const DIAS: [string, string][] = [['lun', 'Lunes'], ['mar', 'Martes'], ['mie', 'Miércoles'], ['jue', 'Jueves'], ['vie', 'Viernes'], ['sab', 'Sábado'], ['dom', 'Domingo']];
 const ZONAS = ['America/Bogota', 'America/Mexico_City', 'America/Lima', 'America/Guayaquil', 'America/Caracas', 'America/Santiago', 'America/Argentina/Buenos_Aires', 'America/Panama', 'America/New_York', 'Europe/Madrid'];
-const TABS: [string, string][] = [['personas', 'Equipo y comisiones'], ['equipo', 'Horarios'], ['empresa', 'Empresa'], ['canal', 'WhatsApp'], ['cobros', 'Cobros'], ['modulos', 'Módulos'], ['integraciones', 'Integraciones']];
+const TABS: [string, string][] = [['personas', 'Equipo y comisiones'], ['equipo', 'Horarios'], ['empresa', 'Empresa'], ['asistente', 'Cómo trabaja tu asistente'], ['canal', 'WhatsApp'], ['cobros', 'Cobros'], ['comprobantes', 'Comprobantes'], ['modulos', 'Módulos'], ['integraciones', 'Integraciones']];
 
 /**
  * Propiedad de la empresa. El propietario está por encima de los administradores: nadie más le cambia
@@ -229,7 +231,7 @@ export function Configuracion() {
             <Tarjeta titulo="Datos de la empresa">
               <form className="col" onSubmit={(e) => { e.preventDefault(); guardarEmpresa({ nombre: empresa.nombre, nit: empresa.nit || null, ciudad: empresa.ciudad || null, email_contacto: empresa.email_contacto, telefono: empresa.telefono || null, zona_horaria: empresa.zona_horaria }); }}>
                 {campo('nombre', 'Nombre comercial')}
-                {campo('nit', 'NIT con dígito de verificación', { ayuda: 'se usa en tus facturas', input: { placeholder: '901456789-3' } })}
+                {campo('nit', 'NIT con dígito de verificación', { ayuda: 'opcional', input: { placeholder: '901456789-3' } })}
                 {campo('ciudad', 'Ciudad')}
                 {campo('email_contacto', 'Correo de avisos', { ayuda: 'recibe alertas de facturas, inventario y suscripción', input: { type: 'email' } })}
                 {campo('telefono', 'Teléfono')}
@@ -250,8 +252,10 @@ export function Configuracion() {
           </div>
         )}
 
-        {tab === 'canal' && <CanalWhatsApp data={data} onCambio={() => { recargar(); recargarSesion(); }} guardarEmpresa={guardarEmpresa} />}
+        {tab === 'canal' && <CanalWhatsApp data={data} simuladores={!!s.simuladores} onCambio={() => { recargar(); recargarSesion(); }} guardarEmpresa={guardarEmpresa} />}
         {tab === 'cobros' && <Cobros data={data} onCambio={recargar} />}
+        {tab === 'comprobantes' && <AjustesComprobantes />}
+        {tab === 'asistente' && <ComoTrabaja />}
 
         {tab === 'integraciones' && (
           <Tarjeta titulo="Estado de las integraciones" sinCuerpo>
@@ -304,46 +308,98 @@ function EditarHorario({ r, etiqueta, onCerrar, onHecho }: { r: any; etiqueta: s
   );
 }
 
-function CanalWhatsApp({ data, onCambio, guardarEmpresa }: { data: any; onCambio: () => void; guardarEmpresa: (c: Record<string, unknown>, ok?: string) => Promise<any> }) {
+/** Texto simple del estado del número (el detalle técnico de Meta no se muestra a la empresa). */
+const ESTADO_CANAL: Record<string, string> = {
+  CONECTADO: 'Conectado', SIMULADO: 'Conectado (simulación)', PENDIENTE_REGISTRO: 'Necesita atención', PENDIENTE_VERIFICAR: 'Comprobando…',
+  ERROR: 'Necesita atención', DESCONECTADO: 'Desconectado', SIN_CONFIGURAR: 'Sin conectar',
+};
+
+function CanalWhatsApp({ data, simuladores, onCambio, guardarEmpresa }: { data: any; simuladores: boolean; onCambio: () => void; guardarEmpresa: (c: Record<string, unknown>, ok?: string) => Promise<any> }) {
   const t = data.tenant;
-  const [pid, setPid] = useState(t.whatsapp_phone_number_id ?? '');
+  const [pid, setPid] = useState(String(t.whatsapp_phone_number_id ?? '').startsWith('sim-') ? t.whatsapp_phone_number_id : '');
   const [diag, setDiag] = useState<any>(null);
   const { run, ocupado } = useAccion();
-  const toast = useToast();
   const verificar = async () => { const r = await run(() => api.post('/api/t/configuracion/whatsapp/verificar')); if (r) { setDiag(r); onCambio(); } };
-  const d = diag ?? t.whatsapp_diagnostico;
+  const conectado = ['CONECTADO', 'SIMULADO'].includes(t.whatsapp_estado);
+  const diagOk = diag && ['CONECTADO', 'SIMULADO'].includes(diag.estado);
   return (
     <div className="col" style={{ gap: 16 }}>
-      <div className="grid g2">
-        <Tarjeta titulo="Número de WhatsApp" acciones={<Estado v={t.whatsapp_estado} texto={{ CONECTADO: 'Conectado', SIMULADO: 'Simulador', PENDIENTE_VERIFICAR: 'Por verificar', ERROR: 'Con error', SIN_CONFIGURAR: 'Sin configurar' }[t.whatsapp_estado as string]} />}>
-          <form className="col" onSubmit={async (e) => { e.preventDefault(); const r = await guardarEmpresa({ whatsapp_phone_number_id: pid.trim() || null }, 'Número guardado. Lo estamos verificando con Meta.'); if (r) setDiag(null); }}>
-            {t.whatsapp_numero_visible && <span>Número de tus clientes: <b>{t.whatsapp_numero_visible}</b></span>}
-            <Campo etiqueta="Identificador del número (Phone number ID)" ayuda="NO es el número de teléfono: es el código que Meta muestra junto a él"><input className="input mono" inputMode="numeric" value={pid} onChange={(e) => setPid(e.target.value.trim())} placeholder="Ej.: 106540352242922" /></Campo>
-            <div className="fila envolver" style={{ gap: 8 }}>
-              <Escritura permiso="tenant:configure"><button className="btn primario" disabled={ocupado || pid === (t.whatsapp_phone_number_id ?? '')}>Guardar</button></Escritura>
-              {t.whatsapp_phone_number_id && <Escritura permiso="tenant:configure"><button type="button" className="btn" disabled={ocupado} onClick={verificar}>Probar conexión</button></Escritura>}
-            </div>
-            {d && <div className={d.ok ? 'aviso exito' : 'bloqueado'} role="status"><Icon n={d.ok ? 'ok' : 'alerta'} className="" size={16} /><span>{d.ok ? `Meta respondió: ${d.numero ?? ''} ${d.nombre ? `(${d.nombre})` : ''}${d.calidad ? ` · calidad ${String(d.calidad).toLowerCase()}` : ''}` : d.error ?? d.mensaje}{d.comprobado && <span className="tenue peq-txt"> · {fechaHora(d.comprobado)}</span>}</span></div>}
-          </form>
-        </Tarjeta>
-        <Tarjeta titulo="Datos para configurar en Meta">
-          <div className="col" style={{ gap: 10 }}>
-            <span className="sec peq-txt">En el panel de desarrolladores de Meta (WhatsApp › Configuración), registra este webhook y suscríbete al campo <b>messages</b>.</span>
-            <Campo etiqueta="URL del webhook"><span className="fila"><input className="input mono" readOnly value={data.webhook_whatsapp} onFocus={(e) => e.target.select()} /><button type="button" className="btn peq" onClick={() => navigator.clipboard?.writeText(data.webhook_whatsapp).then(() => toast('URL copiada'))}>Copiar</button></span></Campo>
-            <span className="tenue peq-txt">El token de verificación lo define quien administra el servidor (variable WHATSAPP_VERIFY_TOKEN). Cada mensaje entrante se acepta solo si trae la firma válida de Meta.</span>
+      <Tarjeta titulo="Número de WhatsApp" acciones={<Estado v={conectado ? 'CONECTADO' : t.whatsapp_estado} texto={ESTADO_CANAL[t.whatsapp_estado as string] ?? 'Sin conectar'} />}>
+        <div className="col" style={{ gap: 12 }}>
+          {conectado && t.whatsapp_numero_visible
+            ? <span>Tus clientes te escriben al <b>{t.whatsapp_numero_visible}</b>{t.whatsapp_diagnostico?.nombre ? <> · {t.whatsapp_diagnostico.nombre}</> : null}.</span>
+            : <span className="sec">Conecta tu número desde una sola pantalla: escribes el número, recibes un código por SMS y queda conectado a tu asistente de IA. No necesitas entrar a Meta ni copiar identificadores.</span>}
+          {t.whatsapp_estado === 'PENDIENTE_REGISTRO' && <div className="aviso" role="note"><Icon n="alerta" className="" size={16} /><span>Tu número está verificado pero falta activarlo en WhatsApp. El equipo de Omnegia ya puede hacerlo; si en unas horas sigue así, escribe a soporte.</span></div>}
+          <div className="fila envolver" style={{ gap: 8 }}>
+            <Link to="/whatsapp/numero" className="btn primario">{conectado ? 'Gestionar el número' : 'Conectar WhatsApp'}</Link>
+            {t.whatsapp_phone_number_id && <Escritura permiso="tenant:configure"><button type="button" className="btn" disabled={ocupado} onClick={verificar}>Comprobar estado</button></Escritura>}
           </div>
-        </Tarjeta>
-      </div>
-      {t.whatsapp_estado !== 'CONECTADO' && (
-        <Link to="/whatsapp/numero" className="aviso enlace-bloque" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <Icon n="telefono" className="" size={16} />
-          <span><b>¿No tienes un número para WhatsApp Business?</b> Contrata uno desde Omnegia: eliges el número, ves el precio antes de pagar y lo dejamos conectado a tu asistente.</span>
-        </Link>
+          {diag && <div className={diagOk ? 'aviso exito' : 'aviso'} role="status"><Icon n={diagOk ? 'ok' : 'alerta'} className="" size={16} /><span>{diag.mensaje}</span></div>}
+        </div>
+      </Tarjeta>
+      {simuladores && (
+        <details className="tarjeta avanzadas">
+          <summary className="cuerpo">Opciones avanzadas (demostración)</summary>
+          <form className="cuerpo col" onSubmit={async (e) => { e.preventDefault(); const r = await guardarEmpresa({ whatsapp_phone_number_id: pid.trim() || null }, pid.trim() ? 'Número de simulación vinculado.' : 'Número de simulación quitado.'); if (r) setDiag(null); }}>
+            <span className="tenue peq-txt">Solo en el entorno de demostración: vincula un número de simulación (sim-…) para probar el asistente con el Simulador. Los números reales se conectan con «Usar mi propio número».</span>
+            <Campo etiqueta="Número de simulación"><input className="input mono" value={pid} onChange={(e) => setPid(e.target.value.trim())} placeholder={`sim-${data.tenant.slug ?? 'mi-negocio'}`} /></Campo>
+            <Escritura permiso="tenant:configure"><button className="btn" style={{ alignSelf: 'flex-start' }} disabled={ocupado || (pid !== '' && !pid.startsWith('sim-'))}>Guardar</button></Escritura>
+          </form>
+        </details>
       )}
       <Tarjeta titulo="Plantillas de mensajes" sinCuerpo>
         <p className="cuerpo sec peq-txt">Fuera de las 24 horas siguientes al último mensaje del cliente, WhatsApp solo entrega plantillas aprobadas. Crea cada una en el administrador de WhatsApp de Meta con el mismo texto y marca aquí su nombre cuando Meta la apruebe.</p>
         <div className="lista">{data.plantillas.map((p: any) => <Plantilla key={p.clave} p={p} onCambio={onCambio} />)}</div>
       </Tarjeta>
+    </div>
+  );
+}
+
+/** Configuración › Comprobantes: prefijo del consecutivo, régimen de IVA y datos que salen en el PDF. */
+function AjustesComprobantes() {
+  const { data, error, recargar } = useApi<any>(() => api.get('/api/t/comprobantes/ajustes'), []);
+  const [f, setF] = useState<any>(null);
+  const { run, ocupado } = useAccion();
+  useEffect(() => {
+    if (data) setF({ auto_al_vender: !!data.auto_al_vender, prefijo: data.prefijo, regimen_iva: data.regimen_iva, nombre_comercial: data.nombre_comercial ?? '', documento: data.documento ?? '', direccion: data.direccion ?? '', telefono: data.telefono ?? '', correo: data.correo ?? '', pie: data.pie ?? '' });
+  }, [data]);
+  if (error) return <ErrorCarga error={error} reintentar={recargar} />;
+  if (!data || !f) return <div className="tarjeta"><Cargando filas={6} /></div>;
+  const set = (k: string) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const guardar = async (e: FormEvent) => { e.preventDefault(); const r = await run(() => api.patch('/api/t/comprobantes/ajustes', f), 'Ajustes del comprobante guardados'); if (r) recargar(); };
+  return (
+    <div className="grid g2" style={{ alignItems: 'start' }}>
+      <Tarjeta titulo="Comprobante de venta">
+        <form className="col" onSubmit={guardar}>
+          <Campo etiqueta="Prefijo del consecutivo" ayuda={`el siguiente será ${f.prefijo || 'CV'}-${String(data.siguiente).padStart(6, '0')}`}><input className="input mono" maxLength={6} value={f.prefijo} onChange={(e) => setF({ ...f, prefijo: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') })} /></Campo>
+          <Campo etiqueta="¿Tu negocio es responsable de IVA?" ayuda="solo si lo es, el comprobante separa la base y el IVA">
+            <select className="input" value={f.regimen_iva} onChange={set('regimen_iva')}>
+              <option value="PENDIENTE">No lo he definido (total sin desglose)</option>
+              <option value="NO_RESPONSABLE">No soy responsable de IVA (total sin desglose)</option>
+              <option value="RESPONSABLE">Sí, soy responsable de IVA (muestra base e IVA)</option>
+            </select>
+          </Campo>
+          <Campo etiqueta="Nombre comercial" ayuda="opcional"><input className="input" value={f.nombre_comercial} placeholder={data.sugerido.nombre_comercial ?? ''} onChange={set('nombre_comercial')} /></Campo>
+          <Campo etiqueta="NIT o cédula" ayuda="opcional"><input className="input" value={f.documento} placeholder={data.sugerido.documento ?? ''} onChange={set('documento')} /></Campo>
+          <Campo etiqueta="Dirección" ayuda="opcional"><input className="input" value={f.direccion} onChange={set('direccion')} /></Campo>
+          <div className="grid g2">
+            <Campo etiqueta="Teléfono" ayuda="opcional"><input className="input" value={f.telefono} placeholder={data.sugerido.telefono ?? ''} onChange={set('telefono')} /></Campo>
+            <Campo etiqueta="Correo" ayuda="opcional"><input className="input" type="email" value={f.correo} placeholder={data.sugerido.correo ?? ''} onChange={set('correo')} /></Campo>
+          </div>
+          <label className="fila" style={{ gap: 8 }}><input type="checkbox" checked={!!f.auto_al_vender} onChange={(e) => setF({ ...f, auto_al_vender: e.target.checked })} />Generar el comprobante automáticamente al registrar una venta en «Vender»</label>
+          <Campo etiqueta="Texto al pie" ayuda="por ejemplo, tu política de cambios"><textarea className="input" rows={3} maxLength={600} value={f.pie} onChange={set('pie')} /></Campo>
+          <Escritura permiso="tenant:configure"><button className="btn primario" style={{ alignSelf: 'flex-start' }} disabled={ocupado || !f.prefijo}>Guardar</button></Escritura>
+        </form>
+      </Tarjeta>
+      <div className="col" style={{ gap: 16 }}>
+        <Tarjeta titulo="Qué es el comprobante">
+          <div className="col" style={{ gap: 10 }}>
+            <span className="sec">Es el documento que le entregas a tu cliente y que te sirve para llevar tu propio registro de ventas. <b>No es una factura electrónica</b>: todos los comprobantes llevan esta leyenda, que no se puede quitar:</span>
+            <blockquote className="leyenda-comprobante">{data.leyenda}</blockquote>
+          </div>
+        </Tarjeta>
+        <TarjetaFacturaDian motivo={data.factura_dian?.motivo} />
+      </div>
     </div>
   );
 }
@@ -590,8 +646,10 @@ export function NumeroContratado() {
   const { data } = useApi<any>(() => api.get('/api/t/numeros/contratacion'), []);
   const c = data?.contratacion && data.contratacion.estado !== 'CANCELADO' ? data.contratacion : null;
   return (
-    <Tarjeta titulo="Número de WhatsApp" acciones={<Link className="btn peq" to="/whatsapp/numero">{c ? 'Gestionar' : 'Contratar un número'}</Link>}>
-      {c ? (
+    <Tarjeta titulo="Número de WhatsApp" acciones={<Link className="btn peq" to="/whatsapp/numero">{c ? 'Gestionar' : 'Conectar WhatsApp'}</Link>}>
+      {c?.origen === 'PROPIO' ? (
+        <p className="sec">Usas tu propio número (<span className="mono">{c.numero}</span>). Conectarlo no tiene mensualidad en Omnegia; Meta cobra aparte las plantillas que envíes.</p>
+      ) : c ? (
         <>
           <dl className="plan-def">
             <div><dt>Número</dt><dd className="mono">{c.numero}</dd></div>

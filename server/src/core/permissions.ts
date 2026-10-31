@@ -25,6 +25,10 @@ export const PERMISOS = {
   'invoice:read': 'Consultar documentos fiscales',
   'invoice:issue': 'Emitir facturas electrónicas',
   'invoice:void': 'Emitir notas crédito',
+  'comprobante:read': 'Consultar comprobantes de venta',
+  'comprobante:issue': 'Generar comprobantes de venta (soporte interno, sin validez fiscal)',
+  'comprobante:send': 'Reenviar comprobantes de venta al cliente',
+  'comprobante:void': 'Anular comprobantes de venta',
   'ai:read': 'Ver el Centro de IA',
   'ai:configure': 'Configurar herramientas y políticas de IA',
   'ai:assist': 'Usar el copiloto',
@@ -48,6 +52,8 @@ export const PERMISOS_PROHIBIDOS_A_AGENTES: Permiso[] = [
   'subscription:manage', 'ai:configure', 'order:void', 'platform:govern',
   // Que un pago se recibió lo afirma una persona o la pasarela, nunca un agente de IA.
   'payment:register', 'payment:void',
+  // Generar o anular un comprobante de venta es de una persona, desde el panel.
+  'comprobante:issue', 'comprobante:void',
 ];
 
 export const TODOS_LOS_PERMISOS_DE_TENANT = (Object.keys(PERMISOS) as Permiso[]).filter(

@@ -1,4 +1,5 @@
 import type { Clasificacion } from './classifier.js';
+import { config } from '../config.js';
 
 /**
  * Tabla de reglas determinista (D-01, ADR-06): el modelo clasifica; el CÓDIGO
@@ -75,7 +76,8 @@ interface Regla {
 export const REGLAS: Regla[] = [
   { id: 'R-01', plan: 'pro', cuando: (c) => c.volumen_conv_mes === 'alto', explicacion: 'Más de 1.500 conversaciones al mes requieren la cuota y la política de excedente del plan Pro.' },
   { id: 'R-02', plan: 'pro', cuando: (c) => c.tamano === 'mas_15' || c.tamano === '6_15', explicacion: 'Con más de 5 personas en el equipo necesitas los usuarios del plan Pro.' },
-  { id: 'R-03', plan: 'negocio', cuando: (c) => c.factura_electronica === true, explicacion: 'Necesitas factura electrónica ante la DIAN, que se incluye desde el plan Negocio.' },
+  // Con la facturación DIAN apagada la respuesta se guarda como interés para el futuro: no sube el plan.
+  { id: 'R-03', plan: 'negocio', cuando: (c) => c.factura_electronica === true && config.fiscal.dianHabilitada, explicacion: 'Necesitas factura electrónica ante la DIAN, que se incluye desde el plan Negocio.' },
   { id: 'R-04', plan: 'negocio', cuando: (c) => c.modulos_sugeridos.includes('inventario'), explicacion: 'Manejas inventario de productos, disponible desde el plan Negocio.' },
   { id: 'R-05', plan: 'negocio', cuando: (c) => c.volumen_conv_mes === 'medio', explicacion: 'Entre 300 y 1.500 conversaciones al mes caben en la cuota del plan Negocio.' },
   { id: 'R-06', plan: 'negocio', cuando: (c) => c.tamano === '2_5' && c.modulos_sugeridos.length > 5, explicacion: 'Un equipo de 2 a 5 personas con varios módulos encaja en el plan Negocio.' },
