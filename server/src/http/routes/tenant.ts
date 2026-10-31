@@ -16,6 +16,7 @@ import * as catalog from '../../modules/catalog.js';
 import * as agenda from '../../modules/agenda.js';
 import * as iaAutonoma from '../../modules/iaAutonoma.js';
 import * as imagenes from '../../modules/imagenes.js';
+import * as busquedaImagenes from '../../modules/busquedaImagenes.js';
 import * as aprobaciones from '../../ai/aprobaciones.js';
 import { avisar } from '../../modules/proactivo.js';
 import { formatFechaLarga, utcToLocal } from '../../lib/time.js';
@@ -163,8 +164,12 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('get', '/catalogo/productos/:id/imagenes', (tx, ctx, req) => imagenes.listar(tx, ctx, req.params.id));
   app.route({ method: 'POST', url: '/api/t/catalogo/productos/:id/imagenes', preHandler: guard, bodyLimit: Math.ceil(config.imagenes.maxBytes * 1.4) + 4096,
     handler: (req, reply) => T((tx, ctx, rq) => imagenes.subir(tx, ctx, rq.params.id, rq.body))(req, reply) });
-  rx('post', '/catalogo/productos/:id/imagenes/buscar', (ctx, req) => imagenes.buscarConIA(db, ctx, req.params.id));
-  rx('post', '/catalogo/imagenes/completar', (ctx) => imagenes.completarFaltantes(db, ctx));
+  // Búsqueda con IA como proceso: se inicia, se consulta el estado y se confirma qué agregar.
+  r('post', '/catalogo/productos/:id/imagenes/buscar', (tx, ctx, req) => busquedaImagenes.iniciar(tx, ctx, req.params.id, req.body));
+  r('get', '/catalogo/imagenes/busquedas/:id', (tx, ctx, req) => busquedaImagenes.consultar(tx, ctx, req.params.id));
+  r('post', '/catalogo/imagenes/busquedas/:id/agregar', (tx, ctx, req) => busquedaImagenes.agregar(tx, ctx, req.params.id, req.body));
+  r('post', '/catalogo/imagenes/completar', (tx, ctx) => busquedaImagenes.completarFaltantes(tx, ctx));
+  r('get', '/catalogo/imagenes/lotes/:id', (tx, ctx, req) => busquedaImagenes.consultarLote(tx, ctx, req.params.id));
   r('post', '/catalogo/imagenes/:id/aprobar', (tx, ctx, req) => imagenes.aprobar(tx, ctx, req.params.id));
   r('delete', '/catalogo/imagenes/:id', (tx, ctx, req) => imagenes.eliminar(tx, ctx, req.params.id));
   r('get', '/catalogo/imagenes/:id/archivo', async (tx, ctx, req, reply) => {

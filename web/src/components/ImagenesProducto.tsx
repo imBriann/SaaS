@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { api } from '../api';
 import { Escritura } from './Layout';
 import { Cargando, useAccion, useApi, useToast } from './ui';
 import { Icon } from './icons';
+import { ProcesoBusqueda } from './BusquedaImagenes';
 
 /**
  * Fotos de un producto: subir (JPG, PNG o WebP; se guarda sin metadatos de ubicación), buscar con IA y aprobar las
@@ -23,14 +24,16 @@ export function ImagenesProducto({ productId }: { productId: string }) {
     const r = await run(async () => api.post(`/api/t/catalogo/productos/${productId}/imagenes`, { base64: await leerBase64(f), nombre: f.name }), 'Imagen agregada');
     if (r) recargar();
   };
-  const buscar = async () => { const r = await run(() => api.post(`/api/t/catalogo/productos/${productId}/imagenes/buscar`)); if (r) { toast(r.mensaje); recargar(); } };
+  const [buscando, setBuscando] = useState(0);
+  const entrada = useRef<HTMLInputElement>(null);
   const imagenes: any[] = data?.imagenes ?? [];
   return (
     <section className="img-producto" aria-label="Fotos del producto">
       <div className="fila entre envolver" style={{ gap: 6 }}>
         <b className="peq-txt">Fotos</b>
-        <Escritura permiso="catalog:write"><button type="button" className="btn peq" disabled={ocupado} onClick={buscar}><Icon n="ia" className="" size={14} />{ocupado ? 'Buscando…' : 'Buscar imagen con IA'}</button></Escritura>
+        <Escritura permiso="catalog:write"><button type="button" className="btn peq" disabled={ocupado || buscando > 0} onClick={() => setBuscando(Date.now())}><Icon n="ia" className="" size={14} />Buscar imagen con IA</button></Escritura>
       </div>
+      {buscando > 0 && <ProcesoBusqueda key={buscando} productId={productId} onCerrar={() => setBuscando(0)} onCambio={recargar} onSubir={() => entrada.current?.click()} />}
       {!data ? <Cargando filas={1} /> : (
         <div className="img-rejilla">
           {imagenes.map((i) => (
@@ -52,7 +55,7 @@ export function ImagenesProducto({ productId }: { productId: string }) {
             <label className={`img-subir ${arrastrando ? 'on' : ''}`} onDragOver={(e) => { e.preventDefault(); setArrastrando(true); }} onDragLeave={() => setArrastrando(false)}
               onDrop={(e) => { e.preventDefault(); setArrastrando(false); subir(e.dataTransfer.files?.[0]); }}>
               <Icon n="subir" className="" size={18} /><span className="peq-txt">Arrastra o elige una foto</span>
-              <input type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(e) => { subir(e.target.files?.[0]); e.target.value = ''; }} />
+              <input ref={entrada} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(e) => { subir(e.target.files?.[0]); e.target.value = ''; }} />
             </label>
           </Escritura>
         </div>
