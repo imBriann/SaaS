@@ -10,6 +10,8 @@ import { aPesos, calcularLinea, sumarLineas } from '../lib/money.js';
 import { registerMovement } from './catalog.js';
 import { createCreditNote } from './fiscal.js';
 import { config } from '../config.js';
+import { zonaDe } from '../core/tenant.js';
+import { addDays, rangoDia, todayLocal } from '../lib/time.js';
 import { deVenta, emitir as emitirComprobante } from './comprobantes.js';
 import { anularPagosDeVenta, metodosDePago, PagoInput, pagosDeVenta, registrarPago } from './pagosVentas.js';
 
@@ -20,6 +22,7 @@ export const OrderInput = z.object({
     product_id: z.uuid(),
     cantidad: z.number().positive('La cantidad debe ser mayor que cero.').max(1000),
     descuento_pct: z.number().min(0).max(100, 'El descuento no puede superar el 100 %.').optional(),
+    nota: z.string().trim().max(200, 'La nota de la línea admite hasta 200 letras.').optional().nullable(),
   })).min(1, 'Agrega al menos un producto o servicio.').max(50),
   appointment_id: z.uuid().optional().nullable(),
   /** Pago recibido en el mismo momento (mostrador). Sin él, la venta queda por cobrar. */
@@ -53,7 +56,7 @@ export async function insertOrder(
     const p: any = byId.get(i.product_id);
     if (p.tipo === 'SERVICIO' && !Number.isInteger(i.cantidad)) throw invalid(`La cantidad de «${p.nombre}» debe ser un número entero.`);
     const c = calcularLinea({ precioUnitario: Number(p.precio), cantidad: i.cantidad, ivaPct: Number(p.iva_pct), descuentoPct: i.descuento_pct ?? 0 });
-    return { p, cantidad: i.cantidad, descuentoPct: i.descuento_pct ?? 0, c };
+    return { p, cantidad: i.cantidad, descuentoPct: i.descuento_pct ?? 0, nota: i.nota || null, c };
   });
   const tot = sumarLineas(lineas.map((l) => l.c));
   if (tot.total <= 0) throw invalid('El total de la venta debe ser mayor que cero.');
@@ -64,8 +67,8 @@ export async function insertOrder(
   );
   for (const l of lineas) {
     await tx.query(
-      `INSERT INTO order_item (id, tenant_id, order_id, product_id, descripcion, cantidad, precio_unit, iva_pct, total, descuento_pct, descuento) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [uuidv7(), ctx.tenantId, id, l.p.id, l.p.nombre, l.cantidad, Number(l.p.precio), Number(l.p.iva_pct), aPesos(l.c.total), l.descuentoPct, aPesos(l.c.descuento)],
+      `INSERT INTO order_item (id, tenant_id, order_id, product_id, descripcion, cantidad, precio_unit, iva_pct, total, descuento_pct, descuento, nota) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [uuidv7(), ctx.tenantId, id, l.p.id, l.p.nombre, l.cantidad, Number(l.p.precio), Number(l.p.iva_pct), aPesos(l.c.total), l.descuentoPct, aPesos(l.c.descuento), l.nota],
     );
     if (l.p.controla_stock) {
       await registerMovement(tx, ctx, { product_id: l.p.id, tipo: 'SALIDA', cantidad: l.cantidad, motivo: `Venta #${numero}`, order_id: id }, { skipPerm: true });
@@ -119,7 +122,7 @@ export async function createOrder(tx: Tx, ctx: Ctx, input: unknown) {
 
 const ESTADOS_FISCALES = ['PENDIENTE', 'ENVIADO', 'VALIDADO', 'RECHAZADO', 'ENTREGADO', 'SIN_FACTURA'];
 
-export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: string; q?: string; pagina?: number; por_pagina?: number; pago?: string; metodo?: string; comprobante?: string } = {}) {
+export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: string; q?: string; pagina?: number; por_pagina?: number; pago?: string; metodo?: string; comprobante?: string; periodo?: string; origen?: string } = {}) {
   requirePerm(ctx, 'order:read');
   const where = ['o.eliminado_en IS NULL'];
   const params: unknown[] = [];
@@ -137,6 +140,15 @@ export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: st
     params.push(filtros.metodo);
     where.push(`EXISTS (SELECT 1 FROM order_payment p WHERE p.order_id=o.id AND p.estado='REGISTRADO' AND p.metodo=$${params.length})`);
   }
+  // Período en la zona horaria de la empresa: hoy, últimos 7 días (con hoy) o desde el día 1 del mes.
+  if (filtros.periodo && ['hoy', 'semana', 'mes'].includes(filtros.periodo)) {
+    const zona = await zonaDe(tx);
+    const hoy = todayLocal(zona);
+    const inicio = filtros.periodo === 'hoy' ? hoy : filtros.periodo === 'semana' ? addDays(hoy, -6) : `${hoy.slice(0, 8)}01`;
+    params.push(rangoDia(inicio, zona).desde.toISOString());
+    where.push(`o.creado_en >= $${params.length}`);
+  }
+  if (filtros.origen === 'AGENTE' || filtros.origen === 'PANEL') { params.push(filtros.origen); where.push(`o.origen = $${params.length}`); }
   const q = (filtros.q ?? '').trim().slice(0, 80);
   if (q) {
     params.push(`%${q.replace(/^#/, '')}%`);
@@ -148,7 +160,13 @@ export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: st
   const base = `FROM "order" o JOIN customer c ON c.id=o.customer_id
      LEFT JOIN LATERAL (SELECT estado, numero, proveedor_fiscal FROM fiscal_document fd WHERE fd.order_id=o.id AND fd.tipo='FACTURA' ORDER BY creado_en DESC LIMIT 1) f ON true
      WHERE ${where.join(' AND ')}`;
-  const total = (await tx.query(`SELECT count(*)::int AS n ${base}`, params)).rows[0].n;
+  // Totales de TODO el filtro (no solo de la página): ventas vigentes, lo vendido y lo que falta por cobrar.
+  const tot = (await tx.query(
+    `SELECT count(*)::int AS n, count(*) FILTER (WHERE o.estado='CONFIRMADA')::int AS vigentes,
+            coalesce(sum(o.total) FILTER (WHERE o.estado='CONFIRMADA'),0)::float AS vendido,
+            coalesce(sum(o.total) FILTER (WHERE o.estado='CONFIRMADA' AND o.estado_pago <> 'PAGADA'),0)::float AS por_cobrar
+     ${base}`, params)).rows[0];
+  const total = tot.n;
   const rows = (await tx.query(
     `SELECT o.id, o.numero, o.estado, o.origen, o.total, o.descuento, o.estado_pago, o.creado_en, c.nombre AS cliente,
             f.estado AS estado_fiscal, f.numero AS documento, f.proveedor_fiscal,
@@ -158,7 +176,7 @@ export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: st
      ${base} ORDER BY o.creado_en DESC LIMIT ${porPagina} OFFSET ${(pagina - 1) * porPagina}`,
     params,
   )).rows;
-  return { ventas: rows.map((r) => ({ ...r, total: Number(r.total), descuento: Number(r.descuento) })), total, pagina, por_pagina: porPagina, factura_dian: config.fiscal.dianHabilitada };
+  return { ventas: rows.map((r) => ({ ...r, total: Number(r.total), descuento: Number(r.descuento) })), total, totales: { vigentes: tot.vigentes, vendido: tot.vendido, por_cobrar: tot.por_cobrar }, pagina, por_pagina: porPagina, factura_dian: config.fiscal.dianHabilitada };
 }
 
 export async function getOrderDetail(tx: Tx, ctx: Ctx, id: string) {
@@ -168,7 +186,7 @@ export async function getOrderDetail(tx: Tx, ctx: Ctx, id: string) {
     `SELECT o.*, c.nombre AS cliente, c.telefono, c.email, c.tipo_documento, c.numero_documento
      FROM "order" o JOIN customer c ON c.id=o.customer_id WHERE o.id=$1 AND o.eliminado_en IS NULL`, [id])).rows[0];
   if (!o) throw notFound();
-  const items = (await tx.query(`SELECT descripcion, cantidad, precio_unit, iva_pct, total, descuento_pct, descuento FROM order_item WHERE order_id=$1`, [id])).rows
+  const items = (await tx.query(`SELECT descripcion, cantidad, precio_unit, iva_pct, total, descuento_pct, descuento, nota FROM order_item WHERE order_id=$1`, [id])).rows
     .map((i) => ({ ...i, cantidad: Number(i.cantidad), precio_unit: Number(i.precio_unit), iva_pct: Number(i.iva_pct), total: Number(i.total), descuento_pct: Number(i.descuento_pct), descuento: Number(i.descuento) }));
   const documentos = (await tx.query(
     `SELECT id, tipo, numero, estado, cufe, motivo_rechazo, total, entrega_whatsapp, entrega_email, token_publico, intentos, creado_en, validado_en, proveedor_fiscal

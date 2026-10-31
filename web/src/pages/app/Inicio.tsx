@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { LayoutGroup } from 'motion/react';
 import { api, cop, fechaLarga, hace, hora, hoyLocal } from '../../api';
 import { Cabecera, useSesion } from '../../components/Layout';
-import { CicloFiscal, ErrorCarga, Estado, Medidor, Mensaje, Recibo, useApi, Vacio, type TipoMensaje } from '../../components/ui';
+import { ErrorCarga, Estado, Medidor, Mensaje, Recibo, useApi, Vacio, type TipoMensaje } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import { ThinkingOrb } from 'thinking-orbs';
 import { useConstruccion, useListoParaConstruir } from '../../components/construccion/Construccion';
@@ -74,9 +74,9 @@ export function Inicio() {
               {ver('order:read') && <Construible i={sig()} etiqueta="Últimos pagos"><UltimosPagos pagos={data.pagos_recientes} /></Construible>}
               <PreguntaNegocio i={sig()} />
               {ver('conversation:read') && <Construible i={sig()} className="ancho-2" etiqueta="Hilo en vivo"><HiloVivo hilo={data.hilo} /></Construible>}
-              {data.fiscal && <Construible i={sig()} etiqueta="Ciclo fiscal de hoy"><Cab titulo="Ciclo fiscal de hoy" accion={<Link to="/facturacion" className="btn sutil peq">Facturación</Link>} /><CicloFiscal conteos={data.fiscal} /></Construible>}
+              {ver('order:read') && data.ventas_hoy && <Construible i={sig()} etiqueta="Ventas de hoy"><Cab titulo="Ventas de hoy" accion={<Link to="/ventas" className="btn sutil peq">Ver ventas</Link>} /><VentasHoy v={data.ventas_hoy} /></Construible>}
               {data.consumo && <Construible i={sig()} etiqueta="Consumo del plan"><Cab titulo="Consumo del plan" accion={<Link to="/suscripcion" className="btn sutil peq">Detalle</Link>} />
-                <div className="col" style={{ gap: 14 }}><Medidor c={data.consumo.tokens_ia} etiqueta="IA" /><Medidor c={data.consumo.mensajes} etiqueta="Mensajes" /><Medidor c={data.consumo.documentos} etiqueta="Documentos fiscales" /></div></Construible>}
+                <div className="col" style={{ gap: 14 }}><Medidor c={data.consumo.tokens_ia} etiqueta="IA" /><Medidor c={data.consumo.mensajes} etiqueta="Mensajes" />{s.factura_dian && <Medidor c={data.consumo.documentos} etiqueta="Documentos fiscales" />}</div></Construible>}
             </div>
           </LayoutGroup>
         )}
@@ -113,6 +113,20 @@ function Stat({ icono, moneda, etiqueta, valor, pie, grafica, a }: { icono?: str
 
 function Tile({ icono, etiqueta, valor, pie }: { icono: string; etiqueta: string; valor: number; pie: string }) {
   return <Stat icono={icono} etiqueta={etiqueta} valor={<Cuenta valor={valor} />} pie={pie} />;
+}
+
+/** Ventas de hoy: cuántas, cuánto, comprobantes generados y las que cerró la IA por WhatsApp. */
+function VentasHoy({ v }: { v: { n: number; total: number; comprobantes: number; ia: number } }) {
+  return (
+    <div className="col" style={{ gap: 10 }}>
+      <b className="tv-cifra"><Cuenta valor={v.total} formato={cop} /></b>
+      <ul className="tv-ventas-hoy" style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 4 }}>
+        <li><b>{v.n}</b> {v.n === 1 ? 'venta' : 'ventas'} hoy</li>
+        <li><b>{v.comprobantes}</b> {v.comprobantes === 1 ? 'comprobante generado' : 'comprobantes generados'}</li>
+        <li><b>{v.ia}</b> {v.ia === 1 ? 'venta hecha' : 'ventas hechas'} por la IA</li>
+      </ul>
+    </div>
+  );
 }
 
 function VendidoMes({ d }: { d: any }) {
@@ -297,7 +311,7 @@ function Personalizado({ p }: { p: any }) {
       <div><span className="workspace-personalized-tag"><Icon n="ia" size={14} className="" />Preparado por la IA para {s.tenant.nombre}</span><p>{p.descripcion}</p>
         {Array.isArray(p.prioridades) && <ul>{p.prioridades.slice(0, 3).map((x: any, i: number) => {
           const dest = destinos[x.modulo];
-          if (!dest || !puede(dest[1]) || !s.modulos.includes(x.modulo)) return null;
+          if (!dest || !puede(dest[1]) || !s.modulos.includes(x.modulo) || (x.modulo === 'facturacion' && !s.factura_dian)) return null;
           return <li key={`${x.modulo}-${i}`}><Link to={dest[0]}><strong>{x.titulo}</strong><span>{x.descripcion}</span><Icon n="flecha" size={16} className="" /></Link></li>;
         })}</ul>}
       </div>

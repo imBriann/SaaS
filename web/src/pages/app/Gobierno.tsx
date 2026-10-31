@@ -6,7 +6,6 @@ import { api, cop, descargar, descargarDocumentos, fecha, fechaHora, hora, num }
 import { Cabecera, Escritura, useSesion } from '../../components/Layout';
 import { accionIA, Campo, Cargando, Cifra, Confirmar, ErrorCarga, Estado, Interruptor, Medidor, Modal, motivoIA, Recibo, Tarjeta, useAccion, useApi, useToast, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
-import { TarjetaFacturaDian } from '../../components/Proximamente';
 import { ComoTrabaja } from '../../components/ComoTrabaja';
 
 const NOMBRE_AGENTE: Record<string, string> = { atencion: 'Atención por WhatsApp', asistente: 'Asistente del panel', copiloto: 'Copiloto del asesor' };
@@ -398,7 +397,6 @@ function AjustesComprobantes() {
             <blockquote className="leyenda-comprobante">{data.leyenda}</blockquote>
           </div>
         </Tarjeta>
-        <TarjetaFacturaDian motivo={data.factura_dian?.motivo} />
       </div>
     </div>
   );
