@@ -56,4 +56,26 @@ describe('Arranque en Render con la configuración actual', () => {
     const ok = validarCon({ ...VARIABLES_RENDER, ALMACEN_PROVEEDOR: 'supabase', SUPABASE_URL: 'https://abcd.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'llave', SUPABASE_BUCKET_IMAGENES: 'imagenes' });
     expect(ok.errores).toEqual([]);
   });
+
+  it('con las variables nuevas de pagos de comercio en sus valores por defecto también arranca', () => {
+    const r = validarCon({ ...VARIABLES_RENDER, PAYMENTS_LIVE_ENABLED: 'false', COMMERCE_PRICING_MODE: 'institutional_test', COMMERCE_TEST_CHARGE_COP: '1500' });
+    expect(r.errores).toEqual([]);
+  });
+
+  it('PAYMENTS_LIVE_ENABLED=true con credenciales de sandbox no arranca y lo dice', () => {
+    const r = validarCon({ ...VARIABLES_RENDER, PAYMENTS_LIVE_ENABLED: 'true', WOMPI_ENTORNO: 'sandbox', WOMPI_LLAVE_PUBLICA: 'pub_test_x', WOMPI_LLAVE_PRIVADA: 'prv_test_x' });
+    const t = r.errores.join(' ');
+    expect(t).toMatch(/no admite credenciales de sandbox/);
+    expect(t).toMatch(/WOMPI_ENTORNO=produccion/);
+  });
+
+  it('PAYMENTS_LIVE_ENABLED=true con la cuenta de producción completa arranca', () => {
+    expect(validarCon({ ...VARIABLES_RENDER, PAYMENTS_LIVE_ENABLED: 'true' }).errores).toEqual([]);
+  });
+
+  it('modo de precios o importe fijo inválidos no arrancan', () => {
+    expect(validarCon({ ...VARIABLES_RENDER, COMMERCE_PRICING_MODE: 'sandbox' }).errores.join(' ')).toMatch(/COMMERCE_PRICING_MODE/);
+    expect(validarCon({ ...VARIABLES_RENDER, COMMERCE_TEST_CHARGE_COP: '1000' }).errores.join(' ')).toMatch(/COMMERCE_TEST_CHARGE_COP/);
+    expect(validarCon({ ...VARIABLES_RENDER, COMMERCE_TEST_CHARGE_COP: '1500.5' }).errores.join(' ')).toMatch(/COMMERCE_TEST_CHARGE_COP/);
+  });
 });

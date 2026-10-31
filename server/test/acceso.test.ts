@@ -251,7 +251,7 @@ describe('Salud y migraciones', () => {
   it('las migraciones aplicadas están al día (detalle solo interno)', async () => {
     const m = await E.db.migrations();
     expect(m[0]).toBe('001_base');
-    expect(m.at(-1)).toBe('033_cambio_numero');
+    expect(m.at(-1)).toBe('034_pagos_comercio');
   });
   void drain;
 });

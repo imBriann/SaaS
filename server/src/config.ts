@@ -119,6 +119,18 @@ export const config = {
    * Modalidad institucional: cobro real y único por un acceso de duración fija, sin
    * renovación automática. No altera los precios comerciales, que se muestran como referencia.
    */
+  /**
+   * Pagos de comercio por WhatsApp (docs/pagos-whatsapp.md). Independientes de las suscripciones.
+   *  - liveEnabled: cobros reales en línea con la cuenta Wompi del proyecto (credenciales de PRODUCCIÓN).
+   *    Apagado por defecto. Nunca se interpreta el modo de precios como sandbox.
+   *  - pricingMode: institutional_test (muestra el precio oficial y cobra un importe fijo real) u official.
+   *  - testChargeCop: importe fijo del modo institucional (entero en pesos, mínimo 1.500).
+   */
+  comercio: {
+    liveEnabled: ['1', 'true', 'si', 'sí'].includes((v('PAYMENTS_LIVE_ENABLED') ?? 'false').toLowerCase()),
+    pricingMode: (v('COMMERCE_PRICING_MODE') ?? 'institutional_test') as 'institutional_test' | 'official',
+    testChargeCop: Number(v('COMMERCE_TEST_CHARGE_COP') ?? 1500),
+  },
   institucional: {
     activo: v('MODO_INSTITUCIONAL') === '1',
     precioCop: Number(v('PRECIO_INSTITUCIONAL_COP') ?? 1500),
@@ -321,6 +333,7 @@ export function validarConfiguracion(c = config): ResultadoValidacion {
   } else if (!c.dev) {
     avisos.push('ALMACEN_PROVEEDOR=disco: las imágenes del catálogo se guardan en el disco del servidor, que en Render (plan gratuito) se borra en cada despliegue. Usa ALMACEN_PROVEEDOR=supabase (ver docs/imagenes).');
   }
+  errores.push(...erroresComercio(c));
   if (c.llm.provider === 'anthropic' && !c.llm.apiKey) errores.push('LLM_PROVIDER=anthropic exige ANTHROPIC_API_KEY.');
   if (c.llm.provider === 'mock' && !c.simuladores) errores.push('LLM_PROVIDER=mock solo se permite en desarrollo o con SIMULADORES=1.');
   const pagos = validarPagos(c);
@@ -337,6 +350,32 @@ export function validarConfiguracion(c = config): ResultadoValidacion {
   if (c.numeros.proveedor === 'telnyx' && !c.numeros.comercial.confirmadas && !c.dev) avisos.push('Números de WhatsApp: falta NUMEROS_TARIFAS_CONFIRMADAS=1; la compra de números queda bloqueada hasta confirmar el modelo comercial.');
   if (c.numeros.proveedor === 'telnyx' && (!c.meta.appId || !c.meta.configId)) avisos.push('Números de WhatsApp: sin META_APP_ID y META_ES_CONFIG_ID se pueden comprar números, pero la activación de WhatsApp no puede iniciar el registro integrado de Meta.');
   return { errores, avisos };
+}
+
+/** Mínimo por transacción para el importe fijo (Wompi no publica un mínimo oficial; ver docs/pagos-whatsapp.md). */
+export const COMERCIO_CARGO_MINIMO_COP = 1500;
+export const COMERCIO_CARGO_MAXIMO_COP = 10_000_000;
+
+/**
+ * Pagos de comercio: el modo de precios y el importe fijo deben ser válidos siempre; con PAYMENTS_LIVE_ENABLED=true
+ * además se exige la cuenta Wompi de PRODUCCIÓN completa y se rechazan credenciales de sandbox.
+ */
+export function erroresComercio(c = config): string[] {
+  const e: string[] = [];
+  const k = c.comercio;
+  if (!['institutional_test', 'official'].includes(k.pricingMode)) e.push('COMMERCE_PRICING_MODE debe ser «institutional_test» u «official».');
+  if (!Number.isInteger(k.testChargeCop) || k.testChargeCop < COMERCIO_CARGO_MINIMO_COP || k.testChargeCop > COMERCIO_CARGO_MAXIMO_COP) {
+    e.push(`COMMERCE_TEST_CHARGE_COP debe ser un entero en pesos entre ${COMERCIO_CARGO_MINIMO_COP} y ${COMERCIO_CARGO_MAXIMO_COP} (sin decimales ni separadores).`);
+  }
+  if (k.liveEnabled) {
+    const w = c.pagos.wompi;
+    if (c.pagos.proveedor !== 'wompi') e.push('PAYMENTS_LIVE_ENABLED=true exige PAGOS_PROVEEDOR=wompi.');
+    if (w.entorno !== 'produccion') e.push('PAYMENTS_LIVE_ENABLED=true exige WOMPI_ENTORNO=produccion: los cobros reales no usan sandbox.');
+    if (!w.llavePublica || !w.llavePrivada || !w.secretoIntegridad || !w.secretoEventos) e.push('PAYMENTS_LIVE_ENABLED=true exige WOMPI_LLAVE_PUBLICA, WOMPI_LLAVE_PRIVADA, WOMPI_SECRETO_INTEGRIDAD y WOMPI_SECRETO_EVENTOS de producción.');
+    const sandbox = [w.llavePublica, w.llavePrivada, w.secretoIntegridad, w.secretoEventos].some((x) => /^(pub|prv)_test_|^test_/.test(x ?? ''));
+    if (sandbox) e.push('PAYMENTS_LIVE_ENABLED=true no admite credenciales de sandbox de Wompi (pub_test_, prv_test_, test_…): usa las de producción.');
+  }
+  return e;
 }
 
 /**
