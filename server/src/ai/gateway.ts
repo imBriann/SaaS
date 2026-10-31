@@ -87,6 +87,7 @@ export async function visibleTools(tx: Tx, agent: AgentProfile, hasCustomer: boo
     if (!agent.permisos.has(t.permiso) || PERMISOS_PROHIBIDOS_A_AGENTES.includes(t.permiso as Permiso)) continue;
     if (t.requiereCliente && !hasCustomer) continue;
     if (!(await toolEnabled(tx, nombre)) || !(await moduleActive(tx, t.modulo))) continue;
+    if (t.disponible && !(await t.disponible(tx))) continue;
     out.push(t);
   }
   return out;
@@ -152,6 +153,7 @@ export async function evaluateAndExecute(
   if (!t || !agent.herramientas.includes(t.nombre)) return deny(1, 'herramienta_no_registrada_para_el_agente');
   if (!(await toolEnabled(tx, t.nombre))) return deny(1, 'herramienta_deshabilitada');
   if (!(await moduleActive(tx, t.modulo))) return deny(1, 'modulo_inactivo');
+  if (t.disponible && !(await t.disponible(tx))) return deny(1, 'funcion_inactiva');
 
   // 2 · Esquema
   const parsed = t.args.safeParse(call.argumentos ?? {});

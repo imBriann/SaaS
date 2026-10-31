@@ -182,3 +182,8 @@ GRANT SELECT ON payment_event TO app_rt;
 -- La plataforma resuelve referencias del webhook, registra eventos y muestra los recaudos al operador.
 GRANT SELECT ON commerce_payment, financial_ledger, payment_reconciliation TO app_platform;
 GRANT SELECT, INSERT ON payment_event TO app_platform;
+
+-- ---------------------------------------------------------------- herramientas del agente de atención
+-- Solo se ofrecen al cliente si la empresa activa algún método de pago de pedidos (ToolDef.disponible).
+UPDATE ai_agent SET herramientas = herramientas || ARRAY['crear_pedido','agregar_al_pedido','calcular_total','elegir_entrega','medios_de_pago','elegir_medio_pago','pedir_celular_nequi','generar_cobro','estado_pedido']
+WHERE configuracion = 'atencion' AND 'registrar_venta' = ANY(herramientas) AND NOT ('crear_pedido' = ANY(herramientas));
