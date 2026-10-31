@@ -121,3 +121,35 @@ dialog.panel-lateral { margin-right: 0; margin-top: 0; height: 100dvh; max-heigh
 
 @media (max-width: 900px) { .pos-rejilla { grid-template-columns: minmax(0, 1fr); } .pos-carrito { position: static; } }
 @media (prefers-reduced-motion: reduce) { .pos-producto, .nivel-ia { transition: none; } }
+
+/* Búsqueda de fotos con IA: proceso con pasos visibles */
+.bi-panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--borde); border-radius: var(--r-md, 10px); background: var(--superficie-2, var(--fondo-2, transparent)); animation: bi-entra .22s ease-out both; }
+.bi-pasos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.bi-paso { display: flex; gap: 8px; align-items: flex-start; animation: bi-entra .22s ease-out both; }
+.bi-paso.pendiente { opacity: .5; }
+.bi-icono { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--borde); }
+.bi-paso.hecho .bi-icono, .bi-fila.listo .bi-icono { background: var(--ok-fondo, #e5f4ea); color: var(--ok, #1d7a3f); border-color: transparent; }
+.bi-paso.fallo .bi-icono, .bi-fila.error .bi-icono, .bi-fila.sin_resultados .bi-icono { background: var(--alerta-fondo, #fdeceb); color: var(--error, #b3261e); border-color: transparent; }
+.bi-paso.en_curso .bi-icono, .bi-fila.en_curso .bi-icono { color: var(--acento, currentColor); border-color: currentColor; }
+.bi-paso.en_curso .bi-icono svg, .bi-fila.en_curso .bi-icono svg { animation: bi-gira 1s linear infinite; }
+.bi-detalle { overflow-wrap: anywhere; }
+.bi-mensaje { margin: 0; padding: 8px 10px; border-radius: var(--r-sm, 8px); background: var(--fondo-2, #f4f4f2); }
+.bi-mensaje.bien { background: var(--ok-fondo, #e5f4ea); }
+.bi-mensaje.mal { background: var(--alerta-fondo, #fdeceb); }
+.bi-rejilla { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.bi-cand { display: flex; flex-direction: column; gap: 3px; min-width: 0; animation: bi-entra .25s ease-out both; }
+.bi-cand label { position: relative; display: block; cursor: pointer; }
+.bi-cand input { position: absolute; opacity: 0; inset: 0; width: 100%; height: 100%; cursor: pointer; margin: 0; }
+.bi-cand img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-sm, 8px); border: 2px solid var(--borde); transition: border-color .15s, transform .15s, opacity .15s; opacity: .75; background: var(--fondo-2, #eee); }
+.bi-cand.on img { border-color: var(--acento, #2b6cb0); opacity: 1; }
+.bi-cand label:hover img { transform: scale(1.02); }
+.bi-cand input:focus-visible + img { outline: 2px solid var(--acento, #2b6cb0); outline-offset: 2px; }
+.bi-marca { position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--acento, #2b6cb0); color: #fff; transform: scale(0); transition: transform .15s; }
+.bi-cand.on .bi-marca { transform: scale(1); }
+.bi-barra { height: 8px; border-radius: 99px; background: var(--fondo-2, #eee); overflow: hidden; margin-top: 6px; }
+.bi-barra span { display: block; height: 100%; background: var(--acento, #2b6cb0); border-radius: inherit; transition: width .4s ease; }
+.bi-lote { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow: auto; }
+.bi-fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--borde); animation: bi-entra .2s ease-out both; }
+@keyframes bi-entra { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes bi-gira { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .bi-panel, .bi-paso, .bi-cand, .bi-fila { animation: none; } .bi-paso.en_curso .bi-icono svg, .bi-fila.en_curso .bi-icono svg { animation: none; } .bi-cand img, .bi-marca, .bi-barra span { transition: none; } }

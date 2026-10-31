@@ -10,6 +10,7 @@ import { Contador, escalon } from '../../components/Movimiento';
 import { TarjetaFacturaDian } from '../../components/Proximamente';
 import { DetalleComprobante, descargarComprobante } from './Comprobantes';
 import { ImagenesProducto } from '../../components/ImagenesProducto';
+import { ModalCompletarImagenes } from '../../components/BusquedaImagenes';
 
 // =================================================================== Clientes
 export function Clientes() {
@@ -569,6 +570,7 @@ export function Inventario() {
   const [editar, setEditar] = useState<any>(null);
   const [mov, setMov] = useState<any>(null);
   const [importar, setImportar] = useState(false);
+  const [completar, setCompletar] = useState(false);
   const [q, setQ] = useState('');
   const { run, ocupado, error } = useAccion();
   const toastCat = useToast();
@@ -597,7 +599,7 @@ export function Inventario() {
       <Cabecera titulo="Catálogo e inventario" sub="Organiza tus productos y servicios. Revisa precios y existencias. Los precios incluyen IVA.">
         <label className="buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Buscar producto o categoría" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar en el catálogo" /></label>
         <Escritura permiso="catalog:write"><button className="btn" data-guia="catalogo/importar" onClick={() => setImportar(true)}><Icon n="subir" className="" size={16} />Importar</button></Escritura>
-        <Escritura permiso="catalog:write"><button className="btn" disabled={ocupado} onClick={async () => { const r = await run(() => api.post('/api/t/catalogo/imagenes/completar')); if (r) { toastCat(`Revisamos ${r.productos} ítems: ${r.agregadas} fotos agregadas${r.pendientes ? ` y ${r.pendientes} por aprobar` : ''}.`); productos.recargar(); } }}><Icon n="ia" className="" size={16} />Completar imágenes que faltan</button></Escritura>
+        <Escritura permiso="catalog:write"><button className="btn" onClick={() => setCompletar(true)}><Icon n="ia" className="" size={16} />Completar imágenes que faltan</button></Escritura>
         <Escritura permiso="catalog:write"><button className="btn primario" data-guia="catalogo/nuevo" onClick={() => setEditar({ tipo: 'PRODUCTO', nombre: '', precio: '', iva_pct: 19, controla_stock: true, stock: 0, stock_minimo: 0, activo: true })}><Icon n="mas" className="" size={16} />Nuevo ítem</button></Escritura>
       </Cabecera>
       <div className="contenido">
@@ -689,6 +691,7 @@ export function Inventario() {
           {mov.tipo === 'SALIDA' && Number(mov.cantidad) > mov.actual && <span className="error peq-txt" role="alert">No puedes sacar más de lo que hay ({mov.actual}).</span>}
         </Modal>
       )}
+      {completar && <ModalCompletarImagenes onCerrar={() => setCompletar(false)} onCambio={() => productos.recargar()} />}
       {importar && <ImportarCatalogo onCerrar={() => setImportar(false)} onHecho={() => { setImportar(false); productos.recargar(); }} />}
     </>
   );

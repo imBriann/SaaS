@@ -94,13 +94,27 @@ describe('SSRF', () => {
   });
 });
 
+/** Inicia la búsqueda, deja que la cola la corra, acepta las candidatas elegidas por la IA y espera la descarga. */
+async function buscarYAgregar(productId: string) {
+  const ini = await A.post(`/catalogo/productos/${productId}/imagenes/buscar`);
+  expect(ini.status).toBe(200);
+  expect(ini.body).toMatchObject({ estado: 'EN_CURSO', terminada: false });
+  await drain(E.db);
+  const espera = (await A.get(`/catalogo/imagenes/busquedas/${ini.body.id}`)).body;
+  expect(espera.estado).toBe('ESPERA_ELECCION');
+  const indices = espera.candidatas.filter((c: any) => c.elegida).map((c: any) => c.indice);
+  expect((await A.post(`/catalogo/imagenes/busquedas/${ini.body.id}/agregar`, { indices })).status).toBe(200);
+  await drain(E.db);
+  return (await A.get(`/catalogo/imagenes/busquedas/${ini.body.id}`)).body;
+}
+
 describe('La IA busca imágenes', () => {
   it('licencia abierta: se asignan solas con autor, licencia y fuente', async () => {
     const corte = (await sql(`SELECT id FROM product WHERE tenant_id=$1 AND nombre='Corte clásico'`, [E.A])).rows[0].id;
     buscador.abiertas = true;
-    const r = await A.post(`/catalogo/productos/${corte}/imagenes/buscar`);
-    expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ proveedor: 'simulado', agregadas: 3, pendientes: 0 });
+    const r = await buscarYAgregar(corte);
+    expect(r.estado).toBe('LISTO');
+    expect(r.resultado).toMatchObject({ agregadas: 3, pendientes: 0 });
     const imgs = (await A.get(`/catalogo/productos/${corte}/imagenes`)).body.imagenes;
     expect(imgs.every((i: any) => i.estado === 'ACTIVA' && i.licencia && i.autor && i.fuente)).toBe(true);
   });
@@ -108,9 +122,9 @@ describe('La IA busca imágenes', () => {
   it('búsqueda web general: quedan pendientes y no se envían a clientes hasta aprobarlas', async () => {
     const aceite = (await sql(`SELECT id FROM product WHERE tenant_id=$1 AND nombre='Aceite para barba'`, [E.A])).rows[0].id;
     buscador.abiertas = false;
-    const r = await A.post(`/catalogo/productos/${aceite}/imagenes/buscar`);
-    expect(r.body.pendientes).toBeGreaterThan(0);
-    expect(r.body.mensaje).toMatch(/derecho a usarlas/);
+    const r = await buscarYAgregar(aceite);
+    expect(r.resultado.pendientes).toBeGreaterThan(0);
+    expect(r.mensaje).toMatch(/derecho a usarlas/);
     const pendiente = (await sql(`SELECT id, miniatura, url FROM producto_imagen WHERE product_id=$1 AND estado='PENDIENTE_APROBACION' LIMIT 1`, [aceite])).rows[0];
     expect(pendiente.url).toMatch(/^https:\/\//);
     // La miniatura existe para el panel, pero la URL pública no la sirve.

@@ -6,6 +6,7 @@ import { ensurePlatformCatalog } from './onboarding/provisioning.js';
 import { seedDemo } from './seed/demo.js';
 import { MARCA } from './brand.js';
 import { iniciarVolcadoMetricas } from './core/metricas.js';
+import { verificarProcesadorImagenes } from './modules/imagenes.js';
 
 const { errores, avisos } = validarConfiguracion();
 for (const a of avisos) console.warn(`[configuración] ${a}`);
@@ -25,6 +26,11 @@ if (creada && config.dev && process.env.SIN_DEMO !== '1') {
   const r = await seedDemo(db);
   console.log(`Datos de demostración creados: ${r.slug} (${r.email})`);
 }
+
+// sharp trae binarios nativos por plataforma: si faltan (lockfile de otro sistema), las imágenes fallarían en silencio.
+const sharpOk = await verificarProcesadorImagenes();
+if (sharpOk.ok) console.log('Procesador de imágenes (sharp): listo.');
+else console.error(`[imágenes] ${sharpOk.error} — las fotos del catálogo NO se podrán procesar. Reinstala con «npm ci» en la plataforma del servidor (Linux x64) y revisa que package-lock.json incluya @img/sharp-linux-x64 y @img/sharp-libvips-linux-x64.`);
 
 const app = await buildApp(db);
 const stopWorker = process.env.SIN_TRABAJADOR === '1' ? async () => {} : startWorker(db);
