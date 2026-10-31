@@ -18,6 +18,7 @@ import * as iaAutonoma from '../../modules/iaAutonoma.js';
 import * as imagenes from '../../modules/imagenes.js';
 import * as busquedaImagenes from '../../modules/busquedaImagenes.js';
 import * as metodosComercio from '../../comercio/metodos.js';
+import * as ledgerComercio from '../../comercio/ledger.js';
 import * as aprobaciones from '../../ai/aprobaciones.js';
 import { avisar } from '../../modules/proactivo.js';
 import { formatFechaLarga, utcToLocal } from '../../lib/time.js';
@@ -198,6 +199,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('patch', '/pagos/ajustes', (tx, ctx, req) => metodosComercio.guardarAjustes(tx, ctx, req.body));
   r('post', '/pagos/cuentas', (tx, ctx, req) => metodosComercio.crearCuenta(tx, ctx, req.body));
   r('put', '/pagos/cuentas/:id', (tx, ctx, req) => metodosComercio.editarCuenta(tx, ctx, req.params.id, req.body));
+  r('get', '/pagos/historial', (tx, ctx) => ledgerComercio.historial(tx, ctx));
   r('delete', '/pagos/cuentas/:id', (tx, ctx, req) => metodosComercio.borrarCuenta(tx, ctx, req.params.id));
   r('get', '/ventas/caja', (tx, ctx, req) => pagos.cajaDelDia(tx, ctx, req.query?.fecha));
   r('get', '/ventas.csv', async (tx, ctx, req, reply) => { descarga(reply, 'ventas.csv'); return exportsMod.exportOrders(tx, ctx, req.query?.desde, req.query?.hasta); });
