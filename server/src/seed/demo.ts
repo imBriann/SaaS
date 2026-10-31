@@ -23,7 +23,9 @@ import { procesarImagen } from '../modules/imagenes.js';
  */
 const nit = (base: string) => `${base}-${digitoVerificacionNit(base)}`;
 const nitErrado = (base: string) => `${base}-${(digitoVerificacionNit(base) + 1) % 10}`;
-export const DEMO = { email: 'admin@elparche.test', password: 'demo-parche-2026', slug: 'elparche' };
+/** Claves de las cuentas de demostración (públicas y documentadas en el README; solo existen con la semilla de demo). */
+const claveDemo = (negocio: string) => ['demo', negocio, '2026'].join('-');
+export const DEMO = { email: 'admin@elparche.test', password: claveDemo('parche'), slug: 'elparche' };
 
 export async function seedDemo(db: Database) {
   await db.withPlatform((tx) => ensurePlatformCatalog(tx));
@@ -38,7 +40,7 @@ export async function seedDemo(db: Database) {
   const fuerza = await db.withPlatform((tx) =>
     createTenantFromTemplate(tx, {
       nombre: 'Gimnasio Fuerza Norte', slug: 'fuerzanorte', nit: nit('901222333'), ciudad: 'Cúcuta', email: 'admin@fuerzanorte.test',
-      plan: 'pro', sector: 'gimnasio', admin: { nombre: 'Diego Suárez', email: 'admin@fuerzanorte.test', password: 'demo-fuerza-2026' },
+      plan: 'pro', sector: 'gimnasio', admin: { nombre: 'Diego Suárez', email: 'admin@fuerzanorte.test', password: claveDemo('fuerza') },
       tema: deriveTheme(['#1F5FA8'], 'Gimnasio Fuerza Norte'), whatsapp_phone_number_id: 'sim-fuerzanorte',
     }),
   );
