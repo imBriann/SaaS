@@ -23,6 +23,7 @@ const CALIDAD: Record<string, string> = { GREEN: 'Alta', YELLOW: 'Media', RED: '
  */
 export function Bienvenida() {
   const { s, puede, recargar } = useSesion();
+  const [conectado, setConectado] = useState(false);
   return (
     <div className="cv-bienvenida contenido">
       <header className="col" style={{ gap: 6, maxWidth: 640 }}>
@@ -30,7 +31,11 @@ export function Bienvenida() {
         <p className="sec" style={{ margin: 0 }}>Escribe tu número, recibe un código por SMS y listo. Cuando un cliente te escriba, aquí verás la conversación y a tu asistente respondiendo.</p>
       </header>
       {puede('tenant:configure') ? (
-        <div style={{ maxWidth: 720 }}><ConectarEnLinea onConectado={recargar} /></div>
+        <div className="col" style={{ maxWidth: 720, gap: 12 }}>
+          {/* Al conectar se queda aquí, en «Listo» (con el mensaje de prueba); la bandeja se abre cuando la persona quiera. */}
+          <ConectarEnLinea onConectado={() => setConectado(true)} />
+          {conectado && <button className="btn primario grande" style={{ alignSelf: 'flex-start' }} onClick={recargar}>Ver mis conversaciones</button>}
+        </div>
       ) : (
         <div className="aviso" role="note"><Icon n="info" className="" size={16} /><span>Quien administra la empresa debe conectar el número de WhatsApp. Pídeselo y vuelve aquí.</span></div>
       )}

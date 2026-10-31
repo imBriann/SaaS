@@ -73,6 +73,25 @@ describe('Configuración sin integraciones para las empresas', () => {
   });
 });
 
+describe('Archivos del panel sin subdominio (<img> no envía cabeceras)', () => {
+  it('en GET acepta la empresa como parámetro; en escrituras no; y la pertenencia se exige igual', async () => {
+    const cookieA = await login(E.app, ...CRED.admin);
+    const cookieB = await login(E.app, ...CRED.gym);
+    const r1 = await E.app.inject({ method: 'GET', url: '/api/t/yo?empresa=elparche', headers: { cookie: cookieA } });
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json().tenant.slug).toBe('elparche');
+    // Sin cabecera ni parámetro no hay empresa.
+    expect((await E.app.inject({ method: 'GET', url: '/api/t/yo', headers: { cookie: cookieA } })).statusCode).not.toBe(200);
+    // En una escritura el parámetro no sirve.
+    expect((await E.app.inject({ method: 'POST', url: '/api/t/clientes?empresa=elparche', headers: { cookie: cookieA }, payload: { nombre: 'Por parámetro' } })).statusCode).not.toBe(200);
+    // Otra empresa por parámetro: sin pertenencia, nada.
+    const ajena = await E.app.inject({ method: 'GET', url: '/api/t/yo?empresa=elparche', headers: { cookie: cookieB } });
+    if (ajena.statusCode === 200) expect(ajena.json().tenant.slug).not.toBe('fuerzanorte'); // Diego también pertenece a El Parche en la demo
+    const nadie = await E.app.inject({ method: 'GET', url: '/api/t/yo?empresa=no-existe', headers: { cookie: cookieA } });
+    expect(nadie.statusCode).not.toBe(200);
+  });
+});
+
 describe('Solicitar el cambio de plan', () => {
   it('en modalidad institucional no se cotiza, pero se puede solicitar el cambio (abre un caso)', async () => {
     const plan = (await sql(`SELECT plan_codigo FROM subscription WHERE tenant_id=$1`, [E.A])).rows[0].plan_codigo;

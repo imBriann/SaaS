@@ -212,6 +212,7 @@ function PlanActual({ info, catalogo, onCambio, onDeshacer }: { info: any; catal
 
 // =================================================================== Uso del periodo
 function Uso({ info }: { info: any }) {
+  const sesion = useSesion();
   const ia = info.consumo?.tokens_ia;
   const s = info.suscripcion;
   const usado = ia?.usado ?? 0, cuota = ia?.cuota ?? 0;
@@ -228,7 +229,7 @@ function Uso({ info }: { info: any }) {
         {ia?.agotada && s.politica_excedente === 'LIMITAR' ? ' La cuota se agotó: las conversaciones pasan a tu equipo.' : ''}
       </p>
       <div className="uso-mini">
-        {[['mensajes', 'Mensajes de WhatsApp'], ['documentos', 'Facturas electrónicas']].map(([k, et]) => {
+        {[['mensajes', 'Mensajes de WhatsApp'], ...(sesion.s.factura_dian ? [['documentos', 'Facturas electrónicas']] : [])].map(([k, et]) => {
           const x = info.consumo?.[k];
           if (!x) return null;
           return <div key={k}><span>{et}</span><b>{num(x.usado)}{x.cuota ? ` / ${num(x.cuota)}` : ''}</b>{x.cuota ? <i style={{ '--p': `${Math.min(100, x.porcentaje ?? 0)}%` } as CSSProperties} /> : null}</div>;

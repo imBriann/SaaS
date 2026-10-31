@@ -153,11 +153,13 @@ export async function buildApp(db: Database, opts: { logger?: boolean; webDir?: 
 
   // Vivo: el proceso responde. Listo: además la base responde y las migraciones están al día.
   app.get('/api/salud', async () => ({ ok: true, hora: new Date().toISOString() }));
+  // Público y sin sesión: solo «ok» o «degradado» por servicio. Sin nombres de proveedores, versiones, migraciones
+  // ni mensajes de error (el detalle está en el panel del operador). La base lista exige migraciones al día.
   app.get('/api/salud/listo', async (_req, reply) => {
     const base = await db.ping();
-    const migraciones = base ? await db.migrations().catch(() => []) : [];
-    const cuerpo = { ok: base, base: base ? 'disponible' : 'sin conexión', migraciones, integraciones: integraciones().map(({ clave, estado }) => ({ clave, estado })) };
-    return reply.status(base ? 200 : 503).send(cuerpo);
+    const servicios: Record<string, 'ok' | 'degradado'> = { base: base ? 'ok' : 'degradado' };
+    for (const i of integraciones()) servicios[i.clave] = i.estado === 'conectado' || i.estado === 'simulado' ? 'ok' : 'degradado';
+    return reply.status(base ? 200 : 503).send({ ok: base, servicios });
   });
 
   await registerPublicRoutes(app, db);

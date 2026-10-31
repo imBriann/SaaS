@@ -120,6 +120,16 @@ describe('Consulta en español + genérica en inglés', () => {
 });
 
 describe('Errores visibles, no silenciosos', () => {
+  it('si un proveedor falla pero otro responde sin resultados, es «sin resultados» (y se dice cuál falló)', async () => {
+    let n = 0;
+    setBuscadorImagenes({ nombre: 'openverse', buscar: async () => { n++; if (n === 1) throw new ErrorBuscador('openverse', null, 'sin respuesta'); return []; } });
+    consultaIA('Marca rara 9 kg', 'rare thing');
+    const r = await buscar(await producto('Cera para peinar'));
+    expect(r.registro.intentos).toHaveLength(2);
+    expect(r.estado).toBe('SIN_RESULTADOS');
+    expect(r.mensaje).toMatch(/No encontramos fotos libres.*Openverse no respondió a tiempo/);
+  });
+
   it('proveedor que responde 429: mensaje claro y el código HTTP queda en el registro', async () => {
     setBuscadorImagenes({ nombre: 'openverse', buscar: async () => { throw new ErrorBuscador('openverse', 429, 'openverse respondió 429'); } });
     const r = await buscar(await producto('Cera para peinar'));
@@ -262,7 +272,7 @@ describe('Supabase Storage', () => {
     const v = validarConfiguracion(c);
     expect(v.errores.join(' ')).toMatch(/SUPABASE_URL/);
     expect(v.errores.join(' ')).toMatch(/SUPABASE_SERVICE_ROLE_KEY/);
-    const ok = validarConfiguracion({ ...c, imagenes: { ...c.imagenes, supabaseUrl: 'https://abc.supabase.co', supabaseServiceKey: 'k' } });
+    const ok = validarConfiguracion({ ...c, imagenes: { ...c.imagenes, supabaseUrl: 'https://abc.supabase.co', supabaseServiceKey: 'k', supabaseBucket: 'imagenes' } });
     expect(ok.errores.join(' ')).not.toMatch(/SUPABASE/);
   });
 });

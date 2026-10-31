@@ -165,7 +165,7 @@ export const config = {
     almacen: (v('ALMACEN_PROVEEDOR') ?? v('IMAGENES_ALMACEN') ?? 'disco') as 'disco' | 'supabase',
     supabaseUrl: (v('SUPABASE_URL') ?? '').replace(/\/+$/, ''),
     supabaseServiceKey: v('SUPABASE_SERVICE_ROLE_KEY'),
-    supabaseBucket: v('SUPABASE_BUCKET_IMAGENES') ?? 'imagenes',
+    supabaseBucket: v('SUPABASE_BUCKET_IMAGENES'),
     dir: v('IMAGENES_DIR') ?? './almacen/imagenes',
     maxBytes: Math.round(Math.max(0.1, Number(v('IMAGENES_MAX_MB') ?? 5)) * 1024 * 1024),
     anchoMax: Math.max(320, Number(v('IMAGENES_ANCHO_MAX') ?? 1600)),
@@ -317,6 +317,7 @@ export function validarConfiguracion(c = config): ResultadoValidacion {
   if (c.imagenes.almacen === 'supabase') {
     if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(c.imagenes.supabaseUrl)) errores.push('ALMACEN_PROVEEDOR=supabase exige SUPABASE_URL con la forma https://<proyecto>.supabase.co.');
     if (!c.imagenes.supabaseServiceKey) errores.push('ALMACEN_PROVEEDOR=supabase exige SUPABASE_SERVICE_ROLE_KEY (solo en el servidor; nunca en el panel).');
+    if (!c.imagenes.supabaseBucket || !/^[a-z0-9][a-z0-9_.-]{1,62}$/.test(c.imagenes.supabaseBucket)) errores.push('ALMACEN_PROVEEDOR=supabase exige SUPABASE_BUCKET_IMAGENES con el nombre del bucket público (por ejemplo, imagenes).');
   } else if (!c.dev) {
     avisos.push('ALMACEN_PROVEEDOR=disco: las imágenes del catálogo se guardan en el disco del servidor, que en Render (plan gratuito) se borra en cada despliegue. Usa ALMACEN_PROVEEDOR=supabase (ver docs/imagenes).');
   }

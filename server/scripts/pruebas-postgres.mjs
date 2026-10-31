@@ -15,7 +15,9 @@ const ARCHIVOS = process.env.ARCHIVOS ? process.env.ARCHIVOS.split(',') : ['test
   // Comprobantes (consecutivo con conexiones concurrentes, permisos por columna), números de la WABA y borrado total (TRUNCATE como dueño).
   'test/comprobantes.test.ts', 'test/numeros-waba.test.ts', 'test/borrar-todo.test.ts',
   // IA autónoma, agenda (exclusión con btree_gist y concurrencia real) e imágenes.
-  'test/ia-autonoma.test.ts', 'test/agenda-automatica.test.ts', 'test/imagenes.test.ts'];
+  'test/ia-autonoma.test.ts', 'test/agenda-automatica.test.ts', 'test/imagenes.test.ts',
+  // Migraciones sobre una base de producción (hasta la 030), búsqueda de imágenes, cambio de número y panel.
+  'test/migraciones-produccion.test.ts', 'test/busqueda-imagenes.test.ts', 'test/cambio-numero.test.ts', 'test/correcciones-panel.test.ts'];
 
 let url = process.env.DATABASE_URL_PRUEBAS;
 let detener = async () => {};

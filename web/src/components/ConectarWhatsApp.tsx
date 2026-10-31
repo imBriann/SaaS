@@ -16,7 +16,13 @@ export function ConectarEnLinea({ cambio, onConectado }: { cambio?: boolean; onC
   const op = useApi<any>(() => api.get('/api/t/numeros/opciones'), []);
   const est = useApi<{ contratacion: C | null }>(() => api.get('/api/t/numeros/contratacion'), []);
   const [c, setC] = useState<C | null>(null);
-  useEffect(() => { if (est.data) setC(est.data.contratacion && est.data.contratacion.estado !== 'CANCELADO' && est.data.contratacion.origen === 'PROPIO' && (!!cambio === !!est.data.contratacion.es_cambio || est.data.contratacion.estado !== 'CONECTADO') ? est.data.contratacion : null); }, [est.data, cambio]);
+  // Una vez conectado en esta pantalla, se queda en «Listo» aunque el servidor ya no lo marque como cambio.
+  useEffect(() => {
+    if (!est.data) return;
+    const v = est.data.contratacion;
+    const sirve = !!v && v.estado !== 'CANCELADO' && v.origen === 'PROPIO' && (!!cambio === !!v.es_cambio || v.estado !== 'CONECTADO');
+    setC((actual: C | null) => (actual?.estado === 'CONECTADO' ? actual : sirve ? v : null));
+  }, [est.data, cambio]);
   // Mientras el servidor termina de conectar, se consulta cada pocos segundos.
   useEffect(() => {
     if (!c || !EN_MARCHA.includes(c.estado) || c.estado === 'NUMERO_INGRESADO' || c.estado === 'CODIGO_ENVIADO') return;

@@ -5,7 +5,7 @@ import { auditPlatform } from '../core/audit.js';
 import { AppError, invalid, notFound } from '../lib/errors.js';
 import { cop, token, uuidv7 } from '../lib/util.js';
 import { aCentavos } from '../lib/money.js';
-import { urlEmpresa } from '../config.js';
+import { config, urlEmpresa } from '../config.js';
 import { checkoutUrl, cuentaPlataforma } from '../adapters/payments.js';
 import { PLANES, caracteristicasPlan } from '../onboarding/planRules.js';
 import { encolarDocumentos } from '../documentos/servicio.js';
@@ -119,7 +119,7 @@ export async function cotizar(tx: Tx, tenantId: string, plan: string, cicloPedid
   const diasPeriodo = Math.max(1, Math.round(total / 86_400_000));
   const diasRestantes = Math.max(0, Math.ceil((fin - ahora) / 86_400_000));
   const usuarios = (await tx.query(`SELECT count(*)::int AS n FROM user_tenant WHERE tenant_id=$1 AND activo`, [tenantId])).rows[0].n;
-  const apagan = (s.modulos as string[]).filter((m) => !destino.modulos.includes(m) && !SIEMPRE_ACTIVOS.includes(m)).map((m) => MODULO_TEXTO[m] ?? m);
+  const apagan = (s.modulos as string[]).filter((m) => !destino.modulos.includes(m) && !SIEMPRE_ACTIVOS.includes(m) && (m !== 'facturacion' || config.fiscal.dianHabilitada)).map((m) => MODULO_TEXTO[m] ?? m);
   const base = {
     de: { plan: s.plan_codigo, nombre: s.plan_nombre, ciclo: cicloActual, precio: precioActual },
     a: { plan: destino.codigo, nombre: destino.nombre, ciclo, precio: precioNuevo },
@@ -292,7 +292,7 @@ export const QUE_SE_PAUSA = {
   pausa: [
     'Respuestas de la IA por WhatsApp',
     'Registrar ventas, citas y cobros',
-    'Emitir facturas electrónicas',
+    config.fiscal.dianHabilitada ? 'Emitir facturas electrónicas' : 'Generar comprobantes de venta',
     'Invitar personas y cambiar la configuración',
   ],
   conserva: ['Tus clientes, ventas y conversaciones', 'Ver y exportar tus datos'],
