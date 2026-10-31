@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, cop, descargar, fecha, fechaHora, guardar, hace, hora, leer } from '../../api';
 import { Escritura, Menu, useSesion } from '../../components/Layout';
 import { Campo, Cargando, Confirmar, ErrorCarga, Estado, Modal, Recibo, Tarjeta, useAccion, useApi, useRetardo, useToast, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import { TextoWhatsApp } from '../../components/Markdown';
+import { Bienvenida, ConfigConversaciones, useNumeroConectado } from './ConversacionesConfig';
 
 /** Qué resolvió la IA en cada conversación (una línea; no pide nada). */
 const RESOLVIO: Record<string, string> = {
@@ -31,7 +32,21 @@ export function Avatar({ nombre, grande }: { nombre: string; grande?: boolean })
  * centro (lo más grande) y los detalles del cliente y del radicado en un panel que se pliega. En el
  * teléfono, la lista y el chat ocupan cada uno la pantalla entera.
  */
+/** Decide qué ver: bienvenida (sin número ni conversaciones), configuración o la bandeja. */
 export function Conversaciones() {
+  const [params, setParams] = useSearchParams();
+  const conectado = useNumeroConectado();
+  const previas = useApi<any>(() => (conectado ? Promise.resolve(null) : api.get('/api/t/conversaciones?filtro=persona')), [conectado]);
+  if (params.get('vista') === 'config') return <ConfigConversaciones onVolver={() => setParams({}, { replace: true })} />;
+  if (!conectado) {
+    if (!previas.data && !previas.error) return <div className="contenido"><Cargando filas={4} /></div>;
+    if ((previas.data?.contadores?.todas ?? 0) === 0) return <Bienvenida />;
+  }
+  return <Bandeja sinNumero={!conectado} onConfig={() => setParams({ vista: 'config' })} />;
+}
+
+function Bandeja({ sinNumero, onConfig }: { sinNumero: boolean; onConfig: () => void }) {
+  const { puede } = useSesion();
   const { id } = useParams();
   const nav = useNavigate();
   const [filtro, setFiltro] = useState('persona');
@@ -48,8 +63,10 @@ export function Conversaciones() {
         <header className="cv-lista-cab">
           <div className="cv-lista-titulo">
             <h1>Conversaciones</h1>
+            {puede('tenant:configure') && <button type="button" className="btn peq sutil" onClick={onConfig} aria-label="Configuración de Conversaciones" title="Configuración"><Icon n="configuracion" className="" size={14} />Configuración</button>}
             {cont.escaladas > 0 && <span className="cv-alerta" title="Esperan a una persona"><i />{cont.escaladas}</span>}
           </div>
+          {sinNumero && puede('tenant:configure') && <button type="button" className="aviso" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={onConfig}><Icon n="alerta" className="" size={16} /><span>No hay un número de WhatsApp conectado. <b>Conéctalo</b> para recibir mensajes nuevos.</span></button>}
           <label className="cv-buscar"><Icon n="buscar" className="" size={16} /><input type="search" placeholder="Buscar nombre, teléfono o radicado" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar conversaciones" /></label>
           <div className="cv-filtros" role="group" aria-label="Filtrar conversaciones">
             {FILTROS.map(([k, v]) => (

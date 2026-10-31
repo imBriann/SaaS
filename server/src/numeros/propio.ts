@@ -123,6 +123,8 @@ const Inicio = z.object({
   numero: z.string().trim().min(4).max(24),
   acepto_aviso: z.literal(true, { message: 'Confirma que entiendes que el número dejará de funcionar en la app de WhatsApp del celular.' }),
   nombre_visible: z.string().trim().min(3, 'El nombre visible debe tener al menos 3 caracteres.').max(80).optional(),
+  /** Cambiar de número: el actual sigue funcionando hasta que el nuevo quede conectado. */
+  cambio: z.boolean().optional(),
 });
 
 export function validarNumero(pais: string, numero: string) {
@@ -145,13 +147,26 @@ export async function iniciar(db: Database, ctx: Ctx, body: unknown) {
     bloqueo: (await tx.query(`SELECT max(bloqueo_cliente_hasta) AS hasta FROM numero_contratacion WHERE tenant_id=$1 AND origen='PROPIO' AND bloqueo_cliente_hasta > now()`, [ctx.tenantId])).rows[0]?.hasta ?? null,
   }));
   const { t, viva } = previo;
-  if (viva) {
+  // Cambio de número: se parte de un número conectado y el actual NO se toca hasta que el nuevo funcione.
+  let reemplazaId: string | null = null;
+  if (b.data.cambio) {
+    if (viva?.reemplaza_id) {
+      if (viva.numero_e164 === n.e164 && viva.estado !== 'CONECTADO') return db.withPlatform((tx) => vistaPropio(tx, viva));
+      throw new AppError('CONFLICT', 'Ya hay un cambio de número en curso. Termínalo o cancélalo antes de empezar otro.');
+    }
+    if (viva && !(viva.estado === 'CONECTADO' && viva.origen === 'PROPIO')) {
+      throw new AppError('CONFLICT', viva.estado === 'CONECTADO' ? 'Este número se contrató con Omnegia y se cambia desde su contratación. Escribe a soporte si necesitas ayuda.' : 'Ya tienes una conexión en curso. Termínala o cancélala antes de cambiar de número.');
+    }
+    if (!viva && !t?.whatsapp_phone_number_id) throw new AppError('CONFLICT', 'No tienes un número conectado para cambiar. Conéctalo primero.');
+    if (viva && viva.numero_e164 === n.e164) throw new AppError('CONFLICT', 'Ese ya es tu número conectado.');
+    reemplazaId = viva?.id ?? null;
+  } else if (viva) {
     // Retomar: el mismo número en curso devuelve el proceso tal como quedó.
     if (viva.origen === 'PROPIO' && viva.numero_e164 === n.e164 && viva.estado !== 'CONECTADO') return db.withPlatform((tx) => vistaPropio(tx, viva));
     throw new AppError('CONFLICT', viva.estado === 'CONECTADO' ? 'Ya tienes un número conectado. Desconéctalo antes de conectar otro.' : 'Ya tienes una conexión en curso. Termínala o cancélala antes de empezar otra.');
   }
   // Un número real ya conectado a mano (Configuración › WhatsApp). Los identificadores sim-… de la demostración no cuentan.
-  if (t?.whatsapp_phone_number_id && t.whatsapp_estado === 'CONECTADO') {
+  if (!b.data.cambio && t?.whatsapp_phone_number_id && t.whatsapp_estado === 'CONECTADO') {
     throw new AppError('CONFLICT', `Ya tienes un número conectado (${t.whatsapp_numero_visible ?? 'en Configuración › WhatsApp'}). Desconéctalo antes de conectar otro.`);
   }
   if (previo.bloqueo) throw conflicto('DEMASIADOS_INTENTOS', { hasta: previo.bloqueo }, { bloqueo_hasta: previo.bloqueo });
@@ -161,9 +176,9 @@ export async function iniciar(db: Database, ctx: Ctx, body: unknown) {
   let c: Fila = await db.withPlatform(async (tx) => {
     try {
       await tx.query(
-        `INSERT INTO numero_contratacion (id, tenant_id, origen, estado, subestado, accion_cliente, proveedor, entorno, pais, tipo_numero, numero_e164, cotizacion, waba_id, nombre_visible, creado_por)
-         VALUES ($1,$2,'PROPIO','NUMERO_INGRESADO','agregando',NULL,'meta',$3,$4,'propio',$5,NULL,$6,$7,$8)`,
-        [id, ctx.tenantId, mp.meta.simulado ? 'simulado' : 'real', b.data.pais, n.e164, mp.waba, nombre, ctx.actor.tipo === 'USUARIO' ? ctx.actor.id : null]);
+        `INSERT INTO numero_contratacion (id, tenant_id, origen, estado, subestado, accion_cliente, proveedor, entorno, pais, tipo_numero, numero_e164, cotizacion, waba_id, nombre_visible, creado_por, es_cambio, reemplaza_id)
+         VALUES ($1,$2,'PROPIO','NUMERO_INGRESADO','agregando',NULL,'meta',$3,$4,'propio',$5,NULL,$6,$7,$8,$9,$10)`,
+        [id, ctx.tenantId, mp.meta.simulado ? 'simulado' : 'real', b.data.pais, n.e164, mp.waba, nombre, ctx.actor.tipo === 'USUARIO' ? ctx.actor.id : null, !!b.data.cambio, reemplazaId]);
     } catch (err) {
       if (/ux_numero_contratacion_vigente/.test(String((err as Error).message))) throw new AppError('CONFLICT', 'Ya tienes una conexión en curso.');
       if (/ux_numero_contratacion_numero/.test(String((err as Error).message))) throw new AppError('CONFLICT', 'Ese número ya se está conectando en otra cuenta de Omnegia. Si es tuyo, escribe a soporte.');
@@ -356,7 +371,8 @@ async function registrarYConectar(db: Database, c0: Fila, mp: MetaDePlataforma, 
     const d = await mp.meta.consultar(c.phone_number_id, mp.token);
     const operativo = d.estado === 'CONNECTED';
     await db.withPlatform(async (tx) => {
-      await vincularEmpresa(tx, c, d, operativo, mp.meta.simulado);
+      // En un cambio de número la empresa sigue en el número anterior hasta que el nuevo esté operativo.
+      if (!c.es_cambio || operativo) await vincularEmpresa(tx, c, d, operativo, mp.meta.simulado);
       Object.assign(wa, { estado_meta: d.estado, estado_nombre: d.estadoNombre, calidad: d.calidad });
       if (operativo) {
         await mover(tx, c, 'CONECTADO', 'whatsapp_conectado', { de: ['REGISTRADO'], subestado: null, accion: 'prueba', campos: { whatsapp: wa, conectado_en: new Date(), ultimo_error: null }, correlacion, detalle: { estado_nombre: d.estadoNombre } });
@@ -366,6 +382,7 @@ async function registrarYConectar(db: Database, c0: Fila, mp: MetaDePlataforma, 
         if (wa.intentos_conexion < MAX_ESPERAS_META) await enqueue(tx, c.tenant_id, 'numero_propio', { contratacion_id: c.id }, { claveUnica: `num-propio:${c.id}:${wa.intentos_conexion}`, ejecutarEn: new Date(Date.now() + 2 * 60_000), maxIntentos: 5 });
       }
     });
+    if (operativo && c.es_cambio) await completarCambio(db, c, mp, correlacion);
     if (!operativo && (wa.intentos_conexion ?? 0) >= MAX_ESPERAS_META) await fallar(db, c, 'OTRO', correlacion);
   } catch (e) {
     const motivo = motivoRegistro(e);
@@ -380,6 +397,36 @@ async function registrarYConectar(db: Database, c0: Fila, mp: MetaDePlataforma, 
     if (motivo === 'ACCESO') await db.withPlatform((tx) => registrarIncidente(tx, { codigo: 'WHATSAPP_CREDENCIAL', servicio: 'numeros', tenantId: c.tenant_id, correlacion, detalle: { tipo_trabajo: 'numero_propio' } }));
     await fallar(db, c, motivo, correlacion);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Cambio de número: el anterior se desconecta SOLO cuando el nuevo ya quedó conectado
+// ---------------------------------------------------------------------------
+/**
+ * El nuevo número ya funciona (la empresa ya apunta a él). Ahora se desregistra el anterior y se cierra su
+ * conexión. Si el desregistro falla, la empresa NO se queda sin número (ya tiene el nuevo): el número viejo queda
+ * liberado en Omnegia y se avisa al operador para que lo retire de la cuenta de WhatsApp Business.
+ */
+async function completarCambio(db: Database, nuevo: Fila, mp: MetaDePlataforma, correlacion: string) {
+  const viejo = nuevo.reemplaza_id ? await db.withPlatform((tx) => cargar(tx, nuevo.reemplaza_id)) : null;
+  let deregistro: 'hecho' | 'fallido' | 'no_aplica' = 'no_aplica';
+  if (viejo && viejo.estado === 'CONECTADO' && viejo.whatsapp?.registrado && viejo.phone_number_id) {
+    try { await mp.meta.desregistrar(viejo.phone_number_id, mp.token); deregistro = 'hecho'; } catch { deregistro = 'fallido'; }
+  }
+  await db.withPlatform(async (tx) => {
+    if (viejo && viejo.estado !== 'CANCELADO') {
+      await tx.query(`UPDATE numero_credencial SET token_cifrado=NULL, pin_cifrado=NULL, codigo_cifrado=NULL, actualizado_en=now() WHERE contratacion_id=$1`, [viejo.id]);
+      if (viejo.phone_number_id) cacheTokens.delete(viejo.phone_number_id);
+      // CANCELADO primero: libera el lugar único antes de dejar de marcar esta fila como «reemplazo».
+      await mover(tx, viejo, 'CANCELADO', 'numero_reemplazado', { de: [viejo.estado], subestado: 'reemplazado', accion: null, campos: { cancelado_en: new Date(), liberado_en: new Date() }, detalle: { deregister: deregistro, reemplazado_por: nuevo.id }, actor: { tipo: 'SISTEMA', id: null, nombre: 'Cambio de número' }, origen: 'TRABAJADOR', correlacion });
+    }
+    await tx.query(`UPDATE numero_contratacion SET reemplaza_id=NULL, es_cambio=false WHERE id=$1`, [nuevo.id]);
+    await auditPlatform(tx, nuevo.tenant_id, { tipo: 'SISTEMA', id: null, nombre: 'Cambio de número' }, 'TRABAJADOR', correlacion, {
+      accion: 'numero.cambio_completado', recurso: 'numero_contratacion', recursoId: nuevo.id, resultado: deregistro === 'fallido' ? 'ERROR' : 'EXITO',
+      detalle: { anterior: viejo?.numero_e164 ? `···${String(viejo.numero_e164).slice(-4)}` : 'configurado a mano', nuevo: `···${String(nuevo.numero_e164).slice(-4)}`, deregister: deregistro },
+    });
+    if (deregistro === 'fallido') await registrarIncidente(tx, { codigo: 'NUMERO_CONEXION_FALLIDA', servicio: 'numeros', tenantId: nuevo.tenant_id, correlacion, detalle: { tipo_trabajo: 'deregister_cambio', proveedor: 'meta' } });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -428,7 +475,7 @@ export async function vistaPropio(tx: Tx, c: Fila) {
   const bloqueo = c.bloqueo_cliente_hasta && new Date(c.bloqueo_cliente_hasta).getTime() > ahora ? c.bloqueo_cliente_hasta : null;
   const eventos = (await tx.query(`SELECT de, a, tipo, creado_en FROM numero_evento WHERE contratacion_id=$1 ORDER BY creado_en DESC LIMIT 20`, [c.id])).rows;
   return {
-    id: c.id, origen: 'PROPIO' as const, estado: c.estado, subestado: c.subestado, accion_cliente: c.accion_cliente,
+    id: c.id, origen: 'PROPIO' as const, estado: c.estado, subestado: c.subestado, accion_cliente: c.accion_cliente, es_cambio: !!c.es_cambio,
     simulado: c.entorno === 'simulado', numero: c.numero_e164, pais: c.pais, nombre_visible: c.nombre_visible,
     verificacion: {
       metodo: v.metodo ?? null, enviado_en: v.enviado_en ?? null,

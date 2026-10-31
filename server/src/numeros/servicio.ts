@@ -218,6 +218,9 @@ export async function opciones(db: Database, ctx: Ctx) {
     meta: cargosMeta(),
     propio: {
       conectado: propioConectado, numero: t?.whatsapp_numero_visible ?? null,
+      // Cambiar de número: el actual sigue funcionando hasta que el nuevo quede conectado.
+      puede_cambiar: !!mp && !viva?.reemplaza_id && (propioConectado || (viva?.estado === 'CONECTADO' && viva?.origen === 'PROPIO')),
+      en_cambio: !!viva?.reemplaza_id,
       // «Usar mi propio número»: Omnegia registra el número en su cuenta de WhatsApp Business.
       disponible: !!mp && !propioConectado && !viva,
       motivo: !mp ? 'La conexión con WhatsApp está pendiente de configurar en Omnegia. Escribe a soporte.' : null,

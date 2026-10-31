@@ -207,8 +207,8 @@ tr.fila-abierta td { background: var(--acento-tinte); }
 
 /* Celular: el carrito es una hoja inferior deslizable con botones grandes */
 @media (max-width: 900px) {
-  .pos { padding-bottom: 84px; }
-  .pos-carrito { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; margin: 0; border-radius: 16px 16px 0 0; max-height: 86dvh; display: flex; flex-direction: column; box-shadow: 0 -10px 30px rgba(0, 0, 0, .18); transition: transform .28s cubic-bezier(.2, .8, .2, 1); transform: translateY(calc(100% - 68px)); }
+  .pos { padding-bottom: 170px; }
+  .pos-carrito { position: fixed; left: 0; right: 0; bottom: calc(64px + env(safe-area-inset-bottom)); z-index: 50; margin: 0; border-radius: 16px 16px 0 0; max-height: calc(86dvh - 64px); display: flex; flex-direction: column; box-shadow: 0 -10px 30px rgba(0, 0, 0, .18); transition: transform .28s cubic-bezier(.2, .8, .2, 1); transform: translateY(calc(100% - 68px)); }
   .pos-carrito.abierta { transform: none; }
   .pos-asa { display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 100%; min-height: 68px; padding: 8px 16px 10px; border: 0; background: transparent; font: inherit; font-size: 16px; text-align: left; cursor: pointer; touch-action: none; }
   .pos-asa-barra { align-self: center; width: 44px; height: 5px; border-radius: 99px; background: var(--borde-3); }
@@ -229,3 +229,11 @@ tr.fila-abierta td { background: var(--acento-tinte); }
   .pos-recibo-fila { display: flex; justify-content: space-between; gap: 8px; }
   .pos-recibo-print hr { border: 0; border-top: 1px dashed #000; width: 100%; margin: 4px 0; }
 }
+
+/* Suscripción: cambiar de plan; WhatsApp: bienvenida */
+.cuenta-cambiar { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.que-cambia { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.que-cambia ul { margin: 0; padding-left: 18px; }
+.cv-bienvenida { display: flex; flex-direction: column; gap: 20px; padding: 24px; overflow-y: auto; }
+.cv-config { padding: 8px 4px 48px; max-width: 1180px; }
+.cv-bienvenida { max-width: 1180px; }

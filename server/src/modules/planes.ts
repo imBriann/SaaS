@@ -9,6 +9,7 @@ import { urlEmpresa } from '../config.js';
 import { checkoutUrl, cuentaPlataforma } from '../adapters/payments.js';
 import { PLANES, caracteristicasPlan } from '../onboarding/planRules.js';
 import { encolarDocumentos } from '../documentos/servicio.js';
+import { crearTicket } from './soporte.js';
 
 /**
  * Planes de la empresa: catálogo con precio mensual y anual, cambio de plan con prorrateo y su historial
@@ -296,3 +297,19 @@ export const QUE_SE_PAUSA = {
   ],
   conserva: ['Tus clientes, ventas y conversaciones', 'Ver y exportar tus datos'],
 };
+
+/**
+ * «Solicitar el cambio»: cuando el cambio no se puede hacer en línea (modalidad institucional o pagos en línea sin
+ * conectar), la empresa pide el cambio y se abre un caso de soporte para el operador. No cambia nada por sí solo.
+ */
+export async function solicitarCambio(db: Database, ctx: Ctx, body: unknown) {
+  const b = z.object({ plan: z.string(), ciclo: CICLO.default('MENSUAL'), nota: z.string().trim().max(500).optional() }).parse(body ?? {});
+  const { s, destino } = await db.withPlatform(async (tx) => ({ s: await suscripcionDe(tx, ctx.tenantId), destino: await planDe(tx, b.plan) }));
+  if (destino.codigo === s.plan_codigo && b.ciclo === s.ciclo) throw invalid('Ya tienes ese plan.');
+  const t = await db.withTenant(ctx.tenantId, (tx) => crearTicket(tx, ctx, {
+    categoria: 'FACTURACION', prioridad: 'NORMAL',
+    asunto: `Solicitud de cambio de plan: ${s.plan_nombre} a ${destino.nombre}`,
+    descripcion: `La empresa ${s.negocio} pide cambiar del plan ${s.plan_nombre} (${s.ciclo === 'ANUAL' ? 'anual' : 'mensual'}, modalidad ${s.modalidad === 'INSTITUCIONAL' ? 'institucional' : 'comercial'}) al plan ${destino.nombre} (${b.ciclo === 'ANUAL' ? 'anual' : 'mensual'}).${b.nota ? ` Nota de la empresa: ${b.nota}` : ''}`,
+  }));
+  return { ok: true, ...t, mensaje: `Recibimos tu solicitud (${t.numero}). El equipo de Omnegia te escribe para hacer el cambio.` };
+}

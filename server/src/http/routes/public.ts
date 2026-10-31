@@ -8,7 +8,7 @@ import { responderAsistenteWeb, solicitarAsesor } from '../../modules/asistenteW
 import type { Database } from '../../db/index.js';
 import { AppError, invalid, notFound } from '../../lib/errors.js';
 import { cop, token } from '../../lib/util.js';
-import { config, integraciones } from '../../config.js';
+import { config } from '../../config.js';
 import { cookieBorrar, cookieSesion, memberships, SESSION_COOKIE, sessionToken } from '../context.js';
 import * as onboarding from '../../onboarding/service.js';
 import { configPagoDirecto, estadoPagoDirecto, iniciarPagoDirecto } from '../../onboarding/pagoDirecto.js';
@@ -47,7 +47,7 @@ export async function registerPublicRoutes(app: FastifyInstance, db: Database) {
   // Planes que se pueden contratar (precio mensual y anual del catálogo) y si la contratación en línea está abierta.
   app.get('/api/publico/planes', async () => ({ planes: planesAlta(), contratacion: onboarding.puedeContratar(), modalidad: resumenModalidad(), simuladores: config.simuladores }));
   app.get('/api/publico/sectores', async () => loadTemplates().map((t) => ({ sector: t.sector, version: t.version, nombre: t.nombre, descripcion: t.descripcion, modulos: t.modulos })));
-  app.get('/api/publico/estado', async () => ({ contratacion: onboarding.puedeContratar(), modalidad: resumenModalidad(), simuladores: config.simuladores, integraciones: integraciones().map(({ clave, estado }) => ({ clave, estado })) }));
+  app.get('/api/publico/estado', async () => ({ contratacion: onboarding.puedeContratar(), modalidad: resumenModalidad(), simuladores: config.simuladores }));
 
   // ------------------------------------------------------------------ zona legal
   app.get('/api/publico/legal', async () => infoLegal());

@@ -376,6 +376,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
     await conPermiso(ctx);
     return db.withPlatform((tx) => planes.cotizar(tx, ctx.tenantId, String(req.query?.plan ?? ''), String(req.query?.ciclo ?? '')));
   });
+  rx('post', '/suscripcion/solicitar-cambio', async (ctx, req) => { await conPermiso(ctx); return planes.solicitarCambio(db, ctx, req.body); });
   rx('post', '/suscripcion/cambio', async (ctx, req) => { await conPermiso(ctx); return planes.confirmarCambio(db, ctx, req.body ?? {}); });
   app.route({ method: 'DELETE', url: '/api/t/suscripcion/cambio', preHandler: guard, handler: async (req) => { await conPermiso(req.ctx!); return planes.deshacerCambio(db, req.ctx!); } });
   rx('get', '/suscripcion/movimientos', async (ctx) => {

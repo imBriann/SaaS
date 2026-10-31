@@ -52,3 +52,46 @@ Cuadrícula con imagen, buscador, categorías como pestañas y carrito lateral c
 ## Pruebas
 
 `server/test/imagenes.test.ts`: ejecutable disfrazado de PNG rechazado; EXIF eliminado (WebP con miniatura); SSRF bloqueado (http, 127.0.0.1, 169.254.169.254, localhost, IP privadas, IPv6 local, puertos); búsqueda con licencia abierta asignada sola; búsqueda web pendiente que no se sirve ni se envía hasta aprobarla; envío por WhatsApp solo dentro de la ventana; aislamiento entre empresas; venta de mostrador con descuento total y comprobante automático.
+
+## Almacenamiento en Supabase Storage (producción)
+
+**Por qué:** el disco de Render (plan gratuito) se borra en cada despliegue. Con `ALMACEN_PROVEEDOR=disco` las imágenes guardadas desaparecen. En producción usa Supabase Storage.
+
+### 1. Crear el bucket
+
+1. En Supabase: **Storage › New bucket**.
+2. Nombre: `imagenes` (o el que prefieras; ponlo en `SUPABASE_BUCKET_IMAGENES`).
+3. Marca **Public bucket** (WhatsApp descarga las fotos por enlace `https` y no puede iniciar sesión). Los archivos están bajo `t/<id de la empresa>/<producto>/<imagen>.webp` con identificadores no adivinables; las imágenes de la web general pendientes de aprobación solo guardan una miniatura propia.
+4. No hace falta crear políticas (RLS) para los archivos: el servidor sube y borra con la llave de servicio, que se salta las políticas de Storage. Lo público es solo la lectura del bucket.
+5. Opcional: limita el tamaño por archivo a 5 MB y los tipos a `image/webp` en las opciones del bucket.
+
+### 2. Variables en Render (servicio web)
+
+| Variable | Valor |
+|---|---|
+| `ALMACEN_PROVEEDOR` | `supabase` |
+| `SUPABASE_URL` | `https://<proyecto>.supabase.co` (Project Settings › API › Project URL) |
+| `SUPABASE_SERVICE_ROLE_KEY` | la llave `service_role` (Project Settings › API). **Secreta**: solo en Render, nunca en el panel ni en el repositorio |
+| `SUPABASE_BUCKET_IMAGENES` | `imagenes` (por defecto) |
+
+Al arrancar, el servidor valida que `SUPABASE_URL` y la llave existan (si no, no arranca) y avisa en los registros si sigue en `disco` en producción. Los errores de Storage nunca incluyen la llave.
+
+### 3. Verificar
+
+Sube una foto a un producto, haz un despliegue nuevo en Render y comprueba que la foto sigue ahí. La URL pública debe verse como `https://<proyecto>.supabase.co/storage/v1/object/public/imagenes/t/...webp`.
+
+## Búsqueda con IA como proceso (migración 031)
+
+`POST /api/t/catalogo/productos/:id/imagenes/buscar` devuelve de inmediato un `trabajo_id`; el panel consulta `GET /api/t/catalogo/imagenes/busquedas/:id` cada segundo. Pasos: entender el producto → buscar → elegir → (la persona confirma) → descargar y optimizar. En la ficha, la persona elige qué candidatas agregar; en «Completar imágenes que faltan» (lote, hasta 12 productos) se agregan solas las específicas.
+
+- La IA arma **dos consultas**: la del producto (con marca, en español) y una genérica en inglés por categoría. Lo hallado solo con la genérica se marca «Genérica» y **nunca se agrega sin confirmar**.
+- Cada búsqueda guarda su registro (`busqueda_imagen`): consultas probadas con proveedor, código HTTP y resultados, y candidatas descartadas con el motivo.
+- Proveedores en orden: el configurado (`IMAGENES_PROVEEDOR`), Pexels si hay llave, y **Wikimedia Commons** (sin llave, rápido, solo licencias libres) como respaldo.
+
+### Openverse: por qué falla sin credenciales
+
+Medido en las pruebas: «Chunky adulto 4 kg» devuelve 0 resultados (no hay marcas locales) y las consultas sin caché tardaron 43–60 s o terminaron en error de pasarela (respuesta que no es JSON). Anónimo tiene límites bajos. Para subirlos, registra una aplicación gratis y define `OPENVERSE_CLIENT_ID` y `OPENVERSE_CLIENT_SECRET` (flujo `client_credentials`: `POST https://api.openverse.org/v1/auth_tokens/register/` con nombre, descripción y correo; confirma el correo y usa las credenciales). El servidor pide y renueva el token solo. `IMAGENES_BUSCADOR_TIMEOUT_MS` (20000) fija cuánto espera por consulta.
+
+### sharp en Linux
+
+`package-lock.json` incluye `@img/sharp-linux-x64` y `@img/sharp-libvips-linux-x64`. Al arrancar, el servidor procesa una imagen de 1×1 y deja `Procesador de imágenes (sharp): listo.` o un error claro en los registros.
