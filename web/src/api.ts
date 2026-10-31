@@ -102,6 +102,17 @@ export async function descargarDocumentos(pedirEnlace: () => Promise<{ token: st
   setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
 
+/**
+ * URL de un archivo del panel para usarla en <img src>. Sin subdominio (desarrollo local) la etiqueta no puede enviar
+ * la cabecera de la empresa: se añade como parámetro (el servidor solo lo acepta en lecturas GET).
+ */
+export function urlArchivo(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  const slug = tenantSlug();
+  if (!slug || subdominiosActivos() || !url.startsWith('/api/t/')) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}empresa=${encodeURIComponent(slug)}`;
+}
+
 export async function descargar(url: string, nombre: string) {
   const headers: Record<string, string> = {};
   const slug = tenantSlug();

@@ -553,6 +553,7 @@ export function DocumentosPagos() {
 
 /** Vista de la modalidad institucional (acceso por días); la comercial está en Suscripcion.tsx. */
 export function SuscripcionClasica() {
+  const { s: sesion } = useSesion();
   const { data, error, recargar } = useApi<any>(() => api.get('/api/t/suscripcion'), []);
   const { run, ocupado } = useAccion();
   const [confirmar, setConfirmar] = useState(false);
@@ -572,7 +573,7 @@ export function SuscripcionClasica() {
     else recargar();
   };
   const textoPagar = ren?.requiere_aceptacion ? 'Ver el plan comercial' : institucional ? `Renovar ${ren?.acceso_dias ?? ''} días` : s.estado === 'ACTIVA' ? 'Pagar el próximo mes' : s.estado === 'SUSPENDIDA' ? 'Pagar y reactivar' : 'Renovar ahora';
-  const etiquetaMetrica: Record<string, string> = { tokens_ia: 'IA', mensajes: 'Mensajes', documentos: 'Documentos fiscales', plantillas_marketing: 'Plantillas de marketing' };
+  const etiquetaMetrica: Record<string, string> = { tokens_ia: 'IA', mensajes: 'Mensajes', documentos: 'Comprobantes y documentos', plantillas_marketing: 'Plantillas de marketing' };
   return (
     <>
       <Cabecera titulo="Suscripción" sub={institucional ? `Modalidad institucional · pagaste ${cop(s.precio_pagado ?? 0)} · acceso hasta el ${fecha(s.periodo_fin)}` : `Plan ${s.plan_nombre} · ${cop(s.precio_mensual)} al mes`}>
@@ -614,7 +615,7 @@ export function SuscripcionClasica() {
         <div className="kpis k3" aria-label="Consumo del mes">
           <div className="kpi"><Medidor c={data.consumo.tokens_ia} etiqueta="IA" /></div>
           <div className="kpi"><Medidor c={data.consumo.mensajes} etiqueta="Mensajes" /></div>
-          <div className="kpi"><Medidor c={data.consumo.documentos} etiqueta="Documentos fiscales" /></div>
+          {sesion.factura_dian && <div className="kpi"><Medidor c={data.consumo.documentos} etiqueta="Documentos fiscales" /></div>}
         </div>
         <Tarjeta titulo="Tu plan">
           <dl className="plan-def">

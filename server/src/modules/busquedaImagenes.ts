@@ -215,8 +215,10 @@ async function faseBuscar(db: Database, m: Marcha, manual: string | null) {
   const total = hallazgos.length;
   if (!total) {
     paso(m, 'buscar', 'fallo', resumenIntentos(m.intentos));
-    if (primerError) return terminar(m, 'ERROR', primerError.paraPersona);
-    return terminar(m, 'SIN_RESULTADOS', `No encontramos fotos libres para «${especifica}»${generica ? ` ni para «${generica}»` : ''}. Puedes subir tu propia foto o probar otra búsqueda.`);
+    // Solo es un error si NINGÚN proveedor respondió; si alguno respondió sin resultados, es «sin resultados».
+    if (primerError && m.intentos.every((i) => i.error)) return terminar(m, 'ERROR', primerError.paraPersona);
+    const caidos = [...new Set(m.intentos.filter((i) => i.error).map((i) => nombreProveedor(i.proveedor)))];
+    return terminar(m, 'SIN_RESULTADOS', `No encontramos fotos libres para «${especifica}»${generica ? ` ni para «${generica}»` : ''}${caidos.length ? ` (${caidos.join(' y ')} no respondió a tiempo)` : ''}. Puedes subir tu propia foto o probar otra búsqueda.`);
   }
   paso(m, 'buscar', 'hecho', resumenIntentos(m.intentos));
 

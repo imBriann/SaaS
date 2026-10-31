@@ -103,7 +103,7 @@ export class Database {
    * transacción y registrada en schema_migrations. Devuelve true si la base se creó
    * en esta ejecución (sirve para decidir si se cargan datos de demostración).
    */
-  async migrate(): Promise<boolean> {
+  async migrate(o: { hasta?: string } = {}): Promise<boolean> {
     // Nombres, mensajes y emojis de WhatsApp exigen UTF-8 en la base.
     const enc = await this.engine.transaction(async (tx) => (await tx.query<{ e: string }>(`SELECT pg_encoding_to_char(encoding) AS e FROM pg_database WHERE datname = current_database()`)).rows[0]?.e);
     if (enc && enc !== 'UTF8') throw new Error(`La base de datos usa la codificación ${enc}; debe ser UTF8. Créala con: CREATE DATABASE nombre ENCODING 'UTF8' TEMPLATE template0;`);
@@ -122,6 +122,8 @@ export class Database {
     for (const f of archivos) {
       const version = f.replace(/\.sql$/, '');
       if (estado.aplicadas.has(version)) continue;
+      // Solo pruebas: detenerse en una versión para reproducir el estado de una base anterior (p. ej. producción).
+      if (o.hasta && version > o.hasta) break;
       const sql = readFileSync(join(dir, f), 'utf8');
       await this.engine.execAtomic(`${sql}
 ;INSERT INTO schema_migrations (version) VALUES ('${version}');`);

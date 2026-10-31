@@ -51,7 +51,7 @@ export function Planes() {
     <section className="om-section plan-conditions"><h2>Antes de continuar</h2><dl>
       <div><dt>Puedes cambiar de plan</dt><dd>Durante el registro la IA te sugiere el plan que encaja con tu negocio; tú decides. Después, cambias desde tu panel cuando quieras.</dd></div>
       <div><dt>Creación después del pago</dt><dd>El panel se crea cuando el servidor confirma el pago con la pasarela. Un borrador no es una empresa activa.</dd></div>
-      <div><dt>Sin cobros automáticos</dt><dd>Cada renovación la apruebas tú. WhatsApp, IA y facturación electrónica dependen de sus proveedores y de la configuración de tu empresa.</dd></div>
+      <div><dt>Sin cobros automáticos</dt><dd>Cada renovación la apruebas tú. WhatsApp, IA y cobros en línea dependen de sus proveedores y de la configuración de tu empresa.</dd></div>
     </dl></section>
     <Closing />
   </PublicoLayout>;
@@ -63,7 +63,7 @@ const PREGUNTAS = [
   ['¿Y si el asistente no resuelve mi consulta?', 'Puedes abrir una solicitud en Soporte. El equipo de Omnegia recibe el asunto y la descripción que envíes; podrás seguir el estado, leer la respuesta y contestar desde el panel. No se adjunta automáticamente tu conversación con la IA.'],
   ['¿Cómo conecto WhatsApp?', 'En Configuración, abre WhatsApp, completa la información de tu número y utiliza Probar conexión. El resultado indica si la conexión está lista o necesita una corrección.'],
   ['¿Puedo importar mi catálogo?', 'Sí. Durante la configuración puedes cargar un archivo de productos o servicios, revisar sus columnas y confirmar la vista previa. También puedes completarlo manualmente.'],
-  ['¿La facturación ya tiene validez fiscal?', 'El proyecto dispone de facturación en entorno de pruebas. Los documentos de ese entorno no tienen validez fiscal. La emisión real requiere conectar un proveedor tecnológico.'],
+  ['¿Omnegia emite factura electrónica?', 'Todavía no. Hoy cada venta genera un comprobante de venta en PDF para entregar a tu cliente y llevar tu registro; no es una factura electrónica ante la DIAN. La factura electrónica llegará más adelante, cuando conectemos un proveedor tecnológico autorizado.'],
 ];
 export function Ayuda() {
   return <PublicoLayout transparente><section className="public-intro help-intro"><div><h1>Un poco de ayuda.<br /><span>Un siguiente paso claro.</span></h1><p>Encuentra cómo empezar, qué puede hacer el asistente y cómo contactar con una persona.</p></div><Link to="/soporte" className="help-human"><Icon n="persona" className="" size={32} /><h2>Hablar con el equipo</h2><p>Abre una solicitud desde tu empresa. Recibirás un radicado para seguir la atención en el panel.</p><span>Ir a soporte <Icon n="flecha" size={18} className="" /></span><small>Requiere iniciar sesión</small></Link></section>

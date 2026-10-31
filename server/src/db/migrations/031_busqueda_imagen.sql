@@ -7,7 +7,7 @@
 --  lote_id agrupa las búsquedas de «Completar imágenes que faltan».
 -- =====================================================================
 
-CREATE TABLE busqueda_imagen (
+CREATE TABLE IF NOT EXISTS busqueda_imagen (
   id           uuid PRIMARY KEY,
   tenant_id    uuid NOT NULL REFERENCES tenant(id),
   product_id   uuid NOT NULL,
@@ -28,9 +28,10 @@ CREATE TABLE busqueda_imagen (
   UNIQUE (tenant_id, id),
   FOREIGN KEY (tenant_id, product_id) REFERENCES product (tenant_id, id)
 );
-CREATE INDEX ix_busqueda_imagen_producto ON busqueda_imagen (tenant_id, product_id, creado_en DESC);
-CREATE INDEX ix_busqueda_imagen_lote ON busqueda_imagen (tenant_id, lote_id) WHERE lote_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_busqueda_imagen_producto ON busqueda_imagen (tenant_id, product_id, creado_en DESC);
+CREATE INDEX IF NOT EXISTS ix_busqueda_imagen_lote ON busqueda_imagen (tenant_id, lote_id) WHERE lote_id IS NOT NULL;
 ALTER TABLE busqueda_imagen ENABLE ROW LEVEL SECURITY;
 ALTER TABLE busqueda_imagen FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON busqueda_imagen;
 CREATE POLICY tenant_isolation ON busqueda_imagen USING (tenant_id = app_tenant()) WITH CHECK (tenant_id = app_tenant());
 GRANT SELECT, INSERT, UPDATE, DELETE ON busqueda_imagen TO app_rt;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { api, cop, fechaHora, guardar, leer, tenantSlug } from '../../api';
+import { api, cop, fechaHora, guardar, leer, tenantSlug, urlArchivo } from '../../api';
 import { Cabecera, Escritura, useSesion } from '../../components/Layout';
 import { Cargando, Confirmar, ErrorCarga, Modal, Vacio, useAccion, useApi, useRetardo, useToast } from '../../components/ui';
 import { Icon } from '../../components/icons';
@@ -270,7 +270,7 @@ function TarjetaProducto({ p, enCarrito, alAgregar, alElegirCantidad }: { p: any
       <button ref={ref} className="pos-producto" disabled={agotado} aria-label={`Agregar ${p.nombre}, ${cop(p.precio)}`}
         onPointerDown={empezar} onPointerUp={soltar} onPointerLeave={soltar} onPointerCancel={soltar} onContextMenu={(e) => e.preventDefault()}
         onClick={() => { if (fueLargo.current) { fueLargo.current = false; return; } if (ref.current) alAgregar(ref.current); }}>
-        <span className="pos-img">{p.imagen ? <img src={p.imagen} alt="" loading="lazy" /> : <Icon n={p.tipo === 'SERVICIO' ? 'agenda' : 'inventario'} className="" size={32} />}</span>
+        <span className="pos-img">{p.imagen ? <img src={urlArchivo(p.imagen)} alt="" loading="lazy" /> : <Icon n={p.tipo === 'SERVICIO' ? 'agenda' : 'inventario'} className="" size={32} />}</span>
         <b>{p.nombre}</b>
         <span className="pos-precio">{cop(p.precio)}</span>
         {p.controla_stock && <span className={`peq-txt ${agotado ? 'error' : p.stock <= (p.stock_minimo ?? 0) ? 'aviso-stock' : 'tenue'}`}>{agotado ? 'Agotado' : `Quedan ${p.stock}`}</span>}

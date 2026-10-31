@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { api } from '../api';
+import { api, urlArchivo } from '../api';
 import { Escritura } from './Layout';
 import { Cargando, useAccion, useApi, useToast } from './ui';
 import { Icon } from './icons';
@@ -38,7 +38,7 @@ export function ImagenesProducto({ productId }: { productId: string }) {
         <div className="img-rejilla">
           {imagenes.map((i) => (
             <figure key={i.id} className={`img-item ${i.estado.toLowerCase()}`}>
-              <img src={i.miniatura} alt="" loading="lazy" />
+              <img src={urlArchivo(i.miniatura)} alt="" loading="lazy" />
               <figcaption className="col" style={{ gap: 4 }}>
                 {i.estado === 'PENDIENTE_APROBACION' && <span className="estado warn">Pendiente</span>}
                 {i.estado === 'ROTA' && <span className="estado err">Enlace roto</span>}

@@ -46,7 +46,7 @@ export class AlmacenSupabase implements Almacen {
   constructor(
     private url = config.imagenes.supabaseUrl,
     private llave = config.imagenes.supabaseServiceKey ?? '',
-    private bucket = config.imagenes.supabaseBucket,
+    private bucket = config.imagenes.supabaseBucket ?? 'imagenes',
     private http: Fetch = (...a) => fetch(...a),
   ) {}
   private ruta(ruta: string) {

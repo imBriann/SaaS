@@ -10,5 +10,6 @@ ALTER TABLE numero_contratacion ADD COLUMN IF NOT EXISTS es_cambio boolean NOT N
 ALTER TABLE numero_contratacion ADD COLUMN IF NOT EXISTS reemplaza_id uuid;
 
 DROP INDEX IF EXISTS ux_numero_contratacion_vigente;
-CREATE UNIQUE INDEX ux_numero_contratacion_vigente ON numero_contratacion (tenant_id) WHERE estado <> 'CANCELADO' AND reemplaza_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_numero_contratacion_vigente ON numero_contratacion (tenant_id) WHERE estado <> 'CANCELADO' AND reemplaza_id IS NULL;
+DROP INDEX IF EXISTS ux_numero_contratacion_cambio;
 CREATE UNIQUE INDEX ux_numero_contratacion_cambio ON numero_contratacion (tenant_id) WHERE estado <> 'CANCELADO' AND reemplaza_id IS NOT NULL;

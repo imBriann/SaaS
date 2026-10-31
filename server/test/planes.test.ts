@@ -34,7 +34,7 @@ describe('Catálogo de planes', () => {
     expect(r.body.planes.map((p: any) => [p.codigo, p.mensual, p.anual])).toEqual([['esencial', 99_000, 990_000], ['negocio', 229_000, 2_290_000], ['pro', 549_000, 5_490_000]]);
     const negocio = r.body.planes.find((p: any) => p.codigo === 'negocio');
     expect(negocio).toMatchObject({ actual: true, ahorro_anual: 229_000 * 2 });
-    expect(negocio.caracteristicas.join(' ')).toMatch(/6 personas.*1\.200 respuestas.*300 facturas/);
+    expect(negocio.caracteristicas.join(' ')).toMatch(/6 personas.*1\.200 respuestas.*Comprobantes de venta/);
   });
 
   it('solo quien administra la suscripción ve y cambia el plan', async () => {

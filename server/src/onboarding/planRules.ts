@@ -59,7 +59,8 @@ export function caracteristicasPlan(p: { max_usuarios: number; modulos: string[]
     `${p.max_usuarios} ${p.max_usuarios === 1 ? 'persona' : 'personas'} con acceso`,
     `IA para unas ${n(respuestas)} respuestas al mes`,
     `${n(p.cuota_mensajes)} mensajes de WhatsApp al mes`,
-    Number(p.cuota_documentos) > 0 ? `${n(p.cuota_documentos)} facturas electrónicas al mes` : 'Sin factura electrónica',
+    // Con la facturación DIAN apagada no se promete factura electrónica: se ofrecen comprobantes de venta.
+    !config.fiscal.dianHabilitada ? 'Comprobantes de venta en PDF' : Number(p.cuota_documentos) > 0 ? `${n(p.cuota_documentos)} facturas electrónicas al mes` : 'Sin factura electrónica',
     ...['agenda', 'ventas', 'inventario', 'comisiones', 'membresias'].filter((m) => p.modulos.includes(m)).map((m) => MODULO_TEXTO[m]),
     p.politica_excedente === 'EXCEDENTE' ? `La IA sigue al pasar la cuota (${pesos(Number(p.precio_excedente_1k_tokens))} por 1.000 tokens)` : 'Al tope, la IA pasa la conversación a tu equipo',
   ];
