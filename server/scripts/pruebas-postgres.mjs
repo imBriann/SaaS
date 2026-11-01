@@ -17,7 +17,9 @@ const ARCHIVOS = process.env.ARCHIVOS ? process.env.ARCHIVOS.split(',') : ['test
   // IA autónoma, agenda (exclusión con btree_gist y concurrencia real) e imágenes.
   'test/ia-autonoma.test.ts', 'test/agenda-automatica.test.ts', 'test/imagenes.test.ts',
   // Migraciones sobre una base de producción (hasta la 030), búsqueda de imágenes, cambio de número y panel.
-  'test/migraciones-produccion.test.ts', 'test/busqueda-imagenes.test.ts', 'test/cambio-numero.test.ts', 'test/correcciones-panel.test.ts'];
+  'test/migraciones-produccion.test.ts', 'test/busqueda-imagenes.test.ts', 'test/cambio-numero.test.ts', 'test/correcciones-panel.test.ts',
+  // Pagos de comercio por WhatsApp: ledger con disparador, índices parciales y RLS en PostgreSQL real.
+  'test/pagos-comercio.test.ts', 'test/pagos-comercio-cobros.test.ts'];
 
 let url = process.env.DATABASE_URL_PRUEBAS;
 let detener = async () => {};

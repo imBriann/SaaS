@@ -4,6 +4,7 @@ import type { ToolDef } from '../ai/registry.js';
 import { agregarAlPedido, crearPedido, elegirEntrega, pedidoDelCliente, totales, vistaPedido } from './pedidos.js';
 import { mediosHabilitados } from './metodos.js';
 import { pesos } from './precios.js';
+import { generarCobro, resumenCobro } from './cobros.js';
 
 /**
  * Herramientas del agente para vender por WhatsApp (docs/pagos-whatsapp.md § Flujo). Reglas del gateway:
@@ -87,6 +88,14 @@ export const HERRAMIENTAS_COMERCIO: ToolDef<any>[] = [
       if (!/^3\d{9}$/.test(d)) return { valido: false, motivo: 'El celular de Nequi tiene 10 dígitos y empieza por 3.' };
       return { valido: true, celular: d, terminado_en: d.slice(-4) };
     },
+  },
+  {
+    nombre: 'generar_cobro', version: '1.0.0', modulo: 'ventas', disponible: comercioActivo,
+    descripcion: 'Genera el cobro del pedido con el medio elegido. Antes muestra al cliente el total oficial y el importe exacto que pagará (calcular_total): el cliente lo confirma con «SÍ». Con NEQUI envía también su celular de Nequi y, si no lo tenemos, su correo. Nunca digas que un pago está aprobado: eso solo lo confirma Wompi o el negocio.',
+    args: z.object({ pedido_id: uuid, celular_nequi: z.string().min(10).max(20).optional(), correo: z.email().max(120).optional() }).strict(),
+    permiso: 'payment:link', riesgo: 'confirmable', efectos: ['escribe commerce_payment', 'crea transacción o enlace de pago'], limitePorConversacion: 3, requiereCliente: true,
+    resumen: async (a, { tx, customerId }) => resumenCobro(tx, { orderId: a.pedido_id, customerId: customerId!, celularNequi: a.celular_nequi }),
+    run: async (a, { tx, ctx, customerId }) => generarCobro(tx, ctx, { orderId: a.pedido_id, customerId: customerId!, celularNequi: a.celular_nequi ?? null, correo: a.correo ?? null }),
   },
   {
     nombre: 'estado_pedido', version: '1.0.0', modulo: 'ventas', disponible: comercioActivo,

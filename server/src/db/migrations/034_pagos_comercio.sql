@@ -178,7 +178,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON merchant_payment_account TO app_rt;
 GRANT SELECT, INSERT, UPDATE ON commerce_payment TO app_rt;
 GRANT SELECT, INSERT ON financial_ledger TO app_rt;
 GRANT SELECT, INSERT, UPDATE ON payment_reconciliation TO app_rt;
-GRANT SELECT ON payment_event TO app_rt;
+GRANT SELECT, INSERT ON payment_event TO app_rt;
 -- La plataforma resuelve referencias del webhook, registra eventos y muestra los recaudos al operador.
 GRANT SELECT ON commerce_payment, financial_ledger, payment_reconciliation TO app_platform;
 GRANT SELECT, INSERT ON payment_event TO app_platform;

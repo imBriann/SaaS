@@ -148,11 +148,15 @@ export function normalizarTransaccion(t: any): TransaccionWompi | null {
 export type ResultadoCreacion = { ok: true; transaccion: TransaccionWompi } | { ok: false; mensaje: string; reintentable: boolean };
 
 /** Crea la transacción. Los mensajes de error de Wompi no se muestran crudos: pueden incluir datos de la solicitud. */
-export async function crearTransaccionWompi(cuenta: CuentaPasarela, t: TransaccionNueva, fetcher: typeof fetch = fetch): Promise<ResultadoCreacion> {
+export async function crearTransaccionWompi(cuenta: CuentaPasarela, t: TransaccionNueva, fetcher: typeof fetch = fetch, opts: { llavePrivada?: boolean } = {}): Promise<ResultadoCreacion> {
   if (!cuenta.llavePublica) return { ok: false, mensaje: 'El pago en línea no está configurado.', reintentable: false };
+  // Por defecto (cobros existentes) se autoriza con la llave pública, como hasta ahora. Los pedidos por WhatsApp usan la
+  // llave privada, como indica hoy la página de transacciones de Wompi (docs/pagos-whatsapp.md § 2).
+  if (opts.llavePrivada && !cuenta.llavePrivada) return { ok: false, mensaje: 'El pago en línea no está configurado.', reintentable: false };
+  const cabeceras = opts.llavePrivada ? { ...cabeceraPublica(cuenta), authorization: `Bearer ${cuenta.llavePrivada}` } : cabeceraPublica(cuenta);
   let res: Response;
   try {
-    res = await fetcher(`${apiWompi(cuenta.entorno)}/transactions`, { method: 'POST', headers: cabeceraPublica(cuenta), body: JSON.stringify(cuerpoTransaccion(cuenta, t)), signal: AbortSignal.timeout(TIEMPO) });
+    res = await fetcher(`${apiWompi(cuenta.entorno)}/transactions`, { method: 'POST', headers: cabeceras, body: JSON.stringify(cuerpoTransaccion(cuenta, t)), signal: AbortSignal.timeout(TIEMPO) });
   } catch {
     return { ok: false, mensaje: 'No pudimos comunicarnos con Wompi. Intenta de nuevo en unos segundos.', reintentable: true };
   }

@@ -1,3 +1,4 @@
+import { procesarEventoCobro } from '../comercio/cobros.js';
 import type { Database, Tx } from '../db/index.js';
 import { auditPlatform } from '../core/audit.js';
 import { enqueue } from '../core/events.js';
@@ -42,6 +43,12 @@ async function incidentePago(tx: Tx, tenantId: string | null, motivo: string, co
 
 export async function procesarEventoPago(db: Database, ev: EventoPago, correlacion: string, origen: string): Promise<ResultadoEvento> {
   if (ev.referencia.startsWith('PL-')) return procesarCobroComercio(db, ev, correlacion);
+  // Pedidos por WhatsApp (misma cuenta Wompi del proyecto): procesador independiente de las suscripciones.
+  if (ev.referencia.startsWith('CP-')) {
+    const r = await procesarEventoCobro(db, ev, correlacion);
+    if (r.reintentar) throw new Error('No se pudo consultar la transacción a Wompi: se reintenta el evento.');
+    return { ok: r.ok, duplicado: r.duplicado, ignorado: r.ignorado, estado: r.estado };
+  }
 
   const r = await db.withPlatform(async (tx) => {
     const ins = await tx.query(
@@ -273,6 +280,10 @@ export async function procesarEventoComercio(db: Database, webhookToken: string,
 export async function verificarRetorno(db: Database, transaccionId: string, correlacion: string) {
   const plataforma = cuentaPlataforma();
   let ev = plataforma?.proveedor === 'wompi' ? await consultarTransaccionWompi(plataforma, transaccionId) : null;
+  if (ev?.referencia.startsWith('CP-')) {
+    const r = await procesarEventoCobro(db, ev, correlacion);
+    return { estado: ev.estado, referencia: ev.referencia, resultado: r };
+  }
   if (ev && !ev.referencia.startsWith('SUB-') && !ev.referencia.startsWith('NUM-')) ev = null;
   if (!ev) {
     // Puede ser un cobro de un comercio: se consulta con el entorno de la cuenta dueña de la referencia.
