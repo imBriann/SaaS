@@ -16,6 +16,9 @@ export function PestanasVentas({ activa }: { activa: PestanaVentas }) {
       {puede('order:create') && <Pestana id="vender" activa={activa} guia="ventas/pestana-vender">Vender</Pestana>}
       {puede('order:read') && <Pestana id="historial" activa={activa} guia="ventas/pestana-historial">Historial</Pestana>}
       {puede('comprobante:read') && <Pestana id="comprobantes" activa={activa} guia="ventas/pestana-comprobantes">Comprobantes</Pestana>}
+      {puede('order:read') && <Pestana id="pedidos" activa={activa} guia="ventas/pestana-pedidos">Pedidos</Pestana>}
+      {puede('order:read') && <Pestana id="pagos" activa={activa} guia="ventas/pestana-pagos">Pagos</Pestana>}
+      {puede('tenant:configure') && <Pestana id="metodos" activa={activa} guia="ventas/pestana-metodos">Métodos de pago</Pestana>}
     </nav>
   );
 }

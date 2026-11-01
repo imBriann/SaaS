@@ -103,6 +103,12 @@ export async function dashboard(tx: Tx, ctx: Ctx) {
       atencion.push({ tipo: 'pago_excedente', nivel: 'error', titulo: `Pago recibido de más en la venta #${x.numero}`, detalle: `La pasarela confirmó ${Math.round(Number(x.monto)).toLocaleString('es-CO')} COP de una venta que ya estaba pagada o anulada. Devuélvelo al cliente desde Wompi.`, accion: { etiqueta: 'Ver venta', ruta: `/ventas/${x.id}` } });
     }
   }
+  if (can(ctx, 'order:read')) {
+    // Pedidos por WhatsApp: pagos manuales que esperan a una persona y cobros con discrepancias.
+    const c = (await tx.query(`SELECT count(*) FILTER (WHERE estado='PENDIENTE_CONFIRMACION')::int AS confirmar, count(*) FILTER (WHERE estado='EN_REVISION')::int AS revisar FROM commerce_payment`)).rows[0];
+    if (c.confirmar) atencion.push({ tipo: 'pago_pedido', nivel: 'warn', titulo: `${c.confirmar} pago(s) de pedidos esperan tu confirmación`, detalle: 'Confírmalos solo cuando veas el dinero en tu cuenta.', accion: { etiqueta: 'Revisar', ruta: '/ventas/pedidos' } });
+    if (c.revisar) atencion.push({ tipo: 'pago_pedido', nivel: 'error', titulo: `${c.revisar} cobro(s) requieren revisión`, detalle: 'Wompi reportó un importe, moneda o referencia distintos: no se aprobaron.', accion: { etiqueta: 'Ver', ruta: '/ventas/pagos' } });
+  }
   const pend = (await tx.query(`SELECT count(*)::int AS n FROM pending_action WHERE estado='PENDIENTE' AND expira_en > now()`)).rows[0].n;
   if (pend && can(ctx, 'ai:read')) atencion.push({ tipo: 'confirmacion', nivel: 'info', titulo: `${pend} acción(es) de la IA esperan que el cliente confirme`, detalle: 'Solo se ejecutan si el cliente responde SÍ en los próximos minutos.', accion: { etiqueta: 'Ver', ruta: '/ia' } });
 

@@ -7,6 +7,7 @@ import * as op from '../../modules/operador.js';
 import * as atencion from '../../modules/operadorAtencion.js';
 import * as reembolsos from '../../modules/reembolsos.js';
 import * as numerosWaba from '../../numeros/plataforma.js';
+import * as recaudosComercio from '../../comercio/operador.js';
 
 /**
  * Rutas del panel interno de Omnegia (/api/operador/*).
@@ -57,6 +58,7 @@ export async function registerOperatorRoutes(app: FastifyInstance, db: Database)
   r('POST', '/incidentes/:id/reintentar', (o, req) => op.reintentarIncidente(db, o, req.params.id, req.body?.motivo));
 
   r('GET', '/integraciones', (o) => op.estadoIntegraciones(db, o));
+  r('GET', '/recaudos', (o) => recaudosComercio.recaudos(db, o));
   r('POST', '/empresas/:id/whatsapp/verificar', (o, req) => atencion.verificarWhatsappEmpresa(db, o, req.params.id));
 
   // Números de la WABA de Omnegia: lista en vivo de Meta, asignación a empresas y registro en la Cloud API.

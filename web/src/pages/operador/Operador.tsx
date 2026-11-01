@@ -25,6 +25,7 @@ const SECCIONES: { to: string; n: string; t: string }[] = [
   { to: '/operador/salud', n: 'salud', t: 'Salud del sistema' },
   { to: '/operador/incidentes', n: 'alerta', t: 'Incidentes' },
   { to: '/operador/integraciones', n: 'integraciones', t: 'Integraciones' },
+  { to: '/operador/recaudos', n: 'moneda', t: 'Recaudos' },
   { to: '/operador/numeros', n: 'telefono', t: 'Números de WhatsApp' },
   { to: '/operador/conversaciones', n: 'conversaciones', t: 'Conversaciones' },
   { to: '/operador/atencion', n: 'persona', t: 'Atención de las empresas' },
@@ -852,5 +853,55 @@ function PulsoPlataforma({ data }: { data: any }) {
         { icono: 'soporte', texto: `${data.soporte_abiertos} ${data.soporte_abiertos === 1 ? 'solicitud abierta' : 'solicitudes abiertas'}`, tono: data.soporte_abiertos ? 'aviso' : 'ok', ruta: '/operador/soporte' },
         { icono: 'reloj', texto: `${num(data.cola.pendientes)} trabajos en cola${data.cola.fallidos ? ` · ${data.cola.fallidos} fallidos` : ''}`, tono: data.cola.fallidos ? 'aviso' : 'neutro', ruta: '/operador/salud' },
       ]} />
+  );
+}
+
+// ------------------------------------------------------------------ recaudos de pedidos por WhatsApp
+const ESTADO_COBRO: Record<string, string> = { PENDIENTE_PAGO: 'Pendiente de pago', PROCESANDO: 'Procesando', PAGADO: 'Aprobado', RECHAZADO: 'Rechazado', ERROR: 'Error', EN_REVISION: 'Requiere revisión', PENDIENTE_CONFIRMACION: 'Espera al negocio', ANULADO: 'Anulado' };
+/**
+ * Cobros de los pedidos de todas las empresas. Hoy llegan a la cuenta Wompi del proyecto institucional (sin
+ * dispersión a terceros). El modo de precios y el importe fijo solo se cambian con variables del servidor.
+ */
+export function OpRecaudos() {
+  const { data, error, cargando, recargar } = useApi<any>(() => api.get('/api/operador/recaudos'), [], { cada: 15000 });
+  return (
+    <>
+      <Cabecera titulo="Recaudos" sub="Cobros de pedidos por WhatsApp de todas las empresas. Sin datos personales de los compradores." />
+      {error ? <ErrorCarga error={error} reintentar={recargar} /> : cargando && !data ? <Cargando filas={5} /> : (
+        <div className="col" style={{ gap: 16 }}>
+          <Tarjeta titulo="Modo de precios y pagos reales">
+            <dl className="datos-def">
+              <dt>Modo</dt><dd>{data.precios.modo === 'institutional_test' ? <>Demostración institucional · cobro fijo de <b>{cop(data.precios.cargo_fijo_cop)}</b> por pedido</> : 'Precios oficiales (se cobra el total)'}</dd>
+              <dt>Pagos reales</dt><dd>{data.pagos_reales ? <Estado v="conectado" texto="Habilitados" /> : <span className="tenue">{data.motivo}</span>}</dd>
+            </dl>
+            <p className="tenue peq-txt">Se cambia solo en el servidor (COMMERCE_PRICING_MODE, COMMERCE_TEST_CHARGE_COP y PAYMENTS_LIVE_ENABLED en Render). Ni las empresas, ni los agentes, ni los clientes pueden cambiarlo.</p>
+          </Tarjeta>
+          <div className="kpis">
+            <Cifra etiqueta="Recaudado (bruto)" valor={cop(data.recaudado)} />
+            <Cifra etiqueta="Sin comisión conciliada" valor={data.pendientes_de_comision} />
+            <Cifra etiqueta="Revisiones abiertas" valor={data.revisiones_abiertas} />
+          </div>
+          <Tarjeta titulo="Cobros recientes" sinCuerpo>
+            {!data.cobros.length ? <Vacio titulo="Todavía no hay cobros" /> : (
+              <div className="tabla-wrap"><table className="tabla tabla-movil">
+                <thead><tr><th>Fecha</th><th>Empresa</th><th>Referencia</th><th>Medio</th><th className="num">Precio oficial</th><th className="num">Cobro</th><th className="num">Reportado</th><th>Estado</th></tr></thead>
+                <tbody>{data.cobros.map((c: any) => (
+                  <tr key={c.id}>
+                    <td data-etiqueta="Fecha">{fechaHora(c.creado_en)}</td>
+                    <td data-etiqueta="Empresa">{c.empresa}</td>
+                    <td data-etiqueta="Referencia" className="mono peq-txt">{c.referencia}</td>
+                    <td data-etiqueta="Medio">{c.metodo}{c.modalidad === 'MANUAL' ? ' · manual' : ''}</td>
+                    <td data-etiqueta="Precio oficial" className="num">{cop(c.total_oficial)}</td>
+                    <td data-etiqueta="Cobro" className="num"><b>{cop(c.cobro)}</b>{c.modo_precios === 'institutional_test' ? <div className="tenue peq-txt">demostración</div> : null}</td>
+                    <td data-etiqueta="Reportado" className="num">{c.reportado == null ? '—' : cop(c.reportado)}</td>
+                    <td data-etiqueta="Estado">{ESTADO_COBRO[c.estado] ?? c.estado}</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            )}
+          </Tarjeta>
+        </div>
+      )}
+    </>
   );
 }

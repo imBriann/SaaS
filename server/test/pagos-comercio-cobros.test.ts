@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { setup, login, api, CRED, type Env } from './helpers.js';
+import { setup, login, loginOperador, api, CRED, type Env } from './helpers.js';
 import { config } from '../src/config.js';
 import { evaluateAndExecute } from '../src/ai/gateway.js';
 import { loadAgent } from '../src/ai/runtime.js';
@@ -334,4 +334,18 @@ describe('Fase 7 · Wompi (simulado) y confirmación real', () => {
     expect((await B.get('/pagos/pedidos')).body.pedidos).toHaveLength(0);
     expect((await B.post(`/pagos/cobros/${(await pago(pedido)).id}/verificar`)).status).toBe(404);
   });
+
+  it('el operador ve los recaudos de todas las empresas y el modo vigente, sin datos personales', async () => {
+    const cookie = await loginOperador(E.app, E.db);
+    const r = await E.app.inject({ method: 'GET', url: '/api/operador/recaudos', headers: { cookie } });
+    expect(r.statusCode).toBe(200);
+    const b = r.json();
+    expect(b.precios).toMatchObject({ modo: 'institutional_test', cargo_fijo_cop: 1500 });
+    expect(b.cobros.length).toBeGreaterThan(0);
+    expect(b.recaudado).toBeGreaterThan(0);
+    expect(b.cobros[0]).toHaveProperty('empresa');
+    expect(r.body).not.toMatch(/3170003|celular|nequi@cliente|prv_prod/);
+    expect((await A.get('/../operador/recaudos')).status).not.toBe(200);
+  });
 });
+

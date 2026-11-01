@@ -56,6 +56,10 @@ const Clientes = lazy(() => negocio().then((m) => ({ default: m.Clientes })));
 const Facturacion = lazy(() => negocio().then((m) => ({ default: m.Facturacion })));
 const Inventario = lazy(() => negocio().then((m) => ({ default: m.Inventario })));
 const Historial = lazy(() => import('./pages/app/ventas/Historial').then((m) => ({ default: m.Historial })));
+const pagosVentas = () => import('./pages/app/ventas/Pagos');
+const PedidosVentas = lazy(() => pagosVentas().then((m) => ({ default: m.Pedidos })));
+const PagosVentas = lazy(() => pagosVentas().then((m) => ({ default: m.PagosComercio })));
+const MetodosPagoVentas = lazy(() => pagosVentas().then((m) => ({ default: m.MetodosPago })));
 const Vender = lazy(() => import('./pages/app/Vender').then((m) => ({ default: m.Vender })));
 const Comprobantes = lazy(() => import('./pages/app/Comprobantes').then((m) => ({ default: m.Comprobantes })));
 const VentaDetalle = lazy(() => negocio().then((m) => ({ default: m.VentaDetalle })));
@@ -82,6 +86,7 @@ const OpSuscripciones = lazy(() => op().then((m) => ({ default: m.OpSuscripcione
 const OpSalud = lazy(() => op().then((m) => ({ default: m.OpSalud })));
 const OpIncidentes = lazy(() => op().then((m) => ({ default: m.OpIncidentes })));
 const OpIntegraciones = lazy(() => op().then((m) => ({ default: m.OpIntegraciones })));
+const OpRecaudos = lazy(() => op().then((m) => ({ default: m.OpRecaudos })));
 const OpSoporte = lazy(() => op().then((m) => ({ default: m.OpSoporte })));
 const OpTicket = lazy(() => op().then((m) => ({ default: m.OpTicket })));
 const OpAuditoria = lazy(() => op().then((m) => ({ default: m.OpAuditoria })));
@@ -156,6 +161,7 @@ function App() {
             <Route path="salud" element={<OpSalud />} />
             <Route path="incidentes" element={<OpIncidentes />} />
             <Route path="integraciones" element={<OpIntegraciones />} />
+            <Route path="recaudos" element={<OpRecaudos />} />
             <Route path="conversaciones" element={<OpConversaciones />} />
             <Route path="conversaciones/:id" element={<OpConversaciones />} />
             <Route path="atencion" element={<OpAtencionEmpresas />} />
@@ -178,6 +184,9 @@ function App() {
             <Route path="/ventas" element={<Historial />} />
             <Route path="/ventas/vender" element={<Vender />} />
             <Route path="/ventas/comprobantes" element={<Comprobantes />} />
+            <Route path="/ventas/pedidos" element={<PedidosVentas />} />
+            <Route path="/ventas/pagos" element={<PagosVentas />} />
+            <Route path="/ventas/metodos-de-pago" element={<MetodosPagoVentas />} />
             <Route path="/ventas/:id" element={<VentaDetalle />} />
             <Route path="/inventario" element={<Inventario />} />
             <Route path="/agenda" element={<Agenda />} />

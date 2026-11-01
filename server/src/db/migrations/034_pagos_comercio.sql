@@ -187,3 +187,20 @@ GRANT SELECT, INSERT ON payment_event TO app_platform;
 -- Solo se ofrecen al cliente si la empresa activa algún método de pago de pedidos (ToolDef.disponible).
 UPDATE ai_agent SET herramientas = herramientas || ARRAY['crear_pedido','agregar_al_pedido','calcular_total','elegir_entrega','medios_de_pago','elegir_medio_pago','pedir_celular_nequi','generar_cobro','estado_pedido']
 WHERE configuracion = 'atencion' AND 'registrar_venta' = ANY(herramientas) AND NOT ('crear_pedido' = ANY(herramientas));
+
+-- ---------------------------------------------------------------- panel del operador (metadatos, sin datos personales)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_operador') THEN
+    DROP POLICY IF EXISTS operador_metadatos ON commerce_payment;
+    CREATE POLICY operador_metadatos ON commerce_payment FOR SELECT TO app_operador USING (true);
+    GRANT SELECT (id, tenant_id, referencia, modalidad, metodo, estado, modo_precios, entorno, total_oficial_centavos, monto_cobro_centavos,
+                  monto_reportado_centavos, comision_centavos, creado_en) ON commerce_payment TO app_operador;
+    DROP POLICY IF EXISTS operador_metadatos ON financial_ledger;
+    CREATE POLICY operador_metadatos ON financial_ledger FOR SELECT TO app_operador USING (true);
+    GRANT SELECT (tipo, bruto_centavos, estado) ON financial_ledger TO app_operador;
+    DROP POLICY IF EXISTS operador_metadatos ON payment_reconciliation;
+    CREATE POLICY operador_metadatos ON payment_reconciliation FOR SELECT TO app_operador USING (true);
+    GRANT SELECT (resuelto_en) ON payment_reconciliation TO app_operador;
+  END IF;
+END $$;
