@@ -864,6 +864,19 @@ const ESTADO_COBRO: Record<string, string> = { PENDIENTE_PAGO: 'Pendiente de pag
  */
 export function OpRecaudos() {
   const { data, error, cargando, recargar } = useApi<any>(() => api.get('/api/operador/recaudos'), [], { cada: 15000 });
+  const { puede } = useYo();
+  const [comision, setComision] = useState<any>(null);
+  const [resolver, setResolver] = useState<any>(null);
+  const [valor, setValor] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const accion = useAccion();
+  const cerrar = () => { setComision(null); setResolver(null); setValor(''); setMotivo(''); };
+  const enviar = async () => {
+    const r = comision
+      ? await accion.run(() => api.post(`/api/operador/recaudos/${comision.id}/comision`, { comision_cop: Number(valor.replace(',', '.')), motivo }), 'Comisión conciliada')
+      : await accion.run(() => api.post(`/api/operador/recaudos/revisiones/${resolver.id}/resolver`, { motivo }), 'Revisión resuelta');
+    if (r) { cerrar(); recargar(); }
+  };
   return (
     <>
       <Cabecera titulo="Recaudos" sub="Cobros de pedidos por WhatsApp de todas las empresas. Sin datos personales de los compradores." />
@@ -881,6 +894,16 @@ export function OpRecaudos() {
             <Cifra etiqueta="Sin comisión conciliada" valor={data.pendientes_de_comision} />
             <Cifra etiqueta="Revisiones abiertas" valor={data.revisiones_abiertas} />
           </div>
+          {data.revisiones?.length > 0 && (
+            <Tarjeta titulo="Revisiones abiertas" sinCuerpo>
+              <ul className="lista">{data.revisiones.map((r: any) => (
+                <li key={r.id} className="agente-fila">
+                  <div className="col" style={{ gap: 2 }}><b className="mono peq-txt">{r.referencia}</b><span className="tenue peq-txt">{r.tipo}: se esperaba {r.esperado} y llegó {r.recibido} · {fechaHora(r.creado_en)}</span></div>
+                  {puede('reembolsos:gestionar') && <button className="btn peq" onClick={() => setResolver(r)}>Resolver</button>}
+                </li>
+              ))}</ul>
+            </Tarjeta>
+          )}
           <Tarjeta titulo="Cobros recientes" sinCuerpo>
             {!data.cobros.length ? <Vacio titulo="Todavía no hay cobros" /> : (
               <div className="tabla-wrap"><table className="tabla tabla-movil">
@@ -894,13 +917,22 @@ export function OpRecaudos() {
                     <td data-etiqueta="Precio oficial" className="num">{cop(c.total_oficial)}</td>
                     <td data-etiqueta="Cobro" className="num"><b>{cop(c.cobro)}</b>{c.modo_precios === 'institutional_test' ? <div className="tenue peq-txt">demostración</div> : null}</td>
                     <td data-etiqueta="Reportado" className="num">{c.reportado == null ? '—' : cop(c.reportado)}</td>
-                    <td data-etiqueta="Estado">{ESTADO_COBRO[c.estado] ?? c.estado}</td>
+                    <td data-etiqueta="Estado">{ESTADO_COBRO[c.estado] ?? c.estado}{c.comision_pendiente && puede('reembolsos:gestionar') && <div><button className="btn peq" onClick={() => setComision(c)}>Registrar comisión</button></div>}</td>
                   </tr>
                 ))}</tbody>
               </table></div>
             )}
           </Tarjeta>
         </div>
+      )}
+      {(comision || resolver) && (
+        <Modal titulo={comision ? `Comisión de ${comision.referencia}` : 'Resolver la revisión'} onCerrar={cerrar}
+          pie={<><button className="btn" onClick={cerrar}>Cancelar</button><button className="btn primario" disabled={accion.ocupado || motivo.trim().length < (comision ? 5 : 10) || (!!comision && !valor)} onClick={enviar}>Guardar</button></>}>
+          {comision && <><p className="sec">Toma la comisión del reporte de Wompi. Se registra un ajuste en el libro (el recaudo original no se modifica).</p>
+            <Campo etiqueta="Comisión cobrada por Wompi (COP)"><input className="input num" inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value.replace(/[^0-9.,]/g, ''))} /></Campo></>}
+          {resolver && <p className="sec">Explica qué verificaste. El cobro no cambia de estado desde aquí: ningún pago se aprueba a mano en Omnegia.</p>}
+          <Campo etiqueta="Motivo"><textarea className="input" rows={3} maxLength={500} value={motivo} onChange={(e) => setMotivo(e.target.value)} /></Campo>
+        </Modal>
       )}
     </>
   );

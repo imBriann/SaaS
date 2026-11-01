@@ -198,9 +198,9 @@ BEGIN
                   monto_reportado_centavos, comision_centavos, creado_en) ON commerce_payment TO app_operador;
     DROP POLICY IF EXISTS operador_metadatos ON financial_ledger;
     CREATE POLICY operador_metadatos ON financial_ledger FOR SELECT TO app_operador USING (true);
-    GRANT SELECT (tipo, bruto_centavos, estado) ON financial_ledger TO app_operador;
+    GRANT SELECT (commerce_payment_id, tipo, bruto_centavos, estado) ON financial_ledger TO app_operador;
     DROP POLICY IF EXISTS operador_metadatos ON payment_reconciliation;
     CREATE POLICY operador_metadatos ON payment_reconciliation FOR SELECT TO app_operador USING (true);
-    GRANT SELECT (resuelto_en) ON payment_reconciliation TO app_operador;
+    GRANT SELECT (id, commerce_payment_id, tipo, esperado, recibido, detalle, resuelto_en, creado_en) ON payment_reconciliation TO app_operador;
   END IF;
 END $$;

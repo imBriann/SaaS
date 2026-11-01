@@ -35,8 +35,16 @@ export async function historial(tx: Tx, ctx: Ctx) {
      FROM financial_ledger l JOIN "order" o ON o.id=l.order_id JOIN commerce_payment cp ON cp.id=l.commerce_payment_id ORDER BY l.creado_en DESC LIMIT 300`)).rows
     .map((r: any) => ({ ...r, bruto: Number(r.bruto_centavos) / 100, comision: r.comision_centavos == null ? null : Number(r.comision_centavos) / 100, neto: r.neto_centavos == null ? null : Number(r.neto_centavos) / 100, total_oficial: Number(r.total_oficial_centavos) / 100 }));
   const t = (await tx.query(
-    `SELECT coalesce(sum(CASE WHEN tipo='REVERSO' THEN -bruto_centavos WHEN tipo='RECAUDO' THEN bruto_centavos ELSE 0 END),0)::bigint AS bruto,
-            coalesce(sum(comision_centavos),0)::bigint AS comision,
-            count(*) FILTER (WHERE estado='PENDIENTE_COMISION')::int AS sin_comision FROM financial_ledger`)).rows[0];
+    `SELECT coalesce(sum(CASE WHEN l.tipo='REVERSO' THEN -l.bruto_centavos WHEN l.tipo='RECAUDO' THEN l.bruto_centavos ELSE 0 END),0)::bigint AS bruto,
+            coalesce(sum(l.comision_centavos),0)::bigint AS comision,
+            count(*) FILTER (WHERE l.tipo='RECAUDO' AND l.estado='PENDIENTE_COMISION' AND NOT EXISTS (SELECT 1 FROM financial_ledger a WHERE a.commerce_payment_id=l.commerce_payment_id AND a.tipo='AJUSTE_COMISION'))::int AS sin_comision FROM financial_ledger l`)).rows[0];
   return { movimientos, totales: { bruto: Number(t.bruto) / 100, comision_conocida: Number(t.comision) / 100, pendientes_de_comision: t.sin_comision } };
+}
+
+/** Exportación del libro financiero (CSV con separador «;», como los demás exportes del panel). */
+export async function historialCsv(tx: Tx, ctx: Ctx) {
+  const h = await historial(tx, ctx);
+  const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const filas = h.movimientos.map((m: any) => [new Date(m.creado_en).toISOString(), m.tipo, m.numero, m.referencia, m.metodo, m.modo_precios, m.total_oficial, m.tipo === 'REVERSO' ? -m.bruto : m.bruto, m.comision ?? '', m.neto ?? '', m.estado].map(esc).join(';'));
+  return ['fecha;tipo;pedido;referencia;medio;modo_precios;total_oficial_cop;bruto_cop;comision_cop;neto_cop;estado', ...filas].join('\n') + '\n';
 }

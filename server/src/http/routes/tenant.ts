@@ -208,6 +208,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('post', '/pagos/cobros/:id/observar', (tx, ctx, req) => cobrosComercio.observarManual(tx, ctx, req.params.id, req.body));
   rx('post', '/pagos/cobros/:id/verificar', (ctx, req) => cobrosComercio.verificarAhora(db, ctx, req.params.id));
   r('get', '/pagos/historial', (tx, ctx) => ledgerComercio.historial(tx, ctx));
+  r('get', '/pagos/historial.csv', async (tx, ctx, _req, reply) => { descarga(reply, 'libro-financiero.csv'); return ledgerComercio.historialCsv(tx, ctx); });
   r('delete', '/pagos/cuentas/:id', (tx, ctx, req) => metodosComercio.borrarCuenta(tx, ctx, req.params.id));
   r('get', '/ventas/caja', (tx, ctx, req) => pagos.cajaDelDia(tx, ctx, req.query?.fecha));
   r('get', '/ventas.csv', async (tx, ctx, req, reply) => { descarga(reply, 'ventas.csv'); return exportsMod.exportOrders(tx, ctx, req.query?.desde, req.query?.hasta); });

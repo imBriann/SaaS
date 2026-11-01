@@ -59,6 +59,8 @@ export async function registerOperatorRoutes(app: FastifyInstance, db: Database)
 
   r('GET', '/integraciones', (o) => op.estadoIntegraciones(db, o));
   r('GET', '/recaudos', (o) => recaudosComercio.recaudos(db, o));
+  r('POST', '/recaudos/:id/comision', (o, req) => recaudosComercio.registrarComision(db, o, req.params.id, req.body));
+  r('POST', '/recaudos/revisiones/:id/resolver', (o, req) => recaudosComercio.resolverRevision(db, o, req.params.id, req.body));
   r('POST', '/empresas/:id/whatsapp/verificar', (o, req) => atencion.verificarWhatsappEmpresa(db, o, req.params.id));
 
   // Números de la WABA de Omnegia: lista en vivo de Meta, asignación a empresas y registro en la Cloud API.

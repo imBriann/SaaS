@@ -347,5 +347,35 @@ describe('Fase 7 · Wompi (simulado) y confirmación real', () => {
     expect(r.body).not.toMatch(/3170003|celular|nequi@cliente|prv_prod/);
     expect((await A.get('/../operador/recaudos')).status).not.toBe(200);
   });
+
+  it('conciliación: el operador registra la comisión real (ajuste en el libro, sin tocar el recaudo) y resuelve revisiones', async () => {
+    const cookie = await loginOperador(E.app, E.db);
+    const op = (m: string, url: string, payload?: unknown) => E.app.inject({ method: m as any, url: `/api/operador${url}`, payload: payload as any, headers: { cookie } });
+    const p = await pago(pedido);
+    expect((await op('POST', `/recaudos/${p.id}/comision`, { comision_cop: 2000, motivo: 'Reporte de Wompi' })).statusCode).toBe(400);
+    const r = await op('POST', `/recaudos/${p.id}/comision`, { comision_cop: 99.96, motivo: 'Reporte diario de Wompi del 1 de noviembre' });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ comision: 99.96, neto: 1400.04 });
+    expect((await op('POST', `/recaudos/${p.id}/comision`, { comision_cop: 1, motivo: 'Otra vez el reporte' })).statusCode).toBe(409);
+    const l = await ledger(p.id);
+    expect(l.map((x: any) => x.tipo).sort()).toEqual(['AJUSTE_COMISION', 'RECAUDO']);
+    expect(Number(l.find((x: any) => x.tipo === 'RECAUDO').bruto_centavos)).toBe(150000);
+    expect((await A.get('/pagos/historial')).body.totales.comision_conocida).toBeCloseTo(99.96);
+    const rev = (await op('GET', '/recaudos')).json().revisiones[0];
+    expect(rev).toBeTruthy();
+    expect((await op('POST', `/recaudos/revisiones/${rev.id}/resolver`, { motivo: 'Verificado en el panel de Wompi: el cliente pagó otro valor por error' })).statusCode).toBe(200);
+    expect((await sql(`SELECT resuelto_por FROM payment_reconciliation WHERE id=$1`, [rev.id])).rows[0].resuelto_por).toMatch(/^OPERADOR:/);
+    expect((await sql(`SELECT count(*)::int AS n FROM audit_event WHERE accion IN ('cobro.comision_conciliada','cobro.revision_resuelta')`)).rows[0].n).toBe(2);
+    // La empresa no puede conciliar.
+    expect((await A.post(`/../operador/recaudos/${p.id}/comision`, { comision_cop: 1, motivo: 'intento de la empresa' })).status).not.toBe(200);
+  });
+
+  it('la empresa exporta su libro financiero en CSV', async () => {
+    const r = await E.app.inject({ method: 'GET', url: '/api/t/pagos/historial.csv', headers: { cookie: await login(E.app, ...CRED.admin), 'x-tenant-slug': 'elparche' } });
+    expect(r.statusCode).toBe(200);
+    expect(r.headers['content-disposition']).toMatch(/libro-financiero\.csv/);
+    expect(r.body).toMatch(/^fecha;tipo;pedido;referencia/);
+    expect(r.body).toMatch(/RECAUDO/);
+  });
 });
 
