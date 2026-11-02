@@ -183,6 +183,7 @@ export const api = {
   get: <T = any>(u: string) => request<T>('GET', u),
   post: <T = any>(u: string, b?: unknown) => request<T>('POST', u, b ?? {}),
   patch: <T = any>(u: string, b?: unknown) => request<T>('PATCH', u, b ?? {}),
+  put: <T = any>(u: string, b?: unknown) => request<T>('PUT', u, b),
   del: <T = any>(u: string) => request<T>('DELETE', u),
   upload: <T = any>(u: string, f: File) => { const fd = new FormData(); fd.append('file', f); return request<T>('POST', u, fd); },
 };

@@ -124,7 +124,8 @@ const ESTADOS_FISCALES = ['PENDIENTE', 'ENVIADO', 'VALIDADO', 'RECHAZADO', 'ENTR
 
 export async function listOrders(tx: Tx, ctx: Ctx, filtros: { estado_fiscal?: string; q?: string; pagina?: number; por_pagina?: number; pago?: string; metodo?: string; comprobante?: string; periodo?: string; origen?: string } = {}) {
   requirePerm(ctx, 'order:read');
-  const where = ['o.eliminado_en IS NULL'];
+  // Los pedidos de WhatsApp aún sin pagar (BORRADOR) no son ventas: viven en Ventas › Pedidos.
+  const where = ["o.eliminado_en IS NULL", "o.estado <> 'BORRADOR'"];
   const params: unknown[] = [];
   if (filtros.estado_fiscal && ESTADOS_FISCALES.includes(filtros.estado_fiscal)) {
     if (filtros.estado_fiscal === 'SIN_FACTURA') where.push('f.estado IS NULL');

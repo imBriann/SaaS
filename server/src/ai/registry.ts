@@ -20,6 +20,7 @@ import { cop } from '../lib/util.js';
 import { createPaymentLink } from '../modules/payments.js';
 import { cobradoPorMetodo } from '../modules/pagosVentas.js';
 import { GUIAS, IDS_GUIA } from './guias.js';
+import { HERRAMIENTAS_COMERCIO } from '../comercio/herramientas.js';
 import { delCliente as comprobantesDelCliente, reenviar as reenviarComprobante } from '../modules/comprobantes.js';
 
 /**
@@ -60,6 +61,8 @@ export interface ToolDef<A extends z.ZodType = z.ZodType> {
   limitePorConversacion?: number;
   /** Requiere que exista un cliente de conversación (herramientas de atención). */
   requiereCliente?: boolean;
+  /** Se ofrece solo si la empresa tiene activa la función (p. ej. pagos de pedidos). */
+  disponible?: (tx: Tx) => Promise<boolean>;
   /** Monto de la acción (ventas), para la política de aprobación del modo SUPERVISADO. */
   monto?: (a: z.infer<A>, rt: ToolRuntime) => Promise<number>;
   /** Texto legible para pedir confirmación al humano. */
@@ -516,6 +519,8 @@ export const TOOLS: ToolDef<any>[] = [
   }),
 ];
 
+// Pedidos y cobros por WhatsApp (docs/pagos-whatsapp.md).
+TOOLS.push(...HERRAMIENTAS_COMERCIO);
 export const TOOL_MAP = new Map(TOOLS.map((t) => [t.nombre, t]));
 
 /** Esquema JSON de los argumentos, para exponer la herramienta al modelo. */

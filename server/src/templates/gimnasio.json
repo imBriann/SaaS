@@ -74,7 +74,7 @@
     {
       "configuracion": "atencion",
       "rol": "agente_atencion",
-      "herramientas": ["consultar_catalogo", "consultar_precio", "consultar_disponibilidad", "crear_cita", "mis_citas", "cancelar_cita", "registrar_venta", "generar_enlace_pago", "estado_factura", "consultar_comprobantes", "reenviar_comprobante", "reprogramar_cita", "unirse_lista_espera", "anotar_pendiente", "enviar_imagen_producto", "escalar_a_humano"],
+      "herramientas": ["consultar_catalogo", "consultar_precio", "consultar_disponibilidad", "crear_cita", "mis_citas", "cancelar_cita", "registrar_venta", "generar_enlace_pago", "crear_pedido", "agregar_al_pedido", "calcular_total", "elegir_entrega", "medios_de_pago", "elegir_medio_pago", "pedir_celular_nequi", "generar_cobro", "estado_pedido", "estado_factura", "consultar_comprobantes", "reenviar_comprobante", "reprogramar_cita", "unirse_lista_espera", "anotar_pendiente", "enviar_imagen_producto", "escalar_a_humano"],
       "prompt_base": "Tono motivador y breve. No prometas resultados físicos ni des consejos médicos o nutricionales. Escala a una persona reclamos, congelamientos de membresía y reembolsos."
     },
     {

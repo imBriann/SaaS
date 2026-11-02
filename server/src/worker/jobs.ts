@@ -19,6 +19,8 @@ import { config } from '../config.js';
 import { cicloProactivo, ofrecerCupo } from '../modules/proactivo.js';
 import { revisarEnlaces } from '../modules/imagenes.js';
 import { ejecutarBusqueda } from '../modules/busquedaImagenes.js';
+import { crearTransaccionCola, revisarCobrosAbiertos } from '../comercio/cobros.js';
+import { avisoPago } from '../comercio/avisos.js';
 import { emitirFacturaPago, encolarCorreoFactura, encolarCorreoPago, generarDocumentosPago } from '../documentos/servicio.js';
 import { cop, uuidv7 } from '../lib/util.js';
 import { formatFechaLarga, utcToLocal } from '../lib/time.js';
@@ -298,6 +300,9 @@ export const HANDLERS: Record<string, Handler> = {
   // y aprobaciones vencidas. Cada aviso respeta la ventana de 24 horas de WhatsApp.
   ciclo_proactivo: async (db, _t, _p, job) => { await cicloProactivo(db, job.id); },
   ciclo_proactivo_tenant: async (db, tenantId, _p, job) => { await cicloProactivo(db, job.id, tenantId!); },
+  cobro_comercio_crear: async (db, tenantId, p, job) => crearTransaccionCola(db, tenantId!, p, ultimoIntento(job)),
+  aviso_pago_comercio: async (db, tenantId, p) => { await avisoPago(db, tenantId!, p); },
+  revisar_cobros_comercio: async (db, _t, _p, job) => { await revisarCobrosAbiertos(db, job.id); },
   buscar_imagenes: async (db, tenantId, p) => { await ejecutarBusqueda(db, tenantId!, p); },
   revisar_imagenes: async (db, _t, _p, job) => { await revisarEnlaces(db, job.id); },
   ofrecer_cupo: async (db, tenantId, p, job) => { await ofrecerCupo(db, tenantId!, { inicio: p.inicio, product_id: p.product_id, resource_id: p.resource_id ?? null }, job.id); },
@@ -500,6 +505,7 @@ export function startWorker(db: Database): () => Promise<void> {
           await enqueue(tx, null, 'ciclo_numeros', {}, { claveUnica: `numeros:${Math.floor(Date.now() / 600_000)}` });
           await enqueue(tx, null, 'ciclo_proactivo', {}, { claveUnica: `proactivo:${Math.floor(Date.now() / 300_000)}` });
           await enqueue(tx, null, 'revisar_imagenes', {}, { claveUnica: `imagenes:${new Date().toISOString().slice(0, 10)}` });
+          await enqueue(tx, null, 'revisar_cobros_comercio', {}, { claveUnica: `cobros-comercio:${Math.floor(Date.now() / 180_000)}` });
         });
       }
     } catch (e) {
