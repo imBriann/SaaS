@@ -111,7 +111,9 @@ describe('Motor de disponibilidad', () => {
     expect(bloqueo.status).toBe(200);
     expect(await huecos(fecha, lavado)).toEqual([]);
     // La cita creada ocupa los dos recursos.
-    const otraFecha = laborable(7);
+    // El siguiente día laborable DESPUÉS de la fecha bloqueada (laborable(7) coincidía con ella si hoy es fin de semana).
+    let otraFecha = addDays(fecha, 1);
+    while ([0, 6].includes(new Date(`${otraFecha}T12:00:00Z`).getUTCDay()) || festivoDe(otraFecha)) otraFecha = addDays(otraFecha, 1);
     const s = (await huecos(otraFecha, lavado))[0];
     const cita = (await A.post('/agenda/citas', { customer_id: cliente, product_id: lavado, inicio: s.inicio })).body;
     expect((await sql(`SELECT recurso_secundario_id FROM appointment WHERE id=$1`, [cita.id])).rows[0].recurso_secundario_id).toBe(mesa);
