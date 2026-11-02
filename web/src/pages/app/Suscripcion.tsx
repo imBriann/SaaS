@@ -69,7 +69,7 @@ function Panel({ info, recargar }: { info: any; recargar: () => void }) {
       </Cabecera>
       <div className="contenido fact">
         {VENCIDA.includes(s.estado) && <Gracia info={info} catalogo={catalogo.data} />}
-        {!info.pagos_en_linea && <p className="aviso peq-txt"><Icon n="info" className="" size={14} />El pago en línea está pendiente de conectar. Escríbenos para renovar o cambiar de plan.</p>}
+        {!info.pagos_en_linea && <p className="aviso peq-txt"><Icon n="info" className="" size={14} />El pago en línea está pendiente de conectar. Puedes elegir el plan que quieres con «Cambiar de plan» y pedir el cambio al equipo de Omnegia.</p>}
         <div className="cuenta-grid">
           <PlanActual info={info} catalogo={catalogo.data} onCambio={alCambiar} onDeshacer={deshacer} />
           <div className="cuenta-lado">
@@ -123,6 +123,10 @@ function PlanActual({ info, catalogo, onCambio, onDeshacer }: { info: any; catal
           <span className="sobretitulo">Plan actual</span>
           <h2 id="plan-actual-tit">{s.plan_nombre} <small>{cop(precioActual)} {cicloActual === 'ANUAL' ? 'al año' : 'al mes'}</small></h2>
           {s.precio_pactado != null && <span className="tenue peq-txt">Conservas tu precio de cuando empezaste</span>}
+        </div>
+        <div className="cuenta-cambiar">
+          <Link to="/suscripcion/planes" className="btn primario" data-guia="suscripcion/cambiar-plan"><Icon n="suscripcion" className="" size={16} />Cambiar de plan</Link>
+          {!info.pagos_en_linea && <span className="tenue peq-txt">Verás los planes y podrás solicitar el cambio.</span>}
         </div>
         <div className="cuenta-renueva">
           <span>{VENCIDA.includes(s.estado) ? <>Venció el <b>{fecha(s.periodo_fin)}</b></> : <>Se renueva el <b>{fechaCobro(s.periodo_fin)}</b> · quedan <b>{quedan}</b> de {totalDias} días</>}</span>
@@ -199,6 +203,7 @@ function PlanActual({ info, catalogo, onCambio, onDeshacer }: { info: any; catal
         <button type="button" className="btn-ambar" disabled={!c || c.tipo === 'SIN_CAMBIO' || !!c.bloqueo || cambio.enviando || cambio.cargando || !info.pagos_en_linea && c.cargo > 0} onClick={cambio.confirmar}>
           <Icon n="ok" className="" size={16} />{cambio.enviando ? 'Preparando…' : c ? textoConfirmar(c) : 'Sin cambios'}
         </button>
+        {!info.pagos_en_linea && c && c.cargo > 0 && <span className="aviso-err peq-txt" role="note">El pago en línea no está disponible, por eso no puedes pagar este cambio aquí. <Link to="/suscripcion/planes">Solicita el cambio</Link> y el equipo de Omnegia lo hace contigo.</span>}
         <span className="tenue peq-txt">{c && c.tipo !== 'SIN_CAMBIO' ? (c.cargo > 0 ? 'Pagas en la pasarela segura; el plan cambia cuando el pago se confirma.' : c.tipo === 'PROGRAMADO' ? 'No se cobra nada hoy y puedes deshacerlo antes de la fecha.' : 'Sin cobro: el cambio se aplica de inmediato.') : 'Elige otro plan o forma de pago para ver cuánto cambia tu cobro.'}</span>
       </div>
     </section>
@@ -207,6 +212,7 @@ function PlanActual({ info, catalogo, onCambio, onDeshacer }: { info: any; catal
 
 // =================================================================== Uso del periodo
 function Uso({ info }: { info: any }) {
+  const sesion = useSesion();
   const ia = info.consumo?.tokens_ia;
   const s = info.suscripcion;
   const usado = ia?.usado ?? 0, cuota = ia?.cuota ?? 0;
@@ -223,7 +229,7 @@ function Uso({ info }: { info: any }) {
         {ia?.agotada && s.politica_excedente === 'LIMITAR' ? ' La cuota se agotó: las conversaciones pasan a tu equipo.' : ''}
       </p>
       <div className="uso-mini">
-        {[['mensajes', 'Mensajes de WhatsApp'], ['documentos', 'Facturas electrónicas']].map(([k, et]) => {
+        {[['mensajes', 'Mensajes de WhatsApp'], ...(sesion.s.factura_dian ? [['documentos', 'Facturas electrónicas']] : [])].map(([k, et]) => {
           const x = info.consumo?.[k];
           if (!x) return null;
           return <div key={k}><span>{et}</span><b>{num(x.usado)}{x.cuota ? ` / ${num(x.cuota)}` : ''}</b>{x.cuota ? <i style={{ '--p': `${Math.min(100, x.porcentaje ?? 0)}%` } as CSSProperties} /> : null}</div>;

@@ -6,8 +6,8 @@ import { api, cop, descargar, descargarDocumentos, fecha, fechaHora, hora, num }
 import { Cabecera, Escritura, useSesion } from '../../components/Layout';
 import { accionIA, Campo, Cargando, Cifra, Confirmar, ErrorCarga, Estado, Interruptor, Medidor, Modal, motivoIA, Recibo, Tarjeta, useAccion, useApi, useToast, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
-import { TarjetaFacturaDian } from '../../components/Proximamente';
 import { ComoTrabaja } from '../../components/ComoTrabaja';
+import { CambiarNumero } from '../../components/ConectarWhatsApp';
 
 const NOMBRE_AGENTE: Record<string, string> = { atencion: 'Atención por WhatsApp', asistente: 'Asistente del panel', copiloto: 'Copiloto del asesor' };
 const DESCRIPCION_AGENTE: Record<string, string> = {
@@ -96,7 +96,7 @@ export function CentroIA() {
 // =================================================================== Configuración
 const DIAS: [string, string][] = [['lun', 'Lunes'], ['mar', 'Martes'], ['mie', 'Miércoles'], ['jue', 'Jueves'], ['vie', 'Viernes'], ['sab', 'Sábado'], ['dom', 'Domingo']];
 const ZONAS = ['America/Bogota', 'America/Mexico_City', 'America/Lima', 'America/Guayaquil', 'America/Caracas', 'America/Santiago', 'America/Argentina/Buenos_Aires', 'America/Panama', 'America/New_York', 'Europe/Madrid'];
-const TABS: [string, string][] = [['personas', 'Equipo y comisiones'], ['equipo', 'Horarios'], ['empresa', 'Empresa'], ['asistente', 'Cómo trabaja tu asistente'], ['canal', 'WhatsApp'], ['cobros', 'Cobros'], ['comprobantes', 'Comprobantes'], ['modulos', 'Módulos'], ['integraciones', 'Integraciones']];
+const TABS: [string, string][] = [['personas', 'Equipo y comisiones'], ['equipo', 'Horarios'], ['empresa', 'Empresa'], ['asistente', 'Cómo trabaja tu asistente'], ['canal', 'WhatsApp'], ['cobros', 'Cobros'], ['comprobantes', 'Comprobantes'], ['modulos', 'Módulos']];
 
 /**
  * Propiedad de la empresa. El propietario está por encima de los administradores: nadie más le cambia
@@ -256,15 +256,6 @@ export function Configuracion() {
         {tab === 'cobros' && <Cobros data={data} onCambio={recargar} />}
         {tab === 'comprobantes' && <AjustesComprobantes />}
         {tab === 'asistente' && <ComoTrabaja />}
-
-        {tab === 'integraciones' && (
-          <Tarjeta titulo="Estado de las integraciones" sinCuerpo>
-            <div className="lista">{data.integraciones.map((i: any) => (
-              <div key={i.clave} className="agente-fila"><div className="col" style={{ gap: 4 }}><b>{i.nombre}</b><span className="tenue peq-txt">{i.detalle}</span></div><Estado v={i.estado} /></div>
-            ))}</div>
-            <p className="cuerpo tenue peq-txt">Las conexiones con proveedores las configura quien administra el servidor (ver la guía de instalación). «Simulado» significa que esa parte funciona en modo de demostración y no se comunica con el proveedor real.</p>
-          </Tarjeta>
-        )}
       </div>
       {invitar && <Invitar roles={rolesPersonas} onCerrar={() => setInvitar(false)} onHecho={recargar} />}
     </>
@@ -318,6 +309,7 @@ function CanalWhatsApp({ data, simuladores, onCambio, guardarEmpresa }: { data: 
   const t = data.tenant;
   const [pid, setPid] = useState(String(t.whatsapp_phone_number_id ?? '').startsWith('sim-') ? t.whatsapp_phone_number_id : '');
   const [diag, setDiag] = useState<any>(null);
+  const [cambiar, setCambiar] = useState(false);
   const { run, ocupado } = useAccion();
   const verificar = async () => { const r = await run(() => api.post('/api/t/configuracion/whatsapp/verificar')); if (r) { setDiag(r); onCambio(); } };
   const conectado = ['CONECTADO', 'SIMULADO'].includes(t.whatsapp_estado);
@@ -331,7 +323,8 @@ function CanalWhatsApp({ data, simuladores, onCambio, guardarEmpresa }: { data: 
             : <span className="sec">Conecta tu número desde una sola pantalla: escribes el número, recibes un código por SMS y queda conectado a tu asistente de IA. No necesitas entrar a Meta ni copiar identificadores.</span>}
           {t.whatsapp_estado === 'PENDIENTE_REGISTRO' && <div className="aviso" role="note"><Icon n="alerta" className="" size={16} /><span>Tu número está verificado pero falta activarlo en WhatsApp. El equipo de Omnegia ya puede hacerlo; si en unas horas sigue así, escribe a soporte.</span></div>}
           <div className="fila envolver" style={{ gap: 8 }}>
-            <Link to="/whatsapp/numero" className="btn primario">{conectado ? 'Gestionar el número' : 'Conectar WhatsApp'}</Link>
+            <Link to="/whatsapp/numero" className={conectado ? 'btn' : 'btn primario'}>{conectado ? 'Gestionar el número' : 'Conectar WhatsApp'}</Link>
+            {conectado && <Escritura permiso="tenant:configure"><button type="button" className="btn primario" onClick={() => setCambiar(true)}>Cambiar de número</button></Escritura>}
             {t.whatsapp_phone_number_id && <Escritura permiso="tenant:configure"><button type="button" className="btn" disabled={ocupado} onClick={verificar}>Comprobar estado</button></Escritura>}
           </div>
           {diag && <div className={diagOk ? 'aviso exito' : 'aviso'} role="status"><Icon n={diagOk ? 'ok' : 'alerta'} className="" size={16} /><span>{diag.mensaje}</span></div>}
@@ -347,6 +340,7 @@ function CanalWhatsApp({ data, simuladores, onCambio, guardarEmpresa }: { data: 
           </form>
         </details>
       )}
+      {cambiar && <CambiarNumero actual={t.whatsapp_numero_visible ?? null} onCerrar={() => setCambiar(false)} onHecho={onCambio} />}
       <Tarjeta titulo="Plantillas de mensajes" sinCuerpo>
         <p className="cuerpo sec peq-txt">Fuera de las 24 horas siguientes al último mensaje del cliente, WhatsApp solo entrega plantillas aprobadas. Crea cada una en el administrador de WhatsApp de Meta con el mismo texto y marca aquí su nombre cuando Meta la apruebe.</p>
         <div className="lista">{data.plantillas.map((p: any) => <Plantilla key={p.clave} p={p} onCambio={onCambio} />)}</div>
@@ -398,7 +392,6 @@ function AjustesComprobantes() {
             <blockquote className="leyenda-comprobante">{data.leyenda}</blockquote>
           </div>
         </Tarjeta>
-        <TarjetaFacturaDian motivo={data.factura_dian?.motivo} />
       </div>
     </div>
   );
@@ -560,6 +553,7 @@ export function DocumentosPagos() {
 
 /** Vista de la modalidad institucional (acceso por días); la comercial está en Suscripcion.tsx. */
 export function SuscripcionClasica() {
+  const { s: sesion } = useSesion();
   const { data, error, recargar } = useApi<any>(() => api.get('/api/t/suscripcion'), []);
   const { run, ocupado } = useAccion();
   const [confirmar, setConfirmar] = useState(false);
@@ -579,10 +573,11 @@ export function SuscripcionClasica() {
     else recargar();
   };
   const textoPagar = ren?.requiere_aceptacion ? 'Ver el plan comercial' : institucional ? `Renovar ${ren?.acceso_dias ?? ''} días` : s.estado === 'ACTIVA' ? 'Pagar el próximo mes' : s.estado === 'SUSPENDIDA' ? 'Pagar y reactivar' : 'Renovar ahora';
-  const etiquetaMetrica: Record<string, string> = { tokens_ia: 'IA', mensajes: 'Mensajes', documentos: 'Documentos fiscales', plantillas_marketing: 'Plantillas de marketing' };
+  const etiquetaMetrica: Record<string, string> = { tokens_ia: 'IA', mensajes: 'Mensajes', documentos: 'Comprobantes y documentos', plantillas_marketing: 'Plantillas de marketing' };
   return (
     <>
       <Cabecera titulo="Suscripción" sub={institucional ? `Modalidad institucional · pagaste ${cop(s.precio_pagado ?? 0)} · acceso hasta el ${fecha(s.periodo_fin)}` : `Plan ${s.plan_nombre} · ${cop(s.precio_mensual)} al mes`}>
+        <Link to="/suscripcion/planes" className="btn primario" data-guia="suscripcion/cambiar-plan">Cambiar de plan</Link>
         {data.pagos_en_linea && ren?.disponible && <button className="btn primario" disabled={ocupado} onClick={() => (ren.requiere_confirmacion ? setConfirmar(true) : pagar())}>{ocupado ? 'Preparando…' : textoPagar}</button>}
       </Cabecera>
       {confirmar && ren && <Confirmar titulo={ren.requiere_aceptacion ? 'Cambiar al plan comercial' : 'Renovar el acceso institucional'} textoBoton={ren.requiere_aceptacion ? `Acepto y pagar ${cop(ren.monto)}` : `Pagar ${cop(ren.monto)} con Wompi`}
@@ -620,7 +615,7 @@ export function SuscripcionClasica() {
         <div className="kpis k3" aria-label="Consumo del mes">
           <div className="kpi"><Medidor c={data.consumo.tokens_ia} etiqueta="IA" /></div>
           <div className="kpi"><Medidor c={data.consumo.mensajes} etiqueta="Mensajes" /></div>
-          <div className="kpi"><Medidor c={data.consumo.documentos} etiqueta="Documentos fiscales" /></div>
+          {sesion.factura_dian && <div className="kpi"><Medidor c={data.consumo.documentos} etiqueta="Documentos fiscales" /></div>}
         </div>
         <Tarjeta titulo="Tu plan">
           <dl className="plan-def">

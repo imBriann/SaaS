@@ -16,6 +16,7 @@ import * as catalog from '../../modules/catalog.js';
 import * as agenda from '../../modules/agenda.js';
 import * as iaAutonoma from '../../modules/iaAutonoma.js';
 import * as imagenes from '../../modules/imagenes.js';
+import * as busquedaImagenes from '../../modules/busquedaImagenes.js';
 import * as aprobaciones from '../../ai/aprobaciones.js';
 import { avisar } from '../../modules/proactivo.js';
 import { formatFechaLarga, utcToLocal } from '../../lib/time.js';
@@ -67,7 +68,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('get', '/informes/:tipo', (tx, ctx, req) => informes.generarInforme(tx, ctx, req.params.tipo, req.query));
 
   // --- Clientes
-  r('get', '/clientes', (tx, ctx, req) => customers.listCustomers(tx, ctx, { q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina }));
+  r('get', '/clientes', (tx, ctx, req) => customers.listCustomers(tx, ctx, { q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina, orden: req.query?.orden }));
   r('get', '/clientes.csv', async (tx, ctx, _req, reply) => { descarga(reply, 'clientes.csv'); return exportsMod.exportCustomers(tx, ctx); });
   r('post', '/clientes', (tx, ctx, req) => customers.createCustomer(tx, ctx, req.body));
   r('get', '/clientes/:id', (tx, ctx, req) => customers.getCustomer(tx, ctx, req.params.id));
@@ -163,8 +164,12 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('get', '/catalogo/productos/:id/imagenes', (tx, ctx, req) => imagenes.listar(tx, ctx, req.params.id));
   app.route({ method: 'POST', url: '/api/t/catalogo/productos/:id/imagenes', preHandler: guard, bodyLimit: Math.ceil(config.imagenes.maxBytes * 1.4) + 4096,
     handler: (req, reply) => T((tx, ctx, rq) => imagenes.subir(tx, ctx, rq.params.id, rq.body))(req, reply) });
-  rx('post', '/catalogo/productos/:id/imagenes/buscar', (ctx, req) => imagenes.buscarConIA(db, ctx, req.params.id));
-  rx('post', '/catalogo/imagenes/completar', (ctx) => imagenes.completarFaltantes(db, ctx));
+  // Búsqueda con IA como proceso: se inicia, se consulta el estado y se confirma qué agregar.
+  r('post', '/catalogo/productos/:id/imagenes/buscar', (tx, ctx, req) => busquedaImagenes.iniciar(tx, ctx, req.params.id, req.body));
+  r('get', '/catalogo/imagenes/busquedas/:id', (tx, ctx, req) => busquedaImagenes.consultar(tx, ctx, req.params.id));
+  r('post', '/catalogo/imagenes/busquedas/:id/agregar', (tx, ctx, req) => busquedaImagenes.agregar(tx, ctx, req.params.id, req.body));
+  r('post', '/catalogo/imagenes/completar', (tx, ctx) => busquedaImagenes.completarFaltantes(tx, ctx));
+  r('get', '/catalogo/imagenes/lotes/:id', (tx, ctx, req) => busquedaImagenes.consultarLote(tx, ctx, req.params.id));
   r('post', '/catalogo/imagenes/:id/aprobar', (tx, ctx, req) => imagenes.aprobar(tx, ctx, req.params.id));
   r('delete', '/catalogo/imagenes/:id', (tx, ctx, req) => imagenes.eliminar(tx, ctx, req.params.id));
   r('get', '/catalogo/imagenes/:id/archivo', async (tx, ctx, req, reply) => {
@@ -186,7 +191,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
   r('patch','/equipo/comisiones',(tx,ctx,req)=>commissions.save(tx,ctx,req.body));
   r('get','/equipo/comisiones/informe',(tx,ctx,req)=>commissions.report(tx,ctx,req.query.fecha));
   // --- Ventas
-  r('get', '/ventas', (tx, ctx, req) => orders.listOrders(tx, ctx, { estado_fiscal: req.query?.estado_fiscal, q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina, pago: req.query?.pago, metodo: req.query?.metodo, comprobante: req.query?.comprobante }));
+  r('get', '/ventas', (tx, ctx, req) => orders.listOrders(tx, ctx, { estado_fiscal: req.query?.estado_fiscal, q: req.query?.q, pagina: req.query?.pagina, por_pagina: req.query?.por_pagina, pago: req.query?.pago, metodo: req.query?.metodo, comprobante: req.query?.comprobante, periodo: req.query?.periodo, origen: req.query?.origen }));
   r('get', '/ventas/caja', (tx, ctx, req) => pagos.cajaDelDia(tx, ctx, req.query?.fecha));
   r('get', '/ventas.csv', async (tx, ctx, req, reply) => { descarga(reply, 'ventas.csv'); return exportsMod.exportOrders(tx, ctx, req.query?.desde, req.query?.hasta); });
   r('post', '/ventas', (tx, ctx, req) => orders.createOrder(tx, ctx, req.body));
@@ -371,6 +376,7 @@ export async function registerTenantRoutes(app: FastifyInstance, db: Database) {
     await conPermiso(ctx);
     return db.withPlatform((tx) => planes.cotizar(tx, ctx.tenantId, String(req.query?.plan ?? ''), String(req.query?.ciclo ?? '')));
   });
+  rx('post', '/suscripcion/solicitar-cambio', async (ctx, req) => { await conPermiso(ctx); return planes.solicitarCambio(db, ctx, req.body); });
   rx('post', '/suscripcion/cambio', async (ctx, req) => { await conPermiso(ctx); return planes.confirmarCambio(db, ctx, req.body ?? {}); });
   app.route({ method: 'DELETE', url: '/api/t/suscripcion/cambio', preHandler: guard, handler: async (req) => { await conPermiso(req.ctx!); return planes.deshacerCambio(db, req.ctx!); } });
   rx('get', '/suscripcion/movimientos', async (ctx) => {

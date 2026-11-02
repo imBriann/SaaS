@@ -158,7 +158,14 @@ export const config = {
    * almacenamiento de objetos después) y se sirven por una URL pública https (WhatsApp las envía por enlace).
    */
   imagenes: {
-    almacen: (v('IMAGENES_ALMACEN') ?? 'disco') as 'disco',
+    /**
+     * Dónde se guardan los archivos: «disco» (desarrollo; en Render gratuito se BORRA en cada despliegue) o
+     * «supabase» (Supabase Storage: bucket público, carga con la llave de servicio solo desde el servidor).
+     */
+    almacen: (v('ALMACEN_PROVEEDOR') ?? v('IMAGENES_ALMACEN') ?? 'disco') as 'disco' | 'supabase',
+    supabaseUrl: (v('SUPABASE_URL') ?? '').replace(/\/+$/, ''),
+    supabaseServiceKey: v('SUPABASE_SERVICE_ROLE_KEY'),
+    supabaseBucket: v('SUPABASE_BUCKET_IMAGENES'),
     dir: v('IMAGENES_DIR') ?? './almacen/imagenes',
     maxBytes: Math.round(Math.max(0.1, Number(v('IMAGENES_MAX_MB') ?? 5)) * 1024 * 1024),
     anchoMax: Math.max(320, Number(v('IMAGENES_ANCHO_MAX') ?? 1600)),
@@ -170,6 +177,11 @@ export const config = {
      */
     proveedor: (v('IMAGENES_PROVEEDOR') ?? (test ? 'simulado' : 'openverse')) as 'openverse' | 'pexels' | 'brave' | 'simulado' | 'ninguno',
     pexelsKey: v('PEXELS_API_KEY'),
+    /** Openverse anónimo tiene límites bajos; con una aplicación registrada (client_credentials) suben. */
+    openverseClientId: v('OPENVERSE_CLIENT_ID'),
+    openverseClientSecret: v('OPENVERSE_CLIENT_SECRET'),
+    /** Tiempo máximo de una consulta al buscador (Openverse puede tardar más de 10 s). */
+    buscadorTimeoutMs: Number(env.IMAGENES_BUSCADOR_TIMEOUT_MS ?? 20_000),
     braveKey: v('BRAVE_SEARCH_API_KEY'),
     descargaTimeoutMs: Number(env.IMAGENES_TIMEOUT_MS ?? 10_000),
   },
@@ -301,6 +313,13 @@ export function validarConfiguracion(c = config): ResultadoValidacion {
     if (!c.publicUrl.startsWith('https://')) errores.push('PUBLIC_URL debe usar https:// en producción (las cookies de sesión se marcan como seguras).');
     if (c.baseDomain === 'localhost') avisos.push('BASE_DOMAIN sigue en «localhost»: los subdominios de las empresas no funcionarán fuera de esta máquina.');
     if (env.SIMULADORES === '1') avisos.push('SIMULADORES=1: los terceros sin credenciales se simulan. Úsalo solo en una instancia de demostración.');
+  }
+  if (c.imagenes.almacen === 'supabase') {
+    if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(c.imagenes.supabaseUrl)) errores.push('ALMACEN_PROVEEDOR=supabase exige SUPABASE_URL con la forma https://<proyecto>.supabase.co.');
+    if (!c.imagenes.supabaseServiceKey) errores.push('ALMACEN_PROVEEDOR=supabase exige SUPABASE_SERVICE_ROLE_KEY (solo en el servidor; nunca en el panel).');
+    if (!c.imagenes.supabaseBucket || !/^[a-z0-9][a-z0-9_.-]{1,62}$/.test(c.imagenes.supabaseBucket)) errores.push('ALMACEN_PROVEEDOR=supabase exige SUPABASE_BUCKET_IMAGENES con el nombre del bucket público (por ejemplo, imagenes).');
+  } else if (!c.dev) {
+    avisos.push('ALMACEN_PROVEEDOR=disco: las imágenes del catálogo se guardan en el disco del servidor, que en Render (plan gratuito) se borra en cada despliegue. Usa ALMACEN_PROVEEDOR=supabase (ver docs/imagenes).');
   }
   if (c.llm.provider === 'anthropic' && !c.llm.apiKey) errores.push('LLM_PROVIDER=anthropic exige ANTHROPIC_API_KEY.');
   if (c.llm.provider === 'mock' && !c.simuladores) errores.push('LLM_PROVIDER=mock solo se permite en desarrollo o con SIMULADORES=1.');

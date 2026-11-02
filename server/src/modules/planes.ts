@@ -5,10 +5,11 @@ import { auditPlatform } from '../core/audit.js';
 import { AppError, invalid, notFound } from '../lib/errors.js';
 import { cop, token, uuidv7 } from '../lib/util.js';
 import { aCentavos } from '../lib/money.js';
-import { urlEmpresa } from '../config.js';
+import { config, urlEmpresa } from '../config.js';
 import { checkoutUrl, cuentaPlataforma } from '../adapters/payments.js';
 import { PLANES, caracteristicasPlan } from '../onboarding/planRules.js';
 import { encolarDocumentos } from '../documentos/servicio.js';
+import { crearTicket } from './soporte.js';
 
 /**
  * Planes de la empresa: catálogo con precio mensual y anual, cambio de plan con prorrateo y su historial
@@ -118,7 +119,7 @@ export async function cotizar(tx: Tx, tenantId: string, plan: string, cicloPedid
   const diasPeriodo = Math.max(1, Math.round(total / 86_400_000));
   const diasRestantes = Math.max(0, Math.ceil((fin - ahora) / 86_400_000));
   const usuarios = (await tx.query(`SELECT count(*)::int AS n FROM user_tenant WHERE tenant_id=$1 AND activo`, [tenantId])).rows[0].n;
-  const apagan = (s.modulos as string[]).filter((m) => !destino.modulos.includes(m) && !SIEMPRE_ACTIVOS.includes(m)).map((m) => MODULO_TEXTO[m] ?? m);
+  const apagan = (s.modulos as string[]).filter((m) => !destino.modulos.includes(m) && !SIEMPRE_ACTIVOS.includes(m) && (m !== 'facturacion' || config.fiscal.dianHabilitada)).map((m) => MODULO_TEXTO[m] ?? m);
   const base = {
     de: { plan: s.plan_codigo, nombre: s.plan_nombre, ciclo: cicloActual, precio: precioActual },
     a: { plan: destino.codigo, nombre: destino.nombre, ciclo, precio: precioNuevo },
@@ -291,8 +292,24 @@ export const QUE_SE_PAUSA = {
   pausa: [
     'Respuestas de la IA por WhatsApp',
     'Registrar ventas, citas y cobros',
-    'Emitir facturas electrónicas',
+    config.fiscal.dianHabilitada ? 'Emitir facturas electrónicas' : 'Generar comprobantes de venta',
     'Invitar personas y cambiar la configuración',
   ],
   conserva: ['Tus clientes, ventas y conversaciones', 'Ver y exportar tus datos'],
 };
+
+/**
+ * «Solicitar el cambio»: cuando el cambio no se puede hacer en línea (modalidad institucional o pagos en línea sin
+ * conectar), la empresa pide el cambio y se abre un caso de soporte para el operador. No cambia nada por sí solo.
+ */
+export async function solicitarCambio(db: Database, ctx: Ctx, body: unknown) {
+  const b = z.object({ plan: z.string(), ciclo: CICLO.default('MENSUAL'), nota: z.string().trim().max(500).optional() }).parse(body ?? {});
+  const { s, destino } = await db.withPlatform(async (tx) => ({ s: await suscripcionDe(tx, ctx.tenantId), destino: await planDe(tx, b.plan) }));
+  if (destino.codigo === s.plan_codigo && b.ciclo === s.ciclo) throw invalid('Ya tienes ese plan.');
+  const t = await db.withTenant(ctx.tenantId, (tx) => crearTicket(tx, ctx, {
+    categoria: 'FACTURACION', prioridad: 'NORMAL',
+    asunto: `Solicitud de cambio de plan: ${s.plan_nombre} a ${destino.nombre}`,
+    descripcion: `La empresa ${s.negocio} pide cambiar del plan ${s.plan_nombre} (${s.ciclo === 'ANUAL' ? 'anual' : 'mensual'}, modalidad ${s.modalidad === 'INSTITUCIONAL' ? 'institucional' : 'comercial'}) al plan ${destino.nombre} (${b.ciclo === 'ANUAL' ? 'anual' : 'mensual'}).${b.nota ? ` Nota de la empresa: ${b.nota}` : ''}`,
+  }));
+  return { ok: true, ...t, mensaje: `Recibimos tu solicitud (${t.numero}). El equipo de Omnegia te escribe para hacer el cambio.` };
+}

@@ -3,6 +3,7 @@ import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react
 import { api, ApiError, fecha, guardar, setZona, tenantSlug, urlPrincipal } from '../api';
 import { useApi, Medidor, Cargando, Modal, Campo, useAccion, CodigoOtp, useCuentaAtras, useToast } from './ui';
 import { Icon } from './icons';
+import { rutaDeVentas } from '../lib/ventasRutas';
 import { MARCA } from '../brand';
 import { Construccion } from './construccion/Construccion';
 import { IAProvider } from './ia/contexto';
@@ -58,12 +59,10 @@ const OPERACION: Item[] = [
   { to: '/informes', n: 'grafica', t: 'Informes', algunos: ['order:read', 'appointment:read', 'customer:read', 'inventory:read'] },
   { to: '/conversaciones', n: 'conversaciones', t: 'Conversaciones', permiso: 'conversation:read', modulo: 'conversaciones', movil: true },
   { to: '/agenda', n: 'agenda', t: 'Agenda', permiso: 'appointment:read', modulo: 'agenda', movil: true },
-  { to: '/vender', n: 'caja', t: 'Vender', permiso: 'order:create', modulo: 'ventas' },
-  { to: '/ventas', n: 'ventas', t: 'Ventas', permiso: 'order:read', modulo: 'ventas', movil: true },
+  { to: '/ventas', n: 'ventas', t: 'Ventas', algunos: ['order:read', 'order:create', 'comprobante:read'], modulo: 'ventas', movil: true },
   { to: '/clientes', n: 'clientes', t: 'Clientes', permiso: 'customer:read' },
   { to: '/inventario', n: 'inventario', t: 'Catálogo', permiso: 'catalog:read' },
-  { to: '/comprobantes', n: 'facturacion', t: 'Comprobantes', permiso: 'comprobante:read', modulo: 'ventas' },
-  // Con la facturación DIAN apagada, la entrada no aparece: su tarjeta «Próximamente» vive en Comprobantes.
+  // Con la facturación DIAN apagada, la entrada no aparece.
   { to: '/facturacion', n: 'facturacion', t: 'Facturación', permiso: 'invoice:read', modulo: 'facturacion', soloDian: true },
 ];
 const GOBIERNO: Item[] = [
@@ -262,8 +261,10 @@ export function PanelLayout() {
   const iniciales = inicialesDe(data.usuario.nombre);
   const salir = async (todas = false) => { await api.post(todas ? '/api/auth/logout-todas' : '/api/auth/logout').catch(() => {}); guardar('empresa', null); window.location.href = '/entrar'; };
   const marca = <span className="marca-negocio" aria-hidden="true">{t.logo_data_url ? <img src={t.logo_data_url} alt="" /> : t.tema?.monograma ?? t.nombre.slice(0, 2)}</span>;
+  /** «Ventas» abre la última pestaña usada (Vender, Historial o Comprobantes). */
+  const alClic = (i: Item) => (i.to === '/ventas' ? (e: { preventDefault: () => void }) => { e.preventDefault(); nav(rutaDeVentas(puede)); } : undefined);
   const enlace = (i: Item) => (
-    <NavLink key={i.to} to={i.to} end={i.to === '/'} className={({ isActive }) => `nav-item ${isActive ? 'activo' : ''}`} data-guia={`menu${i.to}`}>
+    <NavLink key={i.to} to={i.to} onClick={alClic(i)} end={i.to === '/'} className={({ isActive }) => `nav-item ${isActive ? 'activo' : ''}`} data-guia={`menu${i.to}`}>
       <Icon n={i.n} className="" size={18} /><span className="nav-txt">{i.t}</span>{i.n === 'conversaciones' && pendientes > 0 && <Insignia n={pendientes} urgente={urgente} etiqueta={textoAviso} />}
     </NavLink>
   );
@@ -338,7 +339,7 @@ export function PanelLayout() {
 
         <nav className="tabbar" aria-label="Navegación principal">
           {movil.map((i) => (
-            <NavLink key={i.to} to={i.to} end={i.to === '/'} className={({ isActive }) => `tab ${isActive ? 'activo' : ''}`} data-guia={`menu${i.to}`}>
+            <NavLink key={i.to} to={i.to} onClick={alClic(i)} end={i.to === '/'} className={({ isActive }) => `tab ${isActive ? 'activo' : ''}`} data-guia={`menu${i.to}`}>
               <span className="tab-ico"><Icon n={i.n} className="" size={20} />{i.n === 'conversaciones' && pendientes > 0 && <Insignia n={pendientes} urgente={urgente} flotante />}</span>
               <span>{i.t}</span>{i.n === 'conversaciones' && pendientes > 0 && <span className="sr"> ({textoAviso})</span>}
             </NavLink>
@@ -403,10 +404,10 @@ function AvisoEntrante({ ultima }: { ultima: Avisos['conversaciones']['ultima'] 
   );
 }
 
-export function Cabecera({ titulo, sub, children }: { titulo: string; sub?: ReactNode; children?: ReactNode }) {
+export function Cabecera({ titulo, sub, children, pestanas }: { titulo: string; sub?: ReactNode; children?: ReactNode; pestanas?: ReactNode }) {
   return (
     <header className="cabecera">
-      <div><h1 className="titulo">{titulo}</h1>{sub && <div className="sub">{sub}</div>}</div>
+      <div><h1 className="titulo">{titulo}</h1>{sub && <div className="sub">{sub}</div>}{pestanas}</div>
       {children && <div className="acciones">{children}</div>}
     </header>
   );

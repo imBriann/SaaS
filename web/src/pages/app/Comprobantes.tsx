@@ -4,11 +4,12 @@ import { api, cop, descargar, fechaHora } from '../../api';
 import { Cabecera, Escritura } from '../../components/Layout';
 import { Campo, Cargando, Cifra, Confirmar, ErrorCarga, Estado, Modal, Paginador, Tarjeta, useAccion, useApi, useRetardo, Vacio } from '../../components/ui';
 import { Icon } from '../../components/icons';
-import { TarjetaFacturaDian } from '../../components/Proximamente';
+import { PestanasVentas } from './ventas/Pestanas';
 
 /**
  * Comprobantes de venta: soporte interno de cada venta para entregarle al cliente y llevar el registro propio.
- * NO son facturas electrónicas: la leyenda lo dice en la pantalla, el PDF, el correo y el WhatsApp.
+ * NO son facturas electrónicas: la leyenda lo dice en el PDF, el correo y el WhatsApp (no en esta pantalla, donde
+ * solo hay un enlace discreto «¿Qué es un comprobante?»).
  */
 const ESTADOS: [string, string][] = [['', 'Todos'], ['EMITIDO', 'Vigentes'], ['ANULADO', 'Anulados']];
 const CANAL: Record<string, string> = { CORREO: 'Correo', WHATSAPP: 'WhatsApp', DESCARGA: 'Descarga' };
@@ -22,18 +23,18 @@ export function Comprobantes() {
   const [hasta, setHasta] = useState('');
   const [pagina, setPagina] = useState(1);
   const [abierto, setAbierto] = useState<string | null>(null);
+  const [explicar, setExplicar] = useState(false);
   const busqueda = useRetardo(q, 300);
   const filtros = new URLSearchParams({ ...(estado && { estado }), ...(busqueda && { q: busqueda }), ...(desde && { desde }), ...(hasta && { hasta }) });
   const { data, error, recargar } = useApi<any>(() => api.get(`/api/t/comprobantes?${filtros}&pagina=${pagina}`), [estado, busqueda, desde, hasta, pagina]);
   const { run, ocupado } = useAccion();
   return (
     <>
-      <Cabecera titulo="Comprobantes de venta" sub="Soporte interno de tus ventas para entregar al cliente y llevar tu registro. No son facturas electrónicas.">
+      <Cabecera titulo="Ventas" sub={<>Comprobantes de tus ventas para entregar al cliente y llevar tu registro. <button type="button" className="enlace" onClick={() => setExplicar(true)}>¿Qué es un comprobante?</button></>} pestanas={<PestanasVentas activa="comprobantes" />}>
         <button className="btn" disabled={ocupado} onClick={() => run(() => descargar(`/api/t/comprobantes.csv?${filtros}`, 'comprobantes.csv'))}><Icon n="descargar" className="" size={16} />Exportar libro de ventas</button>
       </Cabecera>
       <div className="contenido">
         {error ? <ErrorCarga error={error} reintentar={recargar} /> : !data ? <div className="tarjeta"><Cargando filas={8} /></div> : <>
-          <div className="aviso" role="note"><Icon n="info" className="" size={16} /><span><b>{data.leyenda}</b> Si tu cliente pide factura electrónica, cuéntale que esa función llegará más adelante.</span></div>
           <div className="kpis">
             <Cifra etiqueta="Vigentes" valor={data.resumen.emitidos} />
             <Cifra etiqueta="Anulados" valor={data.resumen.anulados} />
@@ -65,9 +66,14 @@ export function Comprobantes() {
             )}
             <Paginador pagina={data.pagina} total={data.total} porPagina={data.por_pagina} onPagina={setPagina} />
           </section>
-          {!data.factura_dian?.habilitada && <TarjetaFacturaDian motivo={data.factura_dian?.motivo} />}
         </>}
       </div>
+      {explicar && (
+        <Modal titulo="¿Qué es un comprobante?" onCerrar={() => setExplicar(false)} pie={<button className="btn primario" onClick={() => setExplicar(false)}>Entendido</button>}>
+          <p>Es el soporte de una venta que le entregas a tu cliente (por correo, WhatsApp o PDF) y que te sirve para llevar tu registro. Se genera desde la venta, tiene su propio número y, si te equivocas, se anula con un motivo en vez de borrarse.</p>
+          <p className="tenue peq-txt">Aún no es una factura electrónica; esa función llegará más adelante. El comprobante lo dice en su pie para que tu cliente lo sepa.</p>
+        </Modal>
+      )}
       {abierto && <DetalleComprobante id={abierto} onCerrar={() => setAbierto(null)} onCambio={recargar} />}
     </>
   );
@@ -90,7 +96,6 @@ export function DetalleComprobante({ id, onCerrar, onCambio }: { id: string; onC
       {error ? <ErrorCarga error={error} /> : !c ? <Cargando filas={5} /> : (
         <div className="col" style={{ gap: 14 }}>
           {c.estado === 'ANULADO' && <div className="bloqueado" role="note"><Icon n="alerta" className="" size={16} /><span><b>ANULADO</b> el {fechaHora(c.anulado_en)}{c.anulado_por ? ` por ${c.anulado_por}` : ''}. Motivo: {c.motivo_anulacion}</span></div>}
-          <p className="aviso peq-txt" role="note"><Icon n="info" className="" size={14} />{c.leyenda}</p>
           <dl className="datos-def">
             <dt>Cliente</dt><dd>{c.cliente.nombre}{c.cliente.documento ? ` · ${c.cliente.documento}` : ''}</dd>
             <dt>Venta</dt><dd><Link to={`/ventas/${c.order_id}`} onClick={onCerrar}>#{c.venta}</Link></dd>

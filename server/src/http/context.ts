@@ -56,7 +56,15 @@ export function slugFromRequest(req: FastifyRequest): string | null {
     if (sub && !['www', 'app', 'api'].includes(sub) && /^[a-z0-9-]+$/.test(sub)) return sub;
   }
   const h = req.headers['x-tenant-slug'];
-  return typeof h === 'string' && /^[a-z0-9-]{1,40}$/.test(h) ? h : null;
+  if (typeof h === 'string' && /^[a-z0-9-]{1,40}$/.test(h)) return h;
+  // Sin subdominio (desarrollo local), una etiqueta <img> no puede enviar cabeceras: en lecturas GET se acepta la
+  // empresa como parámetro. Tiene la misma confianza que la cabecera: la pertenencia se comprueba igual después.
+  // Nunca en escrituras (la cabecera obligatoria también protege de envíos desde otros sitios).
+  if (req.method === 'GET') {
+    const q = (req.query as Record<string, unknown> | undefined)?.empresa;
+    if (typeof q === 'string' && /^[a-z0-9-]{1,40}$/.test(q)) return q;
+  }
+  return null;
 }
 
 export async function memberships(tx: Tx, userId: string) {
